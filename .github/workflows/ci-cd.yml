@@ -1,0 +1,60 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop, sandbox]
+  pull_request:
+    branches: [main, develop, sandbox]
+
+jobs:
+  # -------------------------------------------------------------
+  # Build and Test Job
+  # -------------------------------------------------------------
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # 1. Build Frontend Image (Nginx based)
+      - name: Build Frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: frontend
+          tags: excollo/frontend:${{ github.ref_name }}
+          push: false # Set to true and add registry login if needed
+
+      # 2. Build Node.js Backend Image
+      - name: Build Node Backend
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: node-backend
+          tags: excollo/node-backend:${{ github.ref_name }}
+          push: false # Set to true and add registry login if needed
+
+      # 3. Build AI Python Backend Image
+      - name: Build AI Backend
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: ai-backend
+          tags: excollo/ai-backend:${{ github.ref_name }}
+          push: false # Set to true and add registry login if needed
+
+  # -------------------------------------------------------------
+  # Deployment Job (Placeholder)
+  # -------------------------------------------------------------
+  deploy:
+    needs: build-and-test
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy Strategy
+        run: |
+          echo "Deploying to ${{ github.ref_name }} environment..."
+          # Add your deployment logic here (e.g., SSH to server, K8s update, AWS ECS, etc.)
