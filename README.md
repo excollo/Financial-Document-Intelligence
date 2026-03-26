@@ -1,90 +1,89 @@
 # Financial Document Intelligence (FDI) Monorepo
 
-Welcome to the **Financial Document Intelligence** monorepo. This platform is designed to process, analyze, and extract insights from complex financial documents (like RHP/DRHP) using advanced AI/ML models.
-
-## 🏗️ Architecture Overview
-
-The system is architected as a set of decoupled services coordinated through a monorepo structure:
-
-| Service | Technology | Role |
-| :--- | :--- | :--- |
-| **Frontend** | React + Vite + Tailwind CSS | User interface for document management & AI interaction. |
-| **Node Backend** | Node.js + TypeScript + Express | Core API Gateway, authentication, and task orchestration. |
-| **AI Layer** | Python + FastAPI + Celery | Heavy processing: ingestion, LLM analysis, and extraction. |
-| **Infrastructure** | MongoDB + Redis | Data persistence and message queuing for background tasks. |
+The **Financial Document Intelligence** platform is an enterprise-grade solution for analyzing and extracting tabular and unstructured data from sensitive financial documents (like RHP, DRHP, Investment Reports). It leverages high-fidelity AI models, OCR, and a robust microservices architecture.
 
 ---
 
-## 🚀 Getting Started
+## 🏗️ Monorepo Architecture
 
-### Prerequisites
-*   [Docker](https://www.docker.com/get-started) & [Docker Compose](https://docs.docker.com/compose/install/)
-*   Git
+This project is structured as a monorepo containing three core services and a shared infrastructure layer:
 
-### Quick Start (Local Development)
-Run the entire platform with a single command:
+| Service | Technology | Core Responsibility |
+| :--- | :--- | :--- |
+| [**Frontend**](./frontend) | React + Vite + Tailwind CSS | Interactive UI, Document visualization, Chat interfaces. |
+| [**Node Backend**](./node_backend) | Node.js + TypeScript + Express | API Gateway, Auth, Document metadata management, Orchestration. |
+| [**AI Layer Service**](./ai_layer_backend) | Python + FastAPI + Celery | High-performance AI processing, PDF Parsing, OCR, and Ingestion. |
+| **Infrastructure** | MongoDB + Redis | Data persistence and asynchronous task queuing. |
+
+---
+
+## 📂 Detailed Service Descriptions
+
+### 1. Frontend ([./frontend](./frontend))
+A high-performance search and analysis interface built with React.
+*   **Key Features**:
+    *   **Document Workspace**: Manage folders, directories, and document uploads.
+    *   **AI Chat Panel**: Context-aware chat with financial documents using vector embeddings.
+    *   **Multi-tenant Dashboard**: Support for multiple domains and team collaboration.
+    *   **Admin Tools**: System health monitoring and user management.
+*   **Tech Stack**: Vite, TypeScript, Tailwind CSS, shadcn/ui.
+
+### 2. Node Backend ([./node_backend](./node_backend))
+The central brain of the platform handling business logic and authorization.
+*   **Key Features**:
+    *   **Authentication & RBAC**: Secure login with JWT and workspace-level permissions.
+    *   **Document Management**: CRUD operations for documents, directories, and shares.
+    *   **Task Orchestration**: Communicates with the AI Layer via REST and message hooks.
+    *   **Data Models**: Includes User, Workspace, Document, Summary, Job, and NewsArticle.
+*   **Tech Stack**: Node.js, TypeScript, Express, Mongoose (MongoDB).
+
+### 3. AI Layer Backend ([./ai_layer_backend](./ai_layer_backend))
+The computational engine focused on complex data extraction.
+*   **Key Features**:
+    *   **Document Ingestion**: Advanced PDF parsing (Camelot, pdfplumber, pdf2image).
+    *   **LLM Engine**: Integration with OpenAI, Google Gemini, and Cohere.
+    *   **Background Tasks**: Long-running AI jobs managed via Celery and Redis.
+    *   **OCR & Table Extraction**: Specialized processing for high-fidelity table recovery.
+*   **Tech Stack**: Python 3.11+, FastAPI, Celery, Pytorch/Numpy, LangChain.
+
+---
+
+## 🚀 Development & Deployment
+
+### Unified Quick Start
+Using the root-level orchestration, you can start the entire stack in seconds:
 ```bash
 docker-compose up --build
 ```
-This will start:
-*   **Frontend**: [http://localhost](http://localhost)
-*   **Node API**: [http://localhost:5000](http://localhost:5000)
-*   **AI Service**: [http://localhost:8000](http://localhost:8000)
-*   **MongoDB**: `mongodb://localhost:27017`
-*   **Redis**: `redis://localhost:6379`
+
+### Local Environment Configuration
+Each service uses its own `.env` file for configuration. Standard keys include:
+*   `MONGO_URI`: Connection string for MongoDB.
+*   `REDIS_URL`: Connection string for Redis broker.
+*   `OPENAI_API_KEY`, `GEMINI_API_KEY`: Keys for AI services.
+*   `AI_SERVICE_URL`: URL where the Node service can find the Python backend.
 
 ---
 
-## 🛠️ Development Guide
+## 🧪 Testing
+The monorepo includes automated testing at every level:
 
-### Monorepo Structure
-```text
-.
-├── ai_layer_backend/   # Python/FastAPI AI Processing Service
-├── frontend/           # React/Vite Frontend Application
-├── node_backend/       # Core Node.js/TS Backend API
-├── Dockerfile          # Unified multi-stage Dockerfile
-├── docker-compose.yml  # Root orchestration
-└── .github/workflows/  # CI/CD Pipeline (GitHub Actions)
-```
-
-### Running Tests
-We use a unified testing approach via Docker stages:
-
-```bash
-# Test Frontend
-docker build --target frontend-test .
-
-# Test Node Backend
-docker build --target node-backend-test .
-
-# Test AI Backend
-docker build --target ai-backend-test .
-```
+| Service | Test Command (Local) | Docker Target Stage |
+| :--- | :--- | :--- |
+| **Frontend** | `npm test` | `frontend-test` |
+| **Node Backend** | `npm test` | `node-backend-test` |
+| **AI Backend** | `pytest` | `ai-backend-test` |
 
 ---
 
-## 🔄 CI/CD & Deployment
+## 🔄 CI/CD Pipeline
+Every push to `main`, `develop`, or `sandbox` triggers a GitHub Action that builds and verifies all three services. The pipeline configuration is located in [`.github/workflows/ci-cd.yml`](./.github/workflows/ci-cd.yml).
 
-### Branching Strategy
-*   **`main`**: Production-ready code.
-*   **`develop`**: Integration branch for new features.
-*   **`sandbox`**: Experimental features and testing environment.
-
-### Pipeline
-Every push to the branches above triggers the **GitHub Actions CI/CD Pipeline**, which:
-1.  Sets up a secure build environment.
-2.  Builds all three services using the unified Docker targets.
-3.  Verifies the integrity of the build before tagging and deployment.
+### Branching Guide:
+- **`main`**: Production deployments.
+- **`develop`**: Daily development and staging.
+- **`sandbox`**: Testing and experimental features.
 
 ---
 
-## 📝 Troubleshooting
-
-*   **Permissions**: If you encounter 403 Forbidden errors when pushing to GitHub, ensure your `gh auth` is configured or use a Personal Access Token (PAT).
-*   **Docker Issues**: If a service fails to start, check logs using `docker-compose logs <service-name>`.
-*   **Database**: Ensure `MONGO_URI` in `.env` or `docker-compose.yml` matches your local environment.
-
----
-
-**Built with ❤️ for Financial Intelligence.**
+**Built with ❤️ by the FDI Team.**
