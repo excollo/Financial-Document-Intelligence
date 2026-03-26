@@ -1,0 +1,80 @@
+
+> vite_react_shadcn_ts@0.0.0 test:run
+> vitest run src/components/chatcomponents/__tests__/SummaryPanel.test.tsx
+
+
+[1m[46m RUN [49m[22m [36mv4.0.16 [39m[90m/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot[39m
+
+[baseline-browser-mapping] The data in this module is over two months old.  To ensure accurate Baseline data, please update: `npm i baseline-browser-mapping@latest -D`
+TypeError: onProcessingChange is not a function
+    at /Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/src/components/chatcomponents/SummaryPanel.tsx:185:5
+    at commitHookEffectListMount (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:23189:26)
+    at commitPassiveMountOnFiber (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:24970:11)
+    at commitPassiveMountEffects_complete (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:24930:9)
+    at commitPassiveMountEffects_begin (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:24917:7)
+    at commitPassiveMountEffects (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:24905:3)
+    at flushPassiveEffectsImpl (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:27078:3)
+    at flushPassiveEffects (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:27023:14)
+    at /Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:26808:9
+    at flushActQueue (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react/cjs/react.development.js:2667:24)
+[90mstderr[2m | src/components/chatcomponents/__tests__/SummaryPanel.test.tsx[2m > [22m[2mSummaryPanel component[2m > [22m[2mrenders generate button when no summary exists
+[22m[39mThe above error occurred in the <SummaryPanel> component:
+
+    at SummaryPanel (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/src/components/chatcomponents/SummaryPanel.tsx:108:25)
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://reactjs.org/link/error-boundaries to learn more about error boundaries.
+
+TypeError: onProcessingChange is not a function
+    at /Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/src/components/chatcomponents/SummaryPanel.tsx:185:5
+    at commitHookEffectListMount (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:23189:26)
+    at commitPassiveMountOnFiber (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:24970:11)
+    at commitPassiveMountEffects_complete (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:24930:9)
+    at commitPassiveMountEffects_begin (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:24917:7)
+    at commitPassiveMountEffects (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:24905:3)
+    at flushPassiveEffectsImpl (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:27078:3)
+    at flushPassiveEffects (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:27023:14)
+    at /Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:26808:9
+    at flushActQueue (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react/cjs/react.development.js:2667:24)
+[90mstderr[2m | src/components/chatcomponents/__tests__/SummaryPanel.test.tsx[2m > [22m[2mSummaryPanel component[2m > [22m[2mcalls summary creation when button clicked
+[22m[39mThe above error occurred in the <SummaryPanel> component:
+
+    at SummaryPanel (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/src/components/chatcomponents/SummaryPanel.tsx:108:25)
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://reactjs.org/link/error-boundaries to learn more about error boundaries.
+
+ [31m❯[39m src/components/chatcomponents/__tests__/SummaryPanel.test.tsx [2m([22m[2m2 tests[22m[2m | [22m[31m2 failed[39m[2m)[22m[32m 18[2mms[22m[39m
+[31m     [31m×[31m renders generate button when no summary exists[39m[32m 15[2mms[22m[39m
+[31m     [31m×[31m calls summary creation when button clicked[39m[32m 2[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 2 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m src/components/chatcomponents/__tests__/SummaryPanel.test.tsx[2m > [22mSummaryPanel component[2m > [22mrenders generate button when no summary exists
+[41m[1m FAIL [22m[49m src/components/chatcomponents/__tests__/SummaryPanel.test.tsx[2m > [22mSummaryPanel component[2m > [22mcalls summary creation when button clicked
+[31m[1mTypeError[22m: onProcessingChange is not a function[39m
+[36m [2m❯[22m src/components/chatcomponents/SummaryPanel.tsx:[2m185:5[22m[39m
+    [90m183| [39m
+    [90m184| [39m  [34museEffect[39m(() [33m=>[39m {
+    [90m185| [39m    [34monProcessingChange[39m(isSummarizing)[33m;[39m
+    [90m   | [39m    [31m^[39m
+    [90m186| [39m  }[33m,[39m [isSummarizing[33m,[39m onProcessingChange])[33m;[39m
+    [90m187| [39m
+[90m [2m❯[22m commitHookEffectListMount node_modules/react-dom/cjs/react-dom.development.js:[2m23189:26[22m[39m
+[90m [2m❯[22m commitPassiveMountOnFiber node_modules/react-dom/cjs/react-dom.development.js:[2m24970:11[22m[39m
+[90m [2m❯[22m commitPassiveMountEffects_complete node_modules/react-dom/cjs/react-dom.development.js:[2m24930:9[22m[39m
+[90m [2m❯[22m commitPassiveMountEffects_begin node_modules/react-dom/cjs/react-dom.development.js:[2m24917:7[22m[39m
+[90m [2m❯[22m commitPassiveMountEffects node_modules/react-dom/cjs/react-dom.development.js:[2m24905:3[22m[39m
+[90m [2m❯[22m flushPassiveEffectsImpl node_modules/react-dom/cjs/react-dom.development.js:[2m27078:3[22m[39m
+[90m [2m❯[22m flushPassiveEffects node_modules/react-dom/cjs/react-dom.development.js:[2m27023:14[22m[39m
+[90m [2m❯[22m node_modules/react-dom/cjs/react-dom.development.js:[2m26808:9[22m[39m
+[90m [2m❯[22m flushActQueue node_modules/react/cjs/react.development.js:[2m2667:24[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m2 failed[39m[22m[90m (2)[39m
+[2m   Start at [22m 16:03:42
+[2m   Duration [22m 844ms[2m (transform 92ms, setup 88ms, import 206ms, tests 18ms, environment 324ms)[22m
+

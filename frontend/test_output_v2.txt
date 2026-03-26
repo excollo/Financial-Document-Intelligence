@@ -1,0 +1,102 @@
+
+> vite_react_shadcn_ts@0.0.0 test:run
+> vitest run src/components/chatcomponents/__tests__/SummaryPanel.test.tsx
+
+
+[1m[46m RUN [49m[22m [36mv4.0.16 [39m[90m/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot[39m
+
+[baseline-browser-mapping] The data in this module is over two months old.  To ensure accurate Baseline data, please update: `npm i baseline-browser-mapping@latest -D`
+[90mstdout[2m | src/components/chatcomponents/__tests__/SummaryPanel.test.tsx[2m > [22m[2mSummaryPanel component[2m > [22m[2mrenders generate button when no summary exists
+[22m[39mSocket connection established to: http://localhost:5000
+
+[90mstdout[2m | src/components/chatcomponents/__tests__/SummaryPanel.test.tsx[2m > [22m[2mSummaryPanel component[2m > [22m[2mrenders generate button when no summary exists
+[22m[39mCleaning up socket connection
+
+[90mstdout[2m | src/components/chatcomponents/__tests__/SummaryPanel.test.tsx[2m > [22m[2mSummaryPanel component[2m > [22m[2mcalls summary creation when button clicked
+[22m[39mSocket connection established to: http://localhost:5000
+
+[90mstdout[2m | src/components/chatcomponents/__tests__/SummaryPanel.test.tsx[2m > [22m[2mSummaryPanel component[2m > [22m[2mcalls summary creation when button clicked
+[22m[39mCleaning up socket connection
+
+ [32m✓[39m src/components/chatcomponents/__tests__/SummaryPanel.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[32m 78[2mms[22m[39m
+[31m⎯⎯⎯⎯⎯⎯[39m[1m[41m Unhandled Errors [49m[22m[31m⎯⎯⎯⎯⎯⎯[39m
+[31m[1m
+Vitest caught 2 unhandled errors during the test run.
+This might cause false positive tests. Resolve unhandled errors to make sure your tests are not affected.[22m[39m
+
+[31m⎯⎯⎯⎯[39m[1m[41m Unhandled Rejection [49m[22m[31m⎯⎯⎯⎯⎯[39m
+[31m[1mError[22m: [vitest] No "shareService" export is defined on the "@/services/api" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+[39m
+vi.mock(import("@/services/api"), async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    // your mocked methods
+  }
+})
+
+[90m [2m❯[22m VitestMocker.createError node_modules/vitest/dist/chunks/startModuleRunner.DpqpB8k3.js:[2m311:17[22m[39m
+[90m [2m❯[22m Object.shareService [as get] node_modules/vitest/dist/chunks/startModuleRunner.DpqpB8k3.js:[2m384:16[22m[39m
+[36m [2m❯[22m src/components/chatcomponents/SummaryPanel.tsx:[2m198:26[22m[39m
+    [90m196| [39m    [90m// Resolve link role if a shared token is active[39m
+    [90m197| [39m    ([35masync[39m () [33m=>[39m {
+    [90m198| [39m      [35mconst[39m role [33m=[39m [35mawait[39m shareService[33m.[39m[34mresolveTokenRole[39m()[33m;[39m
+    [90m   | [39m                         [31m^[39m
+    [90m199| [39m      [34msetLinkRole[39m(role)[33m;[39m
+    [90m200| [39m    })()[33m;[39m
+[90m [2m❯[22m src/components/chatcomponents/SummaryPanel.tsx:[2m200:5[22m[39m
+[90m [2m❯[22m commitHookEffectListMount node_modules/react-dom/cjs/react-dom.development.js:[2m23189:26[22m[39m
+[90m [2m❯[22m commitPassiveMountOnFiber node_modules/react-dom/cjs/react-dom.development.js:[2m24970:11[22m[39m
+[90m [2m❯[22m commitPassiveMountEffects_complete node_modules/react-dom/cjs/react-dom.development.js:[2m24930:9[22m[39m
+[90m [2m❯[22m commitPassiveMountEffects_begin node_modules/react-dom/cjs/react-dom.development.js:[2m24917:7[22m[39m
+[90m [2m❯[22m commitPassiveMountEffects node_modules/react-dom/cjs/react-dom.development.js:[2m24905:3[22m[39m
+[90m [2m❯[22m flushPassiveEffectsImpl node_modules/react-dom/cjs/react-dom.development.js:[2m27078:3[22m[39m
+
+[31mThis error originated in "[1msrc/components/chatcomponents/__tests__/SummaryPanel.test.tsx[22m" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.[39m
+[31mThe latest test that might've caused the error is "[1mrenders generate button when no summary exists[22m". It might mean one of the following:
+- The error was thrown, while Vitest was running this test.
+- If the error occurred after the test had been completed, this was the last documented test before it was thrown.[39m
+
+[31m⎯⎯⎯⎯[39m[1m[41m Unhandled Rejection [49m[22m[31m⎯⎯⎯⎯⎯[39m
+[31m[1mError[22m: [vitest] No "shareService" export is defined on the "@/services/api" mock. Did you forget to return it from "vi.mock"?
+If you need to partially mock a module, you can use "importOriginal" helper inside:
+[39m
+vi.mock(import("@/services/api"), async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    // your mocked methods
+  }
+})
+
+[90m [2m❯[22m VitestMocker.createError node_modules/vitest/dist/chunks/startModuleRunner.DpqpB8k3.js:[2m311:17[22m[39m
+[90m [2m❯[22m Object.shareService [as get] node_modules/vitest/dist/chunks/startModuleRunner.DpqpB8k3.js:[2m384:16[22m[39m
+[36m [2m❯[22m src/components/chatcomponents/SummaryPanel.tsx:[2m198:26[22m[39m
+    [90m196| [39m    [90m// Resolve link role if a shared token is active[39m
+    [90m197| [39m    ([35masync[39m () [33m=>[39m {
+    [90m198| [39m      [35mconst[39m role [33m=[39m [35mawait[39m shareService[33m.[39m[34mresolveTokenRole[39m()[33m;[39m
+    [90m   | [39m                         [31m^[39m
+    [90m199| [39m      [34msetLinkRole[39m(role)[33m;[39m
+    [90m200| [39m    })()[33m;[39m
+[90m [2m❯[22m src/components/chatcomponents/SummaryPanel.tsx:[2m200:5[22m[39m
+[90m [2m❯[22m commitHookEffectListMount node_modules/react-dom/cjs/react-dom.development.js:[2m23189:26[22m[39m
+[90m [2m❯[22m commitPassiveMountOnFiber node_modules/react-dom/cjs/react-dom.development.js:[2m24970:11[22m[39m
+[90m [2m❯[22m commitPassiveMountEffects_complete node_modules/react-dom/cjs/react-dom.development.js:[2m24930:9[22m[39m
+[90m [2m❯[22m commitPassiveMountEffects_begin node_modules/react-dom/cjs/react-dom.development.js:[2m24917:7[22m[39m
+[90m [2m❯[22m commitPassiveMountEffects node_modules/react-dom/cjs/react-dom.development.js:[2m24905:3[22m[39m
+[90m [2m❯[22m flushPassiveEffectsImpl node_modules/react-dom/cjs/react-dom.development.js:[2m27078:3[22m[39m
+
+[31mThis error originated in "[1msrc/components/chatcomponents/__tests__/SummaryPanel.test.tsx[22m" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.[39m
+[31mThe latest test that might've caused the error is "[1mcalls summary creation when button clicked[22m". It might mean one of the following:
+- The error was thrown, while Vitest was running this test.
+- If the error occurred after the test had been completed, this was the last documented test before it was thrown.[39m
+[31m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[39m
+
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m2 passed[39m[22m[90m (2)[39m
+[2m     Errors [22m [1m[31m2 errors[39m[22m
+[2m   Start at [22m 16:05:57
+[2m   Duration [22m 550ms[2m (transform 105ms, setup 58ms, import 204ms, tests 78ms, environment 157ms)[22m
+

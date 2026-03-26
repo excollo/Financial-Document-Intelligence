@@ -1,0 +1,165 @@
+# Page snapshot
+
+```yaml
+- generic:
+  - generic:
+    - list
+    - region "Notifications alt+T"
+    - generic:
+      - main:
+        - generic:
+          - generic:
+            - generic:
+              - button: PDF Summariser
+            - textbox:
+              - /placeholder: Search for Files by their names, time, and day
+            - generic:
+              - link:
+                - /url: /dashboard
+                - img
+              - link:
+                - /url: /admin
+                - img
+              - link:
+                - /url: /news-monitor
+                - img
+              - link:
+                - /url: /notifications
+                - img
+                - generic: "2"
+              - generic:
+                - generic:
+                  - generic: E
+          - generic:
+            - complementary:
+              - generic:
+                - button:
+                  - generic: New Workspace
+                  - img
+              - navigation:
+                - button:
+                  - generic:
+                    - img
+                    - text: Workspaces
+                  - generic:
+                    - img
+                - generic:
+                  - generic:
+                    - generic: No workspaces. Create one to get started.
+              - navigation:
+                - button:
+                  - generic:
+                    - img
+                    - text: Recent Directories
+                  - generic:
+                    - img
+                - generic:
+                  - generic: No recent directories
+            - generic:
+              - main:
+                - generic:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - button:
+                          - img
+                          - text: Admin Dashboard
+                        - button:
+                          - img
+                          - text: User Management
+                    - generic:
+                      - button:
+                        - text: Create New
+                        - img
+                  - generic:
+                    - generic:
+                      - generic:
+                        - button:
+                          - generic: All Directories
+                          - img
+                    - generic:
+                      - generic:
+                        - button:
+                          - img
+                          - generic: List
+                        - button:
+                          - img
+                          - generic: Cards
+                - generic:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic:
+                          - generic: Name
+                          - generic: Documents
+                          - generic:
+                            - button:
+                              - generic: Last modified
+                              - generic:
+                                - img
+                                - img
+                          - generic: Actions
+                      - generic:
+                        - generic:
+                          - generic:
+                            - img
+                            - generic:
+                              - generic: E2E Test Company 1774440765989
+                          - generic: 3/25/2026
+                          - generic:
+                            - button:
+                              - img
+                            - button:
+                              - img
+                            - button:
+                              - img
+                            - button:
+                              - img
+                            - button:
+                              - img
+                        - generic:
+                          - generic:
+                            - img
+                            - generic:
+                              - generic: E2E Test Company 1774438604448
+                          - generic: 3/25/2026
+                          - generic:
+                            - button:
+                              - img
+                            - button:
+                              - img
+                            - button:
+                              - img
+                            - button:
+                              - img
+                            - button:
+                              - img
+  - dialog "Create Your First Workspace" [ref=e2]:
+    - generic [ref=e3]:
+      - heading "Create Your First Workspace" [level=2] [ref=e4]
+      - paragraph [ref=e5]: Welcome! As the first admin of this domain, you need to create your first workspace to get started. You can optionally upload a document to summarize.
+    - generic [ref=e6]:
+      - generic [ref=e7]:
+        - text: Workspace name
+        - textbox "Team Alpha" [active] [ref=e8]
+      - generic [ref=e9]:
+        - text: Workspace URL (optional)
+        - generic [ref=e10]:
+          - generic [ref=e11]: /
+          - textbox "team-alpha" [ref=e12]
+      - generic [ref=e13]:
+        - text: Description (optional)
+        - textbox "Describe this workspace" [ref=e14]
+      - generic [ref=e15]:
+        - text: Upload Document (optional)
+        - generic [ref=e17] [cursor=pointer]:
+          - img [ref=e18]
+          - generic [ref=e21]: Choose PDF file to upload and summarize
+        - paragraph [ref=e22]: If you upload a document, it will be automatically summarized after workspace creation.
+      - generic [ref=e23]:
+        - button "Cancel" [ref=e24] [cursor=pointer]
+        - button "Create" [ref=e25] [cursor=pointer]
+    - button "Close" [ref=e26] [cursor=pointer]:
+      - img [ref=e27]
+      - generic [ref=e30]: Close
+```

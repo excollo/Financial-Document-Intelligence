@@ -1,0 +1,529 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Hide scrollbar but keep scroll functionality */
+.scrollbar-hide {
+  -ms-overflow-style: none; /* Internet Explorer 10+ */
+  scrollbar-width: none; /* Firefox */
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none; /* Safari and Chrome */
+}
+
+/* Custom scrollbar styling for webkit browsers */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+@layer base {
+  :root {
+    /* Light mode variables (Refined Palette) */
+    --background: 39 82% 96%; /* rgb(253, 246, 238) */
+    --foreground: 30 26% 16%; /* rgb(51, 40, 30) */
+
+    --card: 37 3% 90%; /* rgb(230, 227, 222)  */
+    --card-foreground: 30 26% 16%; /* Matches foreground */
+
+    --popover: 37 3% 90%; /* rgb(230, 227, 222) */
+    --popover-foreground: 30 26% 16%; /* Matches foreground */
+
+    --primary: 37 3% 90%; /* rgb(230, 227, 222) for button backgrounds */
+    --primary-foreground: 30 26% 16%; /* Dark text for buttons */
+
+    --secondary: 39 46% 90%; /* Slightly darker shade for secondary elements */
+    --secondary-foreground: 30 26% 16%; /* Dark text */
+
+    --muted: 39 46% 90%; /* Slightly darker shade for muted elements */
+    --muted-foreground: 30 26% 30%; /* Medium dark grey */
+
+    --accent: 39 46% 94%; /* Matches card */
+    --accent-foreground: 30 26% 16%; /* Dark text */
+
+    --destructive: 0 84.2% 60.2%; /* Red (keep for errors) */
+    --destructive-foreground: 210 40% 98%; /* Off-white (keep for contrast on red) */
+
+    --border: 39 30% 85%; /* Border color within the palette */
+    --input: 39 46% 94%; /* Matches card/button */
+    --ring: 30 26% 16%; /* Dark ring */
+
+    --radius: 0.5rem;
+
+    --sidebar-background: 39 46% 94%; /* Matches card */
+    --sidebar-foreground: 30 26% 16%; /* Matches foreground */
+    --sidebar-primary: 30 26% 16%; /* Dark primary in sidebar */
+    --sidebar-primary-foreground: 0 0% 98%; /* Off-white for contrast */
+    --sidebar-accent: 39 46% 90%; /* Slightly darker */
+    --sidebar-accent-foreground: 30 26% 16%; /* Dark text */
+    --sidebar-border: 39 30% 85%; /* Border color */
+    --sidebar-ring: 30 26% 16%; /* Dark ring */
+  }
+
+  .dark {
+    /* Dark mode variables (Gray/White/Black Palette) - Keeping largely as is */
+    --background: 240 10% 3.9%; /* Very dark grey */
+    --foreground: 0 0% 98%; /* Off-white */
+
+    --card: 240 10% 13%; /* Dark grey */
+    --card-foreground: 0 0% 98%; /* Off-white */
+
+    --popover: 240 10% 13%; /* Dark grey */
+    --popover-foreground: 0 0% 98%; /* Off-white */
+
+    --primary: 217.9 10.6% 10.9%; /* Purple (Keeping original) */
+    --primary-foreground: 240 10% 3.9%; /* Very dark grey */
+
+    --secondary: 215 27% 16.9%; /* Darker grey */
+    --secondary-foreground: 210 40% 96.1%; /* Light grey */
+
+    --muted: 215 27% 16.9%; /* Darker grey */
+    --muted-foreground: 217.9 10.6% 64.9%; /* Medium grey */
+
+    --accent: 215 27% 16.9%; /* Darker grey */
+    --accent-foreground: 210 40% 96.1%; /* Light grey */
+
+    --destructive: 0 62.8% 30.6%; /* Darker red (keep for errors) */
+    --destructive-foreground: 210 40% 98%; /* Off-white */
+
+    --border: 217 19% 27%; /* Medium dark grey border */
+    --input: 215 27% 16.9%; /* Darker grey input background */
+    --ring: 248 67% 78%; /* Purple (Keeping original) */
+
+    --sidebar-background: 240 100% 9%; /* Very dark grey/near black */
+    --sidebar-foreground: 210 40% 98%; /* Off-white */
+    --sidebar-primary: 248 67% 78%; /* Purple (Keeping original) */
+    --sidebar-primary-foreground: 240 5.9% 10%; /* Near black */
+    --sidebar-accent: 240 3.7% 15.9%; /* Dark grey */
+    --sidebar-accent-foreground: 0 0% 98%; /* Off-white */
+    --sidebar-border: 240 3.7% 15.9%; /* Dark grey border */
+    --sidebar-ring: 248 67% 78%; /* Purple (Keeping original) */
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    /* Ensure Inter font is applied */
+    @apply bg-background text-foreground font-sans;
+    font-family: "Inter", sans-serif;
+  }
+
+  .glass-card {
+    /* Adjusted for light/dark using opacity and specific dark background */
+    @apply bg-white/20 dark:bg-black/20 backdrop-filter backdrop-blur-lg border border-white/10 dark:border-black/10 shadow-lg;
+  }
+
+  .tech-glow {
+    /* Kept original glow as it matches the dark mode primary color */
+    @apply shadow-[0_0_15px_rgba(155,135,245,0.5)];
+  }
+
+  /* Gradient for the top-right light focus effect */
+  /* Adjusted for light mode - subtle dark gradient */
+  .top-right-gradient {
+    background-image: radial-gradient(
+      circle at top right,
+      rgba(0, 0, 0, 0.06) 0%,
+      rgba(0, 0, 0, 0) 50%
+    ); /* Made even more subtle */
+  }
+
+  /* Dark mode top-right gradient */
+  .dark .top-right-gradient {
+    /* Kept original as it works for dark mode */
+    background-image: radial-gradient(
+      circle at top right,
+      rgba(255, 255, 255, 0.2) 0%,
+      rgba(255, 255, 255, 0) 30%
+    );
+  }
+
+  /* Gradient for text - using theme variables */
+  /* Adjusted to use the new light mode foreground/muted-foreground */
+  .text-gradient-gray-white {
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    @apply bg-gradient-to-r from-foreground to-muted-foreground; /* Use new foreground to muted-foreground */
+  }
+
+  /* Z-depth text shadow */
+  /* Adjusted for light mode using new foreground color opacity */
+  .text-z-depth {
+    text-shadow: 0px 2px 4px hsla(30, 26%, 16%, 0.2); /* Use foreground HSL with opacity */
+    position: relative;
+    z-index: 10;
+  }
+
+  /* Dark mode z-depth text shadow */
+  .dark .text-z-depth {
+    text-shadow: 0px 6px 8px rgba(0, 0, 0, 0.6);
+  }
+
+  .typing-dots::after {
+    content: "";
+    animation: typingDots 1.5s infinite;
+  }
+
+  @keyframes typingDots {
+    0% {
+      content: "";
+    }
+    25% {
+      content: ".";
+    }
+    50% {
+      content: "..";
+    }
+    75% {
+      content: "...";
+    }
+    100% {
+      content: "";
+    }
+  }
+}
+
+/* Global focus resets - Remove all focus outlines and rings */
+*:focus,
+*:focus-visible,
+input:focus,
+textarea:focus,
+select:focus,
+button:focus {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* Remove focus rings from all inputs */
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none !important;
+  ring: none !important;
+  --tw-ring-shadow: none !important;
+  box-shadow: none !important;
+}
+
+/* Chat input specific styling - no focus ring */
+.chat-input-focus:focus {
+  outline: none !important;
+  ring: none !important;
+  --tw-ring-shadow: none !important;
+  box-shadow: 0 2px 4px 2px rgba(101, 101, 101, 0.1) !important;
+}
+
+/* Sonner Toast Container - Always bottom-right, no hover movement */
+[data-sonner-toaster] {
+  position: fixed !important;
+  bottom: 0 !important;
+  right: 0 !important;
+  top: auto !important;
+  left: auto !important;
+  z-index: 9999 !important;
+  pointer-events: none !important;
+  display: flex !important;
+  flex-direction: column-reverse !important;
+  align-items: flex-end !important;
+  padding: 16px !important;
+  gap: 8px !important;
+}
+
+[data-sonner-toaster] [data-sonner-toast] {
+  pointer-events: auto !important;
+  margin: 0 !important;
+  transform: none !important;
+  position: relative !important;
+}
+
+[data-sonner-toaster] [data-sonner-toast]:hover {
+  transform: none !important;
+}
+
+/* Sonner Toast Close Button Styling */
+[data-sonner-toast] {
+  position: relative !important;
+  padding-right: 32px !important;
+  overflow: visible !important;
+  transform: none !important;
+  transition: opacity 0.2s ease, background-color 0.2s ease !important;
+}
+
+/* Target the close button in Sonner toasts - Top Right Corner, Rounded */
+[data-sonner-toast] button[aria-label="Close"],
+[data-sonner-toast] [data-close-button],
+[data-sonner-toast] button[type="button"]:has(svg) {
+  position: absolute !important;
+  top: 0 !important;
+  right:0 !important;
+  left: auto !important;
+  bottom: auto !important;
+  opacity: 1 !important;
+  cursor: pointer !important;
+  z-index: 50 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 20px !important;
+  height: 20px !important;
+  min-width: 20px !important;
+  min-height: 20px !important;
+  border-radius: 50% !important;
+  transition: opacity 0.2s ease, background-color 0.2s ease !important;
+  background-color: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  transform: none !important;
+}
+
+[data-sonner-toast] button[aria-label="Close"]:hover,
+[data-sonner-toast] [data-close-button]:hover,
+[data-sonner-toast] button[type="button"]:has(svg):hover {
+  opacity: 0.8 !important;
+  background-color: rgba(0, 0, 0, 0.1) !important;
+}
+
+.dark [data-sonner-toast] button[aria-label="Close"]:hover,
+.dark [data-sonner-toast] [data-close-button]:hover,
+.dark [data-sonner-toast] button[type="button"]:has(svg):hover {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+[data-sonner-toast] button[aria-label="Close"] svg,
+[data-sonner-toast] [data-close-button] svg,
+[data-sonner-toast] button[type="button"]:has(svg) svg {
+  width: 12px !important;
+  height: 12px !important;
+  color: currentColor !important;
+  margin: 0 !important;
+}
+
+/* Global styles for select dropdown options */
+/* Note: Native select dropdowns are rendered by the browser, so you cannot control 
+   the dropdown position with CSS. The dropdown position is browser-controlled.
+   You can only style the appearance of options (background, color, padding, etc.) */
+select[name="directoryTimeFilter"] option {
+  background-color: white !important;
+  background: white !important;
+  color: #5A6473 !important;
+  padding: 0.5rem 1rem !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+
+  margin-top: 10px !important;
+  /* These properties work on options: */
+  /* background-color, color, padding, font-size, font-weight, text-align */
+  /* These do NOT work: position, top, left, margin, transform */
+}
+
+select[name="directoryTimeFilter"] option:hover,
+select[name="directoryTimeFilter"] option:focus,
+select[name="directoryTimeFilter"] option:active {
+  background-color: #F3F4F6 !important;
+  background: #F3F4F6 !important;
+  color: #5A6473 !important;
+}
+
+select[name="directoryTimeFilter"] option:checked {
+  background-color: white !important;
+  background: white !important;
+  color: #5A6473 !important;
+}
+
+/* Ensure select dropdown appears above other elements */
+select[name="directoryTimeFilter"] {
+  z-index: 9999 !important;
+  position: relative !important;
+}
+
+select[name="directoryTimeFilter"]:focus {
+  z-index: 9999 !important;
+  outline: none !important;
+}
+
+/* Note: To control dropdown position, you would need a custom dropdown component
+   like Radix UI Select or Headless UI Listbox */
+
+/* Markdown Content Styling */
+.summary-content .markdown-table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 20px 0;
+  font-size: 13px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.summary-content .markdown-table th {
+  background: #f1f5f9;
+  color: #334155;
+  font-weight: 700;
+  text-align: left;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+}
+
+.summary-content .markdown-table td {
+  padding: 10px;
+  border: 1px solid #e2e8f0;
+}
+
+.summary-content .markdown-table tr:nth-child(even) {
+  background: #f8fafc;
+}
+
+/* Markdown Headers */
+.summary-content h1 {
+  color: #4B2A06;
+  border-bottom: 2px solid #4B2A06;
+  padding-bottom: 10px;
+  margin-top: 30px;
+  margin-bottom: 20px;
+  font-size: 2em;
+  font-weight: 700;
+}
+
+.summary-content h2 {
+  color: #4B2A06;
+  margin-top: 30px;
+  margin-bottom: 15px;
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 5px;
+  font-size: 1.5em;
+  font-weight: 600;
+}
+
+.summary-content h3 {
+  color: #4B2A06;
+  font-size: 1.25em;
+  margin-top: 20px;
+  margin-bottom: 10px;
+  font-weight: 600;
+}
+
+/* Markdown Code Blocks */
+.summary-content pre {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 16px;
+  overflow-x: auto;
+  margin: 16px 0;
+}
+
+.summary-content code {
+  background: #f1f5f9;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: 'Courier New', monospace;
+  font-size: 0.9em;
+  color: #334155;
+}
+
+.summary-content pre code {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+}
+
+/* Markdown Lists */
+.summary-content ul,
+.summary-content ol {
+  margin-bottom: 20px;
+  padding-left: 24px;
+}
+
+.summary-content li {
+  margin-bottom: 8px;
+  line-height: 1.6;
+}
+
+/* Markdown Blockquotes */
+.summary-content blockquote {
+  border-left: 4px solid #4B2A06;
+  padding-left: 16px;
+  margin: 16px 0;
+  color: #64748b;
+  font-style: italic;
+}
+
+/* Markdown Horizontal Rules */
+.summary-content hr {
+  border: none;
+  border-top: 1px solid #e5e7eb;
+  margin: 30px 0;
+}
+
+/* Markdown Links */
+.summary-content a {
+  color: #FF7A1A;
+  text-decoration: underline;
+  transition: color 0.2s;
+}
+
+.summary-content a:hover {
+  color: #e06915;
+}
+
+/* Markdown Paragraphs */
+.summary-content p {
+  margin-bottom: 16px;
+  line-height: 1.6;
+}
+
+/* Dark mode adjustments for markdown */
+.dark .summary-content .markdown-table th {
+  background: #1e293b;
+  color: #e2e8f0;
+  border-color: #334155;
+}
+
+.dark .summary-content .markdown-table td {
+  border-color: #334155;
+}
+
+.dark .summary-content .markdown-table tr:nth-child(even) {
+  background: #0f172a;
+}
+
+.dark .summary-content h1,
+.dark .summary-content h2,
+.dark .summary-content h3 {
+  color: #f1f5f9;
+  border-color: #334155;
+}
+
+.dark .summary-content pre {
+  background: #0f172a;
+  border-color: #334155;
+}
+
+.dark .summary-content code {
+  background: #1e293b;
+  color: #e2e8f0;
+}
+
+.dark .summary-content blockquote {
+  border-left-color: #64748b;
+  color: #94a3b8;
+}

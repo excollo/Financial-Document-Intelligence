@@ -1,0 +1,61 @@
+name: AI Platform CI/CD
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+      - sandbox
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11' # Use 3.11 for CI stability
+          
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          
+      - name: Run Pytest
+        env:
+          APP_ENV: testing
+        run: |
+          pytest tests/
+
+  deploy:
+    name: Build & Deploy
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    environment:
+      name: prod
+      
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to Azure
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Build and push container images
+        run: |
+          az acr build --registry ${{ secrets.AZURE_CONTAINER_REGISTRY }} \
+            --image ai-platform:${{ github.sha }} \
+            --file Dockerfile .
+
+      - name: Deploy to Azure Container Apps
+        uses: azure/container-apps-deploy-action@v1
+        with:
+          imageToDeploy: ${{ secrets.AZURE_CONTAINER_REGISTRY }}.azurecr.io/ai-platform:${{ github.sha }}
+          resourceGroup: ${{ secrets.AZURE_RESOURCE_GROUP }}
+          containerAppEnvironment: ${{ secrets.AZURE_CONTAINER_APP_ENV }}
+          containerAppName: ai-platform-api

@@ -1,0 +1,13 @@
+node_modules
+dist
+.git
+.env
+npm-debug.log
+docker-compose.yml
+Dockerfile
+.github
+.vscode
+public/temp
+coverage
+test_output.txt
+frontend_test_errors.txt

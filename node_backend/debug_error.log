@@ -1,0 +1,49 @@
+Starting downloadDocx for ID: 1770892511093
+Summary not found or empty content for ID: 1770892511093
+Starting downloadDocx for ID: 1770892511093
+Summary not found or empty content for ID: 1770892511093
+Starting downloadDocx for ID: 1770892511093
+Found summary: 1770892511093 (Type: number)
+Paths: Input=/var/folders/k1/dq2_jmv914sc8n0bdqyt2sf00000gn/T/summary_1770892511093.html, Output=/var/folders/k1/dq2_jmv914sc8n0bdqyt2sf00000gn/T/summary_1770892511093.docx, Cmd=pandoc "/var/folders/k1/dq2_jmv914sc8n0bdqyt2sf00000gn/T/summary_1770892511093.html" -f html -t docx -o "/var/folders/k1/dq2_jmv914sc8n0bdqyt2sf00000gn/T/summary_1770892511093.docx"
+Pandoc Success. Stdout: , Stderr: 
+File sent successfully.
+Starting downloadDocx for ID: 1770892511093
+Found summary: 1770892511093 (Type: number)
+Paths: Input=/var/folders/k1/dq2_jmv914sc8n0bdqyt2sf00000gn/T/summary_1770892511093.html, Output=/var/folders/k1/dq2_jmv914sc8n0bdqyt2sf00000gn/T/summary_1770892511093.docx, Cmd=pandoc "/var/folders/k1/dq2_jmv914sc8n0bdqyt2sf00000gn/T/summary_1770892511093.html" -f html -t docx -o "/var/folders/k1/dq2_jmv914sc8n0bdqyt2sf00000gn/T/summary_1770892511093.docx"
+Pandoc Success. Stdout: , Stderr: 
+File sent successfully.
+Starting downloadDocx for ID: 1770892511093
+Found summary: 1770892511093 (Type: number)
+Paths: Input=/var/folders/k1/dq2_jmv914sc8n0bdqyt2sf00000gn/T/summary_1770892511093.html, Output=/var/folders/k1/dq2_jmv914sc8n0bdqyt2sf00000gn/T/summary_1770892511093.docx, Cmd=pandoc "/var/folders/k1/dq2_jmv914sc8n0bdqyt2sf00000gn/T/summary_1770892511093.html" -f html -t docx -o "/var/folders/k1/dq2_jmv914sc8n0bdqyt2sf00000gn/T/summary_1770892511093.docx"
+Pandoc Success. Stdout: , Stderr: 
+File sent successfully.
+Starting downloadDocx for ID: 1770892511093
+Found summary: 1770892511093 (Type: number)
+Paths: Input=/var/folders/k1/dq2_jmv914sc8n0bdqyt2sf00000gn/T/summary_1770892511093.md, Output=/var/folders/k1/dq2_jmv914sc8n0bdqyt2sf00000gn/T/summary_1770892511093.docx, Cmd=pandoc "/var/folders/k1/dq2_jmv914sc8n0bdqyt2sf00000gn/T/summary_1770892511093.md" -f markdown -t docx -o "/var/folders/k1/dq2_jmv914sc8n0bdqyt2sf00000gn/T/summary_1770892511093.docx"
+Pandoc Success. Stdout: , Stderr: 
+File sent successfully.
+Starting downloadDocx for ID: 1771557103597
+Found summary: 1771557103597 (Type: string)
+Paths: Input=/var/folders/k1/dq2_jmv914sc8n0bdqyt2sf00000gn/T/summary_1771557103597.md, Output=/var/folders/k1/dq2_jmv914sc8n0bdqyt2sf00000gn/T/summary_1771557103597.docx, Cmd=pandoc "/var/folders/k1/dq2_jmv914sc8n0bdqyt2sf00000gn/T/summary_1771557103597.md" -f markdown -t docx -o "/var/folders/k1/dq2_jmv914sc8n0bdqyt2sf00000gn/T/summary_1771557103597.docx"
+Pandoc Success. Stdout: , Stderr: 
+File sent successfully.
+Starting downloadDocx for ID: 1774345639206
+Found summary: 1774345639206 (Type: string)
+Paths: Input=/var/folders/k1/dq2_jmv914sc8n0bdqyt2sf00000gn/T/summary_1774345639206.md, Output=/var/folders/k1/dq2_jmv914sc8n0bdqyt2sf00000gn/T/summary_1774345639206.docx, Cmd=pandoc "/var/folders/k1/dq2_jmv914sc8n0bdqyt2sf00000gn/T/summary_1774345639206.md" -f markdown -t docx -o "/var/folders/k1/dq2_jmv914sc8n0bdqyt2sf00000gn/T/summary_1774345639206.docx"
+Pandoc Success. Stdout: , Stderr: 
+File sent successfully.
+Starting downloadDocx for ID: 1774327459581
+Found summary: 1774327459581 (Type: string)
+Paths: Input=/var/folders/k1/dq2_jmv914sc8n0bdqyt2sf00000gn/T/summary_1774327459581.md, Output=/var/folders/k1/dq2_jmv914sc8n0bdqyt2sf00000gn/T/summary_1774327459581.docx, Cmd=pandoc "/var/folders/k1/dq2_jmv914sc8n0bdqyt2sf00000gn/T/summary_1774327459581.md" -f markdown -t docx -o "/var/folders/k1/dq2_jmv914sc8n0bdqyt2sf00000gn/T/summary_1774327459581.docx"
+Pandoc Success. Stdout: , Stderr: 
+File sent successfully.
+Starting downloadDocx for ID: 1774267919999
+Found summary: 1774267919999 (Type: string)
+Paths: Input=/var/folders/k1/dq2_jmv914sc8n0bdqyt2sf00000gn/T/summary_1774267919999.md, Output=/var/folders/k1/dq2_jmv914sc8n0bdqyt2sf00000gn/T/summary_1774267919999.docx, Cmd=pandoc "/var/folders/k1/dq2_jmv914sc8n0bdqyt2sf00000gn/T/summary_1774267919999.md" -f markdown -t docx -o "/var/folders/k1/dq2_jmv914sc8n0bdqyt2sf00000gn/T/summary_1774267919999.docx"
+Pandoc Success. Stdout: , Stderr: 
+File sent successfully.
+Starting downloadDocx for ID: 1774431717211
+Found summary: 1774431717211 (Type: string)
+Paths: Input=/var/folders/k1/dq2_jmv914sc8n0bdqyt2sf00000gn/T/summary_1774431717211.md, Output=/var/folders/k1/dq2_jmv914sc8n0bdqyt2sf00000gn/T/summary_1774431717211.docx, Cmd=pandoc "/var/folders/k1/dq2_jmv914sc8n0bdqyt2sf00000gn/T/summary_1774431717211.md" -f markdown -t docx -o "/var/folders/k1/dq2_jmv914sc8n0bdqyt2sf00000gn/T/summary_1774431717211.docx"
+Pandoc Success. Stdout: , Stderr: 
+File sent successfully.

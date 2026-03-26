@@ -1,0 +1,11 @@
+node_modules
+dist
+.git
+.env
+npm-debug.log
+docker-compose.yml
+Dockerfile
+.github
+.vscode
+*.pdf
+scripts/temp

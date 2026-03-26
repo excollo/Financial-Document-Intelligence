@@ -1,0 +1,229 @@
+
+> vite_react_shadcn_ts@0.0.0 test:run
+> vitest run src/components/authcomponents/__tests__/LoginForm.test.tsx src/components/authcomponents/__tests__/RegisterForm.test.tsx
+
+
+[1m[46m RUN [49m[22m [36mv4.0.16 [39m[90m/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot[39m
+
+[baseline-browser-mapping] The data in this module is over two months old.  To ensure accurate Baseline data, please update: `npm i baseline-browser-mapping@latest -D`
+Error: useAuth must be used within an AuthProvider
+    at useAuth (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/src/contexts/AuthContext.tsx:40:11)
+    at LoginForm (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/src/components/authcomponents/LoginForm.tsx:31:21)
+    at renderWithHooks (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:15486:18)
+    at mountIndeterminateComponent (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:20103:13)
+    at beginWork (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:21626:16)
+    at HTMLUnknownElement.callCallback (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:4164:14)
+    at HTMLUnknownElement.callTheUserObjectsOperation (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+    at innerInvokeEventListeners (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:360:16)
+    at invokeEventListeners (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:296:3)
+    at HTMLUnknownElementImpl._dispatch (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:243:9)
+Error: useAuth must be used within an AuthProvider
+    at useAuth (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/src/contexts/AuthContext.tsx:40:11)
+    at RegisterForm (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/src/components/authcomponents/RegisterForm.tsx:55:21)
+    at renderWithHooks (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:15486:18)
+    at mountIndeterminateComponent (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:20103:13)
+    at beginWork (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:21626:16)
+    at HTMLUnknownElement.callCallback (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:4164:14)
+    at HTMLUnknownElement.callTheUserObjectsOperation (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+    at innerInvokeEventListeners (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:360:16)
+    at invokeEventListeners (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:296:3)
+    at HTMLUnknownElementImpl._dispatch (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:243:9)
+Error: useAuth must be used within an AuthProvider
+    at useAuth (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/src/contexts/AuthContext.tsx:40:11)
+    at LoginForm (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/src/components/authcomponents/LoginForm.tsx:31:21)
+    at renderWithHooks (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:15486:18)
+    at mountIndeterminateComponent (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:20103:13)
+    at beginWork (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:21626:16)
+    at HTMLUnknownElement.callCallback (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:4164:14)
+    at HTMLUnknownElement.callTheUserObjectsOperation (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+    at innerInvokeEventListeners (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:360:16)
+    at invokeEventListeners (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:296:3)
+    at HTMLUnknownElementImpl._dispatch (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:243:9)
+Error: useAuth must be used within an AuthProvider
+    at useAuth (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/src/contexts/AuthContext.tsx:40:11)
+    at RegisterForm (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/src/components/authcomponents/RegisterForm.tsx:55:21)
+    at renderWithHooks (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:15486:18)
+    at mountIndeterminateComponent (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:20103:13)
+    at beginWork (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:21626:16)
+    at HTMLUnknownElement.callCallback (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:4164:14)
+    at HTMLUnknownElement.callTheUserObjectsOperation (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+    at innerInvokeEventListeners (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:360:16)
+    at invokeEventListeners (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:296:3)
+    at HTMLUnknownElementImpl._dispatch (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:243:9)
+[90mstderr[2m | src/components/authcomponents/__tests__/LoginForm.test.tsx[2m > [22m[2mLoginForm component[2m > [22m[2mrenders login form correctly
+[22m[39mThe above error occurred in the <LoginForm> component:
+
+    at LoginForm (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/src/components/authcomponents/LoginForm.tsx:38:56)
+    at Router (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-router/dist/umd/react-router.development.js:1207:17)
+    at BrowserRouter (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-router-dom/dist/umd/react-router-dom.development.js:695:7)
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://reactjs.org/link/error-boundaries to learn more about error boundaries.
+
+[90mstderr[2m | src/components/authcomponents/__tests__/RegisterForm.test.tsx[2m > [22m[2mRegisterForm component[2m > [22m[2mrenders register form fields
+[22m[39mThe above error occurred in the <RegisterForm> component:
+
+    at RegisterForm (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/src/components/authcomponents/RegisterForm.tsx:56:25)
+    at Router (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-router/dist/umd/react-router.development.js:1207:17)
+    at BrowserRouter (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-router-dom/dist/umd/react-router-dom.development.js:695:7)
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://reactjs.org/link/error-boundaries to learn more about error boundaries.
+
+Error: useAuth must be used within an AuthProvider
+    at useAuth (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/src/contexts/AuthContext.tsx:40:11)
+    at LoginForm (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/src/components/authcomponents/LoginForm.tsx:31:21)
+    at renderWithHooks (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:15486:18)
+    at mountIndeterminateComponent (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:20103:13)
+    at beginWork (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:21626:16)
+    at HTMLUnknownElement.callCallback (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:4164:14)
+    at HTMLUnknownElement.callTheUserObjectsOperation (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+    at innerInvokeEventListeners (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:360:16)
+    at invokeEventListeners (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:296:3)
+    at HTMLUnknownElementImpl._dispatch (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:243:9)
+Error: useAuth must be used within an AuthProvider
+    at useAuth (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/src/contexts/AuthContext.tsx:40:11)
+    at RegisterForm (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/src/components/authcomponents/RegisterForm.tsx:55:21)
+    at renderWithHooks (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:15486:18)
+    at mountIndeterminateComponent (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:20103:13)
+    at beginWork (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:21626:16)
+    at HTMLUnknownElement.callCallback (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:4164:14)
+    at HTMLUnknownElement.callTheUserObjectsOperation (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+    at innerInvokeEventListeners (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:360:16)
+    at invokeEventListeners (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:296:3)
+    at HTMLUnknownElementImpl._dispatch (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:243:9)
+Error: useAuth must be used within an AuthProvider
+    at useAuth (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/src/contexts/AuthContext.tsx:40:11)
+    at LoginForm (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/src/components/authcomponents/LoginForm.tsx:31:21)
+    at renderWithHooks (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:15486:18)
+    at mountIndeterminateComponent (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:20103:13)
+    at beginWork (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:21626:16)
+    at HTMLUnknownElement.callCallback (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:4164:14)
+    at HTMLUnknownElement.callTheUserObjectsOperation (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+    at innerInvokeEventListeners (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:360:16)
+    at invokeEventListeners (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:296:3)
+    at HTMLUnknownElementImpl._dispatch (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:243:9)
+[90mstderr[2m | src/components/authcomponents/__tests__/LoginForm.test.tsx[2m > [22m[2mLoginForm component[2m > [22m[2mshows error message on failed login
+[22m[39mThe above error occurred in the <LoginForm> component:
+
+    at LoginForm (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/src/components/authcomponents/LoginForm.tsx:38:56)
+    at Router (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-router/dist/umd/react-router.development.js:1207:17)
+    at BrowserRouter (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-router-dom/dist/umd/react-router-dom.development.js:695:7)
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://reactjs.org/link/error-boundaries to learn more about error boundaries.
+
+Error: useAuth must be used within an AuthProvider
+    at useAuth (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/src/contexts/AuthContext.tsx:40:11)
+    at RegisterForm (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/src/components/authcomponents/RegisterForm.tsx:55:21)
+    at renderWithHooks (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:15486:18)
+    at mountIndeterminateComponent (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:20103:13)
+    at beginWork (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:21626:16)
+    at HTMLUnknownElement.callCallback (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:4164:14)
+    at HTMLUnknownElement.callTheUserObjectsOperation (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+    at innerInvokeEventListeners (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:360:16)
+    at invokeEventListeners (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:296:3)
+    at HTMLUnknownElementImpl._dispatch (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:243:9)
+[90mstderr[2m | src/components/authcomponents/__tests__/RegisterForm.test.tsx[2m > [22m[2mRegisterForm component[2m > [22m[2mcalls register service with form data
+[22m[39mThe above error occurred in the <RegisterForm> component:
+
+    at RegisterForm (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/src/components/authcomponents/RegisterForm.tsx:56:25)
+    at Router (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-router/dist/umd/react-router.development.js:1207:17)
+    at BrowserRouter (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-router-dom/dist/umd/react-router-dom.development.js:695:7)
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://reactjs.org/link/error-boundaries to learn more about error boundaries.
+
+Error: useAuth must be used within an AuthProvider
+    at useAuth (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/src/contexts/AuthContext.tsx:40:11)
+    at LoginForm (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/src/components/authcomponents/LoginForm.tsx:31:21)
+    at renderWithHooks (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:15486:18)
+    at mountIndeterminateComponent (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:20103:13)
+    at beginWork (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:21626:16)
+    at HTMLUnknownElement.callCallback (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:4164:14)
+    at HTMLUnknownElement.callTheUserObjectsOperation (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+    at innerInvokeEventListeners (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:360:16)
+    at invokeEventListeners (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:296:3)
+    at HTMLUnknownElementImpl._dispatch (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:243:9)
+ [31m❯[39m src/components/authcomponents/__tests__/RegisterForm.test.tsx [2m([22m[2m2 tests[22m[2m | [22m[31m2 failed[39m[2m)[22m[32m 14[2mms[22m[39m
+[31m     [31m×[31m renders register form fields[39m[32m 11[2mms[22m[39m
+[31m     [31m×[31m calls register service with form data[39m[32m 2[2mms[22m[39m
+Error: useAuth must be used within an AuthProvider
+    at useAuth (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/src/contexts/AuthContext.tsx:40:11)
+    at LoginForm (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/src/components/authcomponents/LoginForm.tsx:31:21)
+    at renderWithHooks (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:15486:18)
+    at mountIndeterminateComponent (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:20103:13)
+    at beginWork (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:21626:16)
+    at HTMLUnknownElement.callCallback (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-dom/cjs/react-dom.development.js:4164:14)
+    at HTMLUnknownElement.callTheUserObjectsOperation (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+    at innerInvokeEventListeners (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:360:16)
+    at invokeEventListeners (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:296:3)
+    at HTMLUnknownElementImpl._dispatch (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:243:9)
+[90mstderr[2m | src/components/authcomponents/__tests__/LoginForm.test.tsx[2m > [22m[2mLoginForm component[2m > [22m[2mcalls login service on form submission
+[22m[39mThe above error occurred in the <LoginForm> component:
+
+    at LoginForm (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/src/components/authcomponents/LoginForm.tsx:38:56)
+    at Router (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-router/dist/umd/react-router.development.js:1207:17)
+    at BrowserRouter (/Users/excollodev/Downloads/RHP-Document/smart-rhp-pilot/node_modules/react-router-dom/dist/umd/react-router-dom.development.js:695:7)
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://reactjs.org/link/error-boundaries to learn more about error boundaries.
+
+ [31m❯[39m src/components/authcomponents/__tests__/LoginForm.test.tsx [2m([22m[2m3 tests[22m[2m | [22m[31m3 failed[39m[2m)[22m[32m 15[2mms[22m[39m
+[31m     [31m×[31m renders login form correctly[39m[32m 11[2mms[22m[39m
+[31m     [31m×[31m shows error message on failed login[39m[32m 2[2mms[22m[39m
+[31m     [31m×[31m calls login service on form submission[39m[32m 2[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 5 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m src/components/authcomponents/__tests__/LoginForm.test.tsx[2m > [22mLoginForm component[2m > [22mrenders login form correctly
+[41m[1m FAIL [22m[49m src/components/authcomponents/__tests__/LoginForm.test.tsx[2m > [22mLoginForm component[2m > [22mshows error message on failed login
+[41m[1m FAIL [22m[49m src/components/authcomponents/__tests__/LoginForm.test.tsx[2m > [22mLoginForm component[2m > [22mcalls login service on form submission
+[31m[1mError[22m: useAuth must be used within an AuthProvider[39m
+[36m [2m❯[22m useAuth src/contexts/AuthContext.tsx:[2m40:11[22m[39m
+    [90m 38| [39m  [35mconst[39m context [33m=[39m [34museContext[39m([33mAuthContext[39m)[33m;[39m
+    [90m 39| [39m  [35mif[39m (context [33m===[39m undefined) {
+    [90m 40| [39m    [35mthrow[39m [35mnew[39m [33mError[39m([32m"useAuth must be used within an AuthProvider"[39m)[33m;[39m
+    [90m   | [39m          [31m^[39m
+    [90m 41| [39m  }
+    [90m 42| [39m  [35mreturn[39m context[33m;[39m
+[90m [2m❯[22m LoginForm src/components/authcomponents/LoginForm.tsx:[2m31:21[22m[39m
+[90m [2m❯[22m renderWithHooks node_modules/react-dom/cjs/react-dom.development.js:[2m15486:18[22m[39m
+[90m [2m❯[22m mountIndeterminateComponent node_modules/react-dom/cjs/react-dom.development.js:[2m20103:13[22m[39m
+[90m [2m❯[22m beginWork node_modules/react-dom/cjs/react-dom.development.js:[2m21626:16[22m[39m
+[90m [2m❯[22m beginWork$1 node_modules/react-dom/cjs/react-dom.development.js:[2m27465:14[22m[39m
+[90m [2m❯[22m performUnitOfWork node_modules/react-dom/cjs/react-dom.development.js:[2m26599:12[22m[39m
+[90m [2m❯[22m workLoopSync node_modules/react-dom/cjs/react-dom.development.js:[2m26505:5[22m[39m
+[90m [2m❯[22m renderRootSync node_modules/react-dom/cjs/react-dom.development.js:[2m26473:7[22m[39m
+[90m [2m❯[22m recoverFromConcurrentError node_modules/react-dom/cjs/react-dom.development.js:[2m25889:20[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/components/authcomponents/__tests__/RegisterForm.test.tsx[2m > [22mRegisterForm component[2m > [22mrenders register form fields
+[41m[1m FAIL [22m[49m src/components/authcomponents/__tests__/RegisterForm.test.tsx[2m > [22mRegisterForm component[2m > [22mcalls register service with form data
+[31m[1mError[22m: useAuth must be used within an AuthProvider[39m
+[36m [2m❯[22m useAuth src/contexts/AuthContext.tsx:[2m40:11[22m[39m
+    [90m 38| [39m  [35mconst[39m context [33m=[39m [34museContext[39m([33mAuthContext[39m)[33m;[39m
+    [90m 39| [39m  [35mif[39m (context [33m===[39m undefined) {
+    [90m 40| [39m    [35mthrow[39m [35mnew[39m [33mError[39m([32m"useAuth must be used within an AuthProvider"[39m)[33m;[39m
+    [90m   | [39m          [31m^[39m
+    [90m 41| [39m  }
+    [90m 42| [39m  [35mreturn[39m context[33m;[39m
+[90m [2m❯[22m RegisterForm src/components/authcomponents/RegisterForm.tsx:[2m55:21[22m[39m
+[90m [2m❯[22m renderWithHooks node_modules/react-dom/cjs/react-dom.development.js:[2m15486:18[22m[39m
+[90m [2m❯[22m mountIndeterminateComponent node_modules/react-dom/cjs/react-dom.development.js:[2m20103:13[22m[39m
+[90m [2m❯[22m beginWork node_modules/react-dom/cjs/react-dom.development.js:[2m21626:16[22m[39m
+[90m [2m❯[22m beginWork$1 node_modules/react-dom/cjs/react-dom.development.js:[2m27465:14[22m[39m
+[90m [2m❯[22m performUnitOfWork node_modules/react-dom/cjs/react-dom.development.js:[2m26599:12[22m[39m
+[90m [2m❯[22m workLoopSync node_modules/react-dom/cjs/react-dom.development.js:[2m26505:5[22m[39m
+[90m [2m❯[22m renderRootSync node_modules/react-dom/cjs/react-dom.development.js:[2m26473:7[22m[39m
+[90m [2m❯[22m recoverFromConcurrentError node_modules/react-dom/cjs/react-dom.development.js:[2m25889:20[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m2 failed[39m[22m[90m (2)[39m
+[2m      Tests [22m [1m[31m5 failed[39m[22m[90m (5)[39m
+[2m   Start at [22m 16:08:45
+[2m   Duration [22m 796ms[2m (transform 173ms, setup 191ms, import 354ms, tests 29ms, environment 612ms)[22m
+
