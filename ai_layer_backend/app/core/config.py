@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
     REDIS_PASSWORD: str = ""
+    REDIS_URL: Optional[str] = None # Added for external providers like Upstash
     
     # Celery Configuration
     CELERY_BROKER_URL: str = ""
@@ -43,6 +44,9 @@ class Settings(BaseSettings):
     CELERY_ACCEPT_CONTENT: list = ["json"]
     CELERY_TIMEZONE: str = "Asia/Kolkata"
     CELERY_ENABLE_UTC: bool = False
+    
+    # Azure Application Insights (Logging & Monitoring)
+    API_APPINSIGHTS_CONNECTION_STRING: str = ""
     
     # MongoDB Configuration
     MONGO_URI: str = "mongodb+srv://sonuv:Sonu12345@cluster0.makyp.mongodb.net/"
@@ -110,16 +114,15 @@ class Settings(BaseSettings):
         self.SUMMARY_STATUS_UPDATE_URL = f"{self.NODE_BACKEND_URL}/api/summaries/summary-status/update"
 
         # Auto-configure Redis URLs if not set
+        base_redis_url = self.REDIS_URL
+        if not base_redis_url:
+            redis_password = f":{self.REDIS_PASSWORD}@" if self.REDIS_PASSWORD else ""
+            base_redis_url = f"redis://{redis_password}{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
+
         if not self.CELERY_BROKER_URL:
-            redis_password = f":{self.REDIS_PASSWORD}@" if self.REDIS_PASSWORD else ""
-            self.CELERY_BROKER_URL = (
-                f"redis://{redis_password}{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
-            )
+            self.CELERY_BROKER_URL = base_redis_url
         if not self.CELERY_RESULT_BACKEND:
-            redis_password = f":{self.REDIS_PASSWORD}@" if self.REDIS_PASSWORD else ""
-            self.CELERY_RESULT_BACKEND = (
-                f"redis://{redis_password}{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
-            )
+            self.CELERY_RESULT_BACKEND = base_redis_url
     
     @property
     def is_production(self) -> bool:

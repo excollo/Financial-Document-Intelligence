@@ -390,23 +390,31 @@ class ExtractionService:
                     for p_num in range(start_p, end_p + 1):
                         if p_num > total_pages: break
                         page = pdf.pages[p_num - 1]
+                        
+                        # 1. Page text (Raw Layout)
                         p_text = page.extract_text(layout=True)
                         if p_text:
                             section_text_parts.append(f"\n--- [Page {p_num}] ---\n{p_text}")
+                        
+                        # 2. Page visuals (Screenshots)
                         if p_num in screenshots_urls:
                             section_images.append(screenshots_urls[p_num])
-
-                    # Match with global tables scan
-                    for t in all_tables_storage:
-                        p_start = t["page"]
-                        p_end = t.get("page_end", p_start)
-                        overlap = max(start_p, p_start) <= min(end_p, p_end)
-                        if overlap:
-                            if is_sub and t["subsection"] != sec_name: continue
-                            if not is_sub and t["subsection"] != "": continue
-                            section_text_parts.append(f"\n\n--- [Table: {t['table_heading']}] ---\n{t['markdown']}")
-                            tables_in_this_entry.append(t["table_id"])
-                            if t["table_heading"]: headings_in_this_entry.append(t["table_heading"])
+                            
+                        # 3. Page Tables (High-Fidelity Markdown)
+                        # Injecting tables immediately after their page text ensures they remain 
+                        # in the same or adjacent chunks in Pinecone.
+                        for t in all_tables_storage:
+                            if t["page"] == p_num:
+                                # Apply subsection filters
+                                if is_sub and t.get("subsection") and t["subsection"] != sec_name:
+                                    continue
+                                if not is_sub and t.get("subsection"):
+                                    continue
+                                    
+                                section_text_parts.append(f"\n\n--- [Table: {t['table_heading']}] ---\n{t['markdown']}\n\n")
+                                tables_in_this_entry.append(t["table_id"])
+                                if t["table_heading"]:
+                                    headings_in_this_entry.append(t["table_heading"])
 
                     section_text = "\n".join(section_text_parts)
                     cleaned_section = _clean_text_preserving_tables(section_text)

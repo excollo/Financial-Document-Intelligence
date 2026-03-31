@@ -72,7 +72,7 @@ class MarkdownConverter:
             for inv in processed_investors:
                 shares = inv.get("number_of_equity_shares", 0)
                 pct_value = (shares / total_share_issue) * 100
-                pct_str = f"{pct_value:.10f}".rstrip("0").rstrip(".") + "%"
+                pct_str = f"{pct_value:.2f}%"
                 inv["percentage_of_pre_issue_capital"] = pct_str
                 inv["_calculated_percentage"] = pct_value
 
@@ -705,6 +705,42 @@ class MarkdownConverter:
             print(f"DEBUG: Could not find insertion point for {section_header}, appending at end.")
             insertion_content = f"\n\n---\n\n## {section_label}\n\n{insert_markdown.strip()}\n"
             return full_markdown + insertion_content
+
+
+    def assemble_final_summary(
+        self,
+        sections: Dict[str, str],
+        doc_type: str = "DRHP",
+        company_name: str = "Company"
+    ) -> str:
+        """
+        Assembles all 12 sections into a single markdown document in sequential order.
+        
+        sections: Dictionary containing markdown for each section (e.g. {'sec1_2': '...', 'sec3': '...'})
+        """
+        order = [
+            'sec1_2',    # SECTION I & II
+            'sec3',      # SECTION III
+            'sec4_5',    # SECTION IV & V
+            'sec6',      # SECTION VI
+            'sec7',      # SECTION VII
+            'sec8_9',    # SECTION VIII & IX
+            'sec10',     # SECTION X
+            'sec11_12'   # SECTION XI & XII
+        ]
+        
+        final_md_parts = []
+        
+        # Add Header
+        final_md_parts.append(f"# {doc_type} Summary: {company_name}")
+        
+        for key in order:
+            content = sections.get(key, "").strip()
+            if content:
+                final_md_parts.append(content)
+        
+        # Join with horizontal rules
+        return "\n\n---\n\n".join(final_md_parts)
 
 
 # Singleton instance
