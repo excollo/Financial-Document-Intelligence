@@ -32,6 +32,14 @@ jobs:
 
       - name: Run Node Tests
         run: npm test -- --passWithNoTests
+        env:
+          R2-ACCESS-KEY-ID: dummy-access-key
+          R2-SECRET-ACCESS-KEY: dummy-secret-key
+          R2-BUCKET-NAME: dummy-bucket
+          CLOUDFLARE-URI: https://dummy.cloudflarestorage.com
+          MONGODB-URI: mongodb://localhost:27017/test
+          JWT-SECRET: dummy-jwt-secret
+          JWT-REFRESH-SECRET: dummy-jwt-refresh-secret
 
   # -------------------------------------------------------------
   # 🧪 Test AI Python Backend
