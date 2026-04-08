@@ -90,9 +90,9 @@ jobs:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
           allow-no-subscriptions: true
 
-      # Login to ACR
+      # Login to ACR natively (bypassing subscription discovery)
       - name: Login to ACR
-        run: az acr login --name ${{ env.ACR_NAME }}
+        run: echo '${{ fromJSON(secrets.AZURE_CREDENTIALS).clientSecret }}' | docker login ${{ env.ACR_NAME }}.azurecr.io -u ${{ fromJSON(secrets.AZURE_CREDENTIALS).clientId }} --password-stdin
 
       # 📦 Build & Push Node Backend
       - name: Build Node Backend
