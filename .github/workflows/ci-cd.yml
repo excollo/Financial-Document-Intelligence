@@ -129,7 +129,9 @@ jobs:
           allow-no-subscriptions: true
 
       - name: Install Azure Container Apps Extension
-        run: az extension add --name containerapp --upgrade
+        run: |
+          az extension add --name containerapp --upgrade
+          az config set core.no_registration=true
 
       - name: Set Active Subscription
         run: az account set --subscription 6e6db070-feb7-4437-af65-3337b7083bec
