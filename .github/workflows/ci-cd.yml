@@ -128,29 +128,35 @@ jobs:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
           allow-no-subscriptions: true
 
+      - name: Install Azure Container Apps Extension
+        run: az extension add --name containerapp --upgrade
+
       - name: Set Active Subscription
         run: az account set --subscription 6e6db070-feb7-4437-af65-3337b7083bec
 
       # 🚀 Deploy Node Backend
       - name: Deploy Node Backend
-        uses: azure/container-apps-deploy-action@v1
-        with:
-          resourceGroup: ${{ env.RESOURCE_GROUP }}
-          containerAppName: ${{ github.ref_name == 'main' && 'aca-node-backend-prod' || 'aca-node-backend-dev' }}
-          imageToDeploy: ${{ env.ACR_NAME }}.azurecr.io/node-backend:${{ github.ref_name }}
+        run: |
+          az containerapp update \
+            --name ${{ github.ref_name == 'main' && 'aca-node-backend-prod' || 'aca-node-backend-dev' }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image ${{ env.ACR_NAME }}.azurecr.io/node-backend:${{ github.ref_name }} \
+            --subscription 6e6db070-feb7-4437-af65-3337b7083bec
 
       # 🚀 Deploy AI Backend
       - name: Deploy AI Backend
-        uses: azure/container-apps-deploy-action@v1
-        with:
-          resourceGroup: ${{ env.RESOURCE_GROUP }}
-          containerAppName: ${{ github.ref_name == 'main' && 'aca-ai-api-prod' || 'aca-ai-api-dev' }}
-          imageToDeploy: ${{ env.ACR_NAME }}.azurecr.io/ai-backend:${{ github.ref_name }}
+        run: |
+          az containerapp update \
+            --name ${{ github.ref_name == 'main' && 'aca-ai-api-prod' || 'aca-ai-api-dev' }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image ${{ env.ACR_NAME }}.azurecr.io/ai-backend:${{ github.ref_name }} \
+            --subscription 6e6db070-feb7-4437-af65-3337b7083bec
 
       # 🚀 Deploy AI Worker
       - name: Deploy AI Worker
-        uses: azure/container-apps-deploy-action@v1
-        with:
-          resourceGroup: ${{ env.RESOURCE_GROUP }}
-          containerAppName: ${{ github.ref_name == 'main' && 'aca-ai-worker-prod' || 'aca-ai-worker-dev' }}
-          imageToDeploy: ${{ env.ACR_NAME }}.azurecr.io/ai-backend:${{ github.ref_name }}
+        run: |
+          az containerapp update \
+            --name ${{ github.ref_name == 'main' && 'aca-ai-worker-prod' || 'aca-ai-worker-dev' }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image ${{ env.ACR_NAME }}.azurecr.io/ai-backend:${{ github.ref_name }} \
+            --subscription 6e6db070-feb7-4437-af65-3337b7083bec
