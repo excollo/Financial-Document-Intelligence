@@ -28,7 +28,6 @@ from app.services.summarization.prompts import (
     SUBQUERIES,
     INVESTOR_EXTRACTOR_SYSTEM_PROMPT,
     CAPITAL_HISTORY_EXTRACTOR_SYSTEM_PROMPT,
-    MAIN_SUMMARY_SYSTEM_PROMPT,
     BUSINESS_EXTRACTION_QUERIES,
     BUSINESS_TABLE_EXTRACTOR_SYSTEM_PROMPT,
     AGENT_4_SECTION_I_II_PROMPT,
@@ -37,6 +36,7 @@ from app.services.summarization.prompts import (
     AGENT_7_SECTION_VIII_IX_PROMPT,
     AGENT_8_SECTION_X_PROMPT,
     AGENT_9_SECTION_XI_XII_PROMPT,
+    TARGET_INVESTORS,
 )
 from app.services.summarization.markdown_converter import MarkdownConverter
 from app.services.summarization.research import research_service
@@ -271,6 +271,8 @@ class SummaryPipeline:
     async def _agent_1_investor_extractor(
         self,
         namespace: str,
+        custom_prompt: Optional[str] = None,
+        custom_subqueries: Optional[List[str]] = None,
         index_name: str = None,
         host: str = None,
         metadata_filter: Optional[Dict[str, Any]] = None
@@ -283,14 +285,14 @@ class SummaryPipeline:
         logger.info("Agent 1: Investor Extractor - Starting", namespace=namespace)
         
         # Retrieve context (50 chunks, reranked via Cohere)
-        investor_query = ["Extract complete shareholding pattern, investor list, and capital structure from DRHP"]
+        investor_query = custom_subqueries or ["Extract complete shareholding pattern, investor list, and capital structure from DRHP"]
         context = await self._retrieve_context(
             investor_query,
             namespace,
             index_name,
             host,
-            vector_top_k=8,
-            rerank_top_n=8,
+            vector_top_k=10,
+            rerank_top_n=10,
             metadata_filter=metadata_filter
         )
         
@@ -308,8 +310,8 @@ class SummaryPipeline:
             response = await self.client.chat.completions.create(
                 model="gpt-4.1-mini",
                 messages=[
-                    {"role": "system", "content": INVESTOR_EXTRACTOR_SYSTEM_PROMPT},
-                    {"role": "user", "content": f"Extract investor data from this DRHP context:\n\n{context}"}
+                    {"role": "system", "content": custom_prompt or INVESTOR_EXTRACTOR_SYSTEM_PROMPT},
+                    {"role": "user", "content": f"TARGET INVESTORS TO SEARCH AND MATCH:\n{TARGET_INVESTORS}\n\nExtract investor data and matched target investors from this DRHP context:\n\n{context}"}
                 ],
                 temperature=0.1,
                 max_tokens=8192,
@@ -338,6 +340,8 @@ class SummaryPipeline:
     async def _agent_2_capital_history_extractor(
         self,
         namespace: str,
+        custom_prompt: Optional[str] = None,
+        custom_subqueries: Optional[List[str]] = None,
         index_name: str = None,
         host: str = None,
         metadata_filter: Optional[Dict[str, Any]] = None
@@ -350,14 +354,14 @@ class SummaryPipeline:
         logger.info("Agent 2: Capital History Extractor - Starting", namespace=namespace)
         
         # Retrieve context
-        capital_query = ["Extract complete equity share capital history table and premium rounds from DRHP"]
+        capital_query = custom_subqueries or ["Extract complete equity share capital history table and premium rounds from DRHP"]
         context = await self._retrieve_context(
             capital_query,
             namespace,
             index_name,
             host,
-            vector_top_k=10,
-            rerank_top_n=10,
+            vector_top_k=12,
+            rerank_top_n=12,
             metadata_filter=metadata_filter
         )
         
@@ -375,7 +379,7 @@ class SummaryPipeline:
             response = await self.client.chat.completions.create(
                 model="gpt-4.1-mini",
                 messages=[
-                    {"role": "system", "content": CAPITAL_HISTORY_EXTRACTOR_SYSTEM_PROMPT},
+                    {"role": "system", "content": custom_prompt or CAPITAL_HISTORY_EXTRACTOR_SYSTEM_PROMPT},
                     {"role": "user", "content": f"Extract and summarize share capital from this DRHP context:\n\n{context}"}
                 ],
                 temperature=0.0,
@@ -411,6 +415,8 @@ class SummaryPipeline:
         self,
         namespace: str,
         doc_type: str = "DRHP",
+        custom_prompt: Optional[str] = None,
+        custom_subqueries: Optional[List[str]] = None,
         index_name: str = None,
         host: str = None,
         metadata_filter: Optional[Dict[str, Any]] = None
@@ -418,13 +424,13 @@ class SummaryPipeline:
         """Agent 4: Section I & II Generator"""
         logger.info("Agent 4: Section I & II Starting")
         # SUBQUERIES[0] = Section I, SUBQUERIES[1] = Section II
-        queries = [SUBQUERIES[0], SUBQUERIES[1]]
-        context = await self._retrieve_context(queries, namespace, index_name, host, vector_top_k=15, metadata_filter=metadata_filter)
+        queries = custom_subqueries or [SUBQUERIES[0], SUBQUERIES[1]]
+        context = await self._retrieve_context(queries, namespace, index_name, host, vector_top_k=8, metadata_filter=metadata_filter)
         
         response = await self.client.chat.completions.create(
             model="gpt-4.1-mini",
             messages=[
-                {"role": "system", "content": self._localize_prompt(AGENT_4_SECTION_I_II_PROMPT, doc_type)},
+                {"role": "system", "content": self._localize_prompt(custom_prompt or AGENT_4_SECTION_I_II_PROMPT, doc_type)},
                 {"role": "user", "content": f"Context:\n\n{context}"}
             ],
             temperature=0.1,
@@ -438,6 +444,8 @@ class SummaryPipeline:
         self,
         namespace: str,
         doc_type: str = "DRHP",
+        custom_prompt: Optional[str] = None,
+        custom_subqueries: Optional[List[str]] = None,
         index_name: str = None,
         host: str = None,
         metadata_filter: Optional[Dict[str, Any]] = None
@@ -445,13 +453,31 @@ class SummaryPipeline:
         """Agent 5: Section IV & V Generator"""
         logger.info("Agent 5: Section IV & V Starting")
         # SUBQUERIES[2] = Section IV, SUBQUERIES[3] = Section V
-        queries = [SUBQUERIES[2], SUBQUERIES[3]]
+        queries = custom_subqueries or [SUBQUERIES[2], SUBQUERIES[3]]
         context = await self._retrieve_context(queries, namespace, index_name, host, vector_top_k=15, metadata_filter=metadata_filter)
+        
+        # Add high-fidelity tables from Mongo for Industry/Management
+        job_id = metadata_filter.get("job_id") if metadata_filter else None
+        toc = await self._get_toc(namespace)
+        hi_fi_pages = []
+        for item in toc:
+            title = str(item.get("title", "")).upper()
+            if any(term in title for term in ["INDUSTRY", "MARKET ANALYSIS", "MANAGEMENT", "PROMOTERS"]):
+                hi_fi_pages.append((item.get("page_start", 1), item.get("page_end", 999)))
+        
+        # Retrieval for combined pages
+        hi_fi_tables = ""
+        for pr in hi_fi_pages:
+            tables = await self._retrieve_tables(job_id=job_id, namespace=namespace, page_range=pr, min_cells=4)
+            if tables: hi_fi_tables += f"\n{tables}"
+            
+        if hi_fi_tables:
+            context = f"### MONGODB HIGH-FIDELITY TABLES (INDUSTRY & MANAGEMENT)\n{hi_fi_tables}\n\n{context}"
         
         response = await self.client.chat.completions.create(
             model="gpt-4.1-mini",
             messages=[
-                {"role": "system", "content": self._localize_prompt(AGENT_5_SECTION_IV_V_PROMPT, doc_type)},
+                {"role": "system", "content": self._localize_prompt(custom_prompt or AGENT_5_SECTION_IV_V_PROMPT, doc_type)},
                 {"role": "user", "content": f"Context:\n\n{context}"}
             ],
             temperature=0.1,
@@ -465,6 +491,8 @@ class SummaryPipeline:
         self,
         namespace: str,
         doc_type: str = "DRHP",
+        custom_prompt: Optional[str] = None,
+        custom_subqueries: Optional[List[str]] = None,
         index_name: str = None,
         host: str = None,
         metadata_filter: Optional[Dict[str, Any]] = None
@@ -472,8 +500,8 @@ class SummaryPipeline:
         """Agent 6: Section VII Generator (Financials)"""
         logger.info("Agent 6: Section VII Starting")
         # SUBQUERIES[5] = Section VII
-        queries = [SUBQUERIES[5]]
-        context = await self._retrieve_context(queries, namespace, index_name, host, vector_top_k=20, metadata_filter=metadata_filter)
+        queries = custom_subqueries or [SUBQUERIES[5]]
+        context = await self._retrieve_context(queries, namespace, index_name, host, vector_top_k=12, metadata_filter=metadata_filter)
         
         # Add high-fidelity tables from Mongo for financials
         job_id = metadata_filter.get("job_id") if metadata_filter else None
@@ -484,7 +512,7 @@ class SummaryPipeline:
         response = await self.client.chat.completions.create(
             model="gpt-4.1-mini",
             messages=[
-                {"role": "system", "content": self._localize_prompt(AGENT_6_SECTION_VII_PROMPT, doc_type)},
+                {"role": "system", "content": self._localize_prompt(custom_prompt or AGENT_6_SECTION_VII_PROMPT, doc_type)},
                 {"role": "user", "content": f"Context:\n\n{context}"}
             ],
             temperature=0.0,
@@ -498,6 +526,8 @@ class SummaryPipeline:
         self,
         namespace: str,
         doc_type: str = "DRHP",
+        custom_prompt: Optional[str] = None,
+        custom_subqueries: Optional[List[str]] = None,
         index_name: str = None,
         host: str = None,
         metadata_filter: Optional[Dict[str, Any]] = None
@@ -505,13 +535,13 @@ class SummaryPipeline:
         """Agent 7: Section VIII & IX Generator"""
         logger.info("Agent 7: Section VIII & IX Starting")
         # SUBQUERIES[6] = VIII, SUBQUERIES[7] = IX
-        queries = [SUBQUERIES[6], SUBQUERIES[7]]
-        context = await self._retrieve_context(queries, namespace, index_name, host, vector_top_k=15, metadata_filter=metadata_filter)
+        queries = custom_subqueries or [SUBQUERIES[6], SUBQUERIES[7]]
+        context = await self._retrieve_context(queries, namespace, index_name, host, vector_top_k=12, metadata_filter=metadata_filter)
         
         response = await self.client.chat.completions.create(
             model="gpt-4.1-mini",
             messages=[
-                {"role": "system", "content": self._localize_prompt(AGENT_7_SECTION_VIII_IX_PROMPT, doc_type)},
+                {"role": "system", "content": self._localize_prompt(custom_prompt or AGENT_7_SECTION_VIII_IX_PROMPT, doc_type)},
                 {"role": "user", "content": f"Context:\n\n{context}"}
             ],
             temperature=0.1,
@@ -525,6 +555,8 @@ class SummaryPipeline:
         self,
         namespace: str,
         doc_type: str = "DRHP",
+        custom_prompt: Optional[str] = None,
+        custom_subqueries: Optional[List[str]] = None,
         index_name: str = None,
         host: str = None,
         metadata_filter: Optional[Dict[str, Any]] = None
@@ -532,13 +564,13 @@ class SummaryPipeline:
         """Agent 8: Section X Generator"""
         logger.info("Agent 8: Section X Starting")
         # SUBQUERIES[8] = X
-        queries = [SUBQUERIES[8]]
-        context = await self._retrieve_context(queries, namespace, index_name, host, vector_top_k=15, metadata_filter=metadata_filter)
+        queries = custom_subqueries or [SUBQUERIES[8]]
+        context = await self._retrieve_context(queries, namespace, index_name, host, vector_top_k=10, metadata_filter=metadata_filter)
         
         response = await self.client.chat.completions.create(
             model="gpt-4.1-mini",
             messages=[
-                {"role": "system", "content": self._localize_prompt(AGENT_8_SECTION_X_PROMPT, doc_type)},
+                {"role": "system", "content": self._localize_prompt(custom_prompt or AGENT_8_SECTION_X_PROMPT, doc_type)},
                 {"role": "user", "content": f"Context:\n\n{context}"}
             ],
             temperature=0.1,
@@ -552,6 +584,8 @@ class SummaryPipeline:
         self,
         namespace: str,
         doc_type: str = "DRHP",
+        custom_prompt: Optional[str] = None,
+        custom_subqueries: Optional[List[str]] = None,
         index_name: str = None,
         host: str = None,
         metadata_filter: Optional[Dict[str, Any]] = None
@@ -559,13 +593,13 @@ class SummaryPipeline:
         """Agent 9: Section XI & XII Generator"""
         logger.info("Agent 9: Section XI & XII Starting")
         # SUBQUERIES[9] = XI, SUBQUERIES[10] = XII
-        queries = [SUBQUERIES[9], SUBQUERIES[10]]
-        context = await self._retrieve_context(queries, namespace, index_name, host, vector_top_k=15, metadata_filter=metadata_filter)
+        queries = custom_subqueries or [SUBQUERIES[9], SUBQUERIES[10]]
+        context = await self._retrieve_context(queries, namespace, index_name, host, vector_top_k=10, metadata_filter=metadata_filter)
         
         response = await self.client.chat.completions.create(
             model="gpt-4.1-mini",
             messages=[
-                {"role": "system", "content": self._localize_prompt(AGENT_9_SECTION_XI_XII_PROMPT, doc_type)},
+                {"role": "system", "content": self._localize_prompt(custom_prompt or AGENT_9_SECTION_XI_XII_PROMPT, doc_type)},
                 {"role": "user", "content": f"Context:\n\n{context}"}
             ],
             temperature=0.1,
@@ -616,11 +650,11 @@ class SummaryPipeline:
         page_range = None
         for item in toc:
             title = str(item.get("title", "")).upper()
-            if "OUR BUSINESS" in title or "BUSINESS MODEL" in title:
+            if any(term in title for term in ["OUR BUSINESS", "BUSINESS MODEL", "CAPACITY AND CAPACITY UTILIZATION"]):
                 page_start = item.get("page_start", 1)
                 page_end = item.get("page_end", 999)
                 page_range = (page_start, page_end)
-                logger.info("A-3: Focused high-fidelity extraction for Our Business", page_range=page_range)
+                logger.info("A-3: Focused high-fidelity extraction for Our Business / Capacity", page_range=page_range)
                 break
         
         mongo_tables = await self._retrieve_tables(job_id=job_id, namespace=namespace, page_range=page_range, min_cells=6)
@@ -638,8 +672,8 @@ class SummaryPipeline:
                     namespace,
                     index_name,
                     host,
-                    vector_top_k=10,
-                    rerank_top_n=10,
+                    vector_top_k=12,
+                    rerank_top_n=12,
                     metadata_filter=metadata_filter,
                 )
                 
@@ -794,8 +828,8 @@ class SummaryPipeline:
         adverse_enabled = tenant_config.get("adverse_finding", True)
         
         # Agent 3 (Business) Prompts
-        a3_prompt = tenant_config.get("agent3_prompt") or BUSINESS_TABLE_EXTRACTOR_SYSTEM_PROMPT
-        a3_subqueries = tenant_config.get("agent3_subqueries", []) or []
+        a3_prompt = BUSINESS_TABLE_EXTRACTOR_SYSTEM_PROMPT
+        a3_subqueries = [] # Force fallback to BUSINESS_EXTRACTION_QUERIES from prompts.py
         if doc_type == "RHP":
             a3_prompt = self._localize_prompt(a3_prompt, "RHP")
 
@@ -803,15 +837,60 @@ class SummaryPipeline:
             # PHASE 1: Parallel Data Extraction and Specialized Generation
             logger.info("Phase 1: Multi-Agent Parallel Processing (A1 - A9)")
 
-            investor_task = self._agent_1_investor_extractor(namespace, index_name, host, metadata_filter)
-            capital_task = self._agent_2_capital_history_extractor(namespace, index_name, host, metadata_filter)
-            sec3_task = self._agent_3_business_table_extractor(namespace, a3_prompt, a3_subqueries, index_name, host, metadata_filter)
-            sec1_2_task = self._agent_4_generator(namespace, doc_type, index_name, host, metadata_filter)
-            sec4_5_task = self._agent_5_generator(namespace, doc_type, index_name, host, metadata_filter)
-            sec7_task = self._agent_6_generator(namespace, doc_type, index_name, host, metadata_filter)
-            sec8_9_task = self._agent_7_generator(namespace, doc_type, index_name, host, metadata_filter)
-            sec10_task = self._agent_8_generator(namespace, doc_type, index_name, host, metadata_filter)
-            sec11_12_task = self._agent_9_generator(namespace, doc_type, index_name, host, metadata_filter)
+            investor_task = self._agent_1_investor_extractor(
+                namespace, 
+                tenant_config.get("agent1_prompt"), 
+                tenant_config.get("agent1_subqueries"), 
+                index_name, host, metadata_filter
+            )
+            capital_task = self._agent_2_capital_history_extractor(
+                namespace, 
+                tenant_config.get("agent2_prompt"), 
+                tenant_config.get("agent2_subqueries"), 
+                index_name, host, metadata_filter
+            )
+            sec3_task = self._agent_3_business_table_extractor(
+                namespace, 
+                tenant_config.get("agent3_prompt", a3_prompt), 
+                tenant_config.get("agent3_subqueries", []), 
+                index_name, host, metadata_filter
+            )
+            sec1_2_task = self._agent_4_generator(
+                namespace, doc_type, 
+                tenant_config.get("agent4_prompt"), 
+                tenant_config.get("agent4_subqueries"), 
+                index_name, host, metadata_filter
+            )
+            sec4_5_task = self._agent_5_generator(
+                namespace, doc_type, 
+                tenant_config.get("agent5_prompt"), 
+                tenant_config.get("agent5_subqueries"), 
+                index_name, host, metadata_filter
+            )
+            sec7_task = self._agent_6_generator(
+                namespace, doc_type, 
+                tenant_config.get("agent6_prompt"), 
+                tenant_config.get("agent6_subqueries"), 
+                index_name, host, metadata_filter
+            )
+            sec8_9_task = self._agent_7_generator(
+                namespace, doc_type, 
+                tenant_config.get("agent7_prompt"), 
+                tenant_config.get("agent7_subqueries"), 
+                index_name, host, metadata_filter
+            )
+            sec10_task = self._agent_8_generator(
+                namespace, doc_type, 
+                tenant_config.get("agent8_prompt"), 
+                tenant_config.get("agent8_subqueries"), 
+                index_name, host, metadata_filter
+            )
+            sec11_12_task = self._agent_9_generator(
+                namespace, doc_type, 
+                tenant_config.get("agent9_prompt"), 
+                tenant_config.get("agent9_subqueries"), 
+                index_name, host, metadata_filter
+            )
 
             (
                 investor_json, 

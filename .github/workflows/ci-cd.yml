@@ -1,60 +1,83 @@
-name: CI/CD Pipeline
+name: Azure Deployment Pipeline
 
 on:
   push:
-    branches: [main, develop, sandbox]
-  pull_request:
-    branches: [main, develop, sandbox]
+    branches: [main, develop]
+  workflow_dispatch:
+
+env:
+  ACR_NAME: drhpacr
+  RESOURCE_GROUP: DRHP-summarizer
 
 jobs:
   # -------------------------------------------------------------
-  # Build and Test Job
+  # Build and Push Backend Images
   # -------------------------------------------------------------
-  build-and-test:
+  build-and-push:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      # 1. Build Frontend Image (Nginx based)
-      - name: Build Frontend
-        uses: docker/build-push-action@v5
+      # Login to Azure
+      - name: Azure Login
+        uses: azure/login@v1
         with:
-          context: .
-          target: frontend
-          tags: excollo/frontend:${{ github.ref_name }}
-          push: false # Set to true and add registry login if needed
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # 2. Build Node.js Backend Image
+      # Login to ACR
+      - name: Login to ACR
+        run: az acr login --name ${{ env.ACR_NAME }}
+
+      # 📦 Build & Push Node Backend
       - name: Build Node Backend
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          target: node-backend
-          tags: excollo/node-backend:${{ github.ref_name }}
-          push: false # Set to true and add registry login if needed
+        run: |
+          cd node_backend
+          docker build --platform linux/amd64 -t ${{ env.ACR_NAME }}.azurecr.io/node-backend:${{ github.ref_name }} --target node-backend .
+          docker push ${{ env.ACR_NAME }}.azurecr.io/node-backend:${{ github.ref_name }}
 
-      # 3. Build AI Python Backend Image
+      # 📦 Build & Push AI Backend
       - name: Build AI Backend
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          target: ai-backend
-          tags: excollo/ai-backend:${{ github.ref_name }}
-          push: false # Set to true and add registry login if needed
+        run: |
+          cd ai_layer_backend
+          docker build --platform linux/amd64 -t ${{ env.ACR_NAME }}.azurecr.io/ai-backend:${{ github.ref_name }} --target ai-backend .
+          docker push ${{ env.ACR_NAME }}.azurecr.io/ai-backend:${{ github.ref_name }}
 
   # -------------------------------------------------------------
-  # Deployment Job (Placeholder)
+  # Deploy to Azure Container Apps
   # -------------------------------------------------------------
   deploy:
-    needs: build-and-test
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    needs: build-and-push
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy Strategy
-        run: |
-          echo "Deploying to ${{ github.ref_name }} environment..."
-          # Add your deployment logic here (e.g., SSH to server, K8s update, AWS ECS, etc.)
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      # 🚀 Deploy Node Backend (Logic for main vs develop)
+      - name: Deploy Node Backend
+        uses: azure/container-apps-deploy-action@v1
+        with:
+          resourceGroup: ${{ env.RESOURCE_GROUP }}
+          containerAppName: ${{ github.ref_name == 'main' && 'aca-node-backend-prod' || 'aca-node-backend-dev' }}
+          imageToDeploy: ${{ env.ACR_NAME }}.azurecr.io/node-backend:${{ github.ref_name }}
+
+      # 🚀 Deploy AI Backend
+      - name: Deploy AI Backend
+        uses: azure/container-apps-deploy-action@v1
+        with:
+          resourceGroup: ${{ env.RESOURCE_GROUP }}
+          containerAppName: ${{ github.ref_name == 'main' && 'aca-ai-api-prod' || 'aca-ai-api-dev' }}
+          imageToDeploy: ${{ env.ACR_NAME }}.azurecr.io/ai-backend:${{ github.ref_name }}
+
+      # 🚀 Deploy AI Worker
+      - name: Deploy AI Worker
+        uses: azure/container-apps-deploy-action@v1
+        with:
+          resourceGroup: ${{ env.RESOURCE_GROUP }}
+          containerAppName: ${{ github.ref_name == 'main' && 'aca-ai-worker-prod' || 'aca-ai-worker-dev' }}
+          imageToDeploy: ${{ env.ACR_NAME }}.azurecr.io/ai-backend:${{ github.ref_name }}

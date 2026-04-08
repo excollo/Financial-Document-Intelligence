@@ -4,6 +4,7 @@ Driven by the SopConfig provided in the JobContext.
 """
 import asyncio
 import traceback
+import time
 from typing import Dict, Any, List, Optional
 from app.workers.job_context import JobContext
 from app.services.s3 import s3_service
@@ -100,9 +101,39 @@ class PipelineOrchestrator:
         if not file_content:
             raise FileNotFoundError(f"Could not download PDF from S3: {self.ctx.s3_input_key}")
 
-        logger.info("Extracting all sections from PDF", job_id=self.ctx.job_id)
+        logger.info("Extracting all sections and tables from PDF (Parallel)", job_id=self.ctx.job_id)
+        
+        # Callback to save tables to MongoDB as they are extracted
+        async def table_save_callback(tables: List[Dict[str, Any]]):
+            try:
+                db = mongodb.db
+                if db is None:
+                    logger.error("MongoDB not connected in table_save_callback")
+                    return
+                
+                collection = db.get_collection("extraction_results")
+                # Add job_id, tenant_id and filename to each table record for cross-service compatibility
+                for t in tables:
+                    t["job_id"] = self.ctx.job_id
+                    t["tenant_id"] = self.ctx.tenant_id
+                    t["filename"] = self.ctx.document_name
+                    t["created_at"] = time.time()
+                
+                if tables:
+                    await collection.insert_many(tables)
+                    logger.info(f"Buffered {len(tables)} tables to MongoDB (extraction_results)", job_id=self.ctx.job_id)
+            except Exception as e:
+                logger.error(f"Failed to stream tables to MongoDB: {e}", job_id=self.ctx.job_id)
+
         # Uses the existing extraction_service to get the basic section partitions from the PDF
-        self.pdf_sections = extraction_service.extract_sections_from_pdf(file_content)
+        # Note: Now awaited to fix the coroutine bug.
+        result = await extraction_service.extract_sections_from_pdf(
+            file_content, 
+            job_id=self.ctx.job_id,
+            table_callback=table_save_callback
+        )
+        
+        self.pdf_sections = result.get("sections", [])
         
         if not self.pdf_sections:
             raise ValueError("PDF extraction yielded no sections. Check TOC parsing.")
@@ -165,7 +196,10 @@ class PipelineOrchestrator:
         
         # 1. Fetch all section results from MongoDB for this job
         try:
-            db = mongodb.get_database()
+            db = mongodb.db
+            if db is None:
+                raise RuntimeError("MongoDB not connected during output assembly")
+            
             collection = db.get_collection("sectionresults")
             
             cursor = collection.find({"job_id": self.ctx.job_id})

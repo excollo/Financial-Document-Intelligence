@@ -46,16 +46,34 @@ class EmbeddingService:
     async def embed_chunks(self, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
         Generate embeddings for text chunks.
+        Runs the blocking OpenAI call in a thread pool executor to avoid
+        blocking the event loop (was the #2 latency bottleneck).
         """
+        import asyncio
+        import time
         texts = [chunk["chunk_text"] for chunk in chunks]
-        # langchain embed_documents is synchronous, but we can call it here
-        embeddings = self.generate_embeddings_batch(texts)
+        
+        t0 = time.time()
+        loop = asyncio.get_event_loop()
+        # Run synchronous embedding in thread pool so event loop stays free
+        embeddings = await loop.run_in_executor(
+            None,  # default ThreadPoolExecutor
+            self.generate_embeddings_batch,
+            texts
+        )
+        elapsed = time.time() - t0
+        logger.info(
+            "Chunks embedded",
+            chunk_count=len(chunks),
+            embedding_seconds=round(elapsed, 2),
+            tokens_approx=sum(len(t.split()) for t in texts)
+        )
         
         for chunk, embedding in zip(chunks, embeddings):
             chunk["embedding"] = embedding
         
-        logger.info("Chunks embedded", chunk_count=len(chunks))
         return chunks
+
 
     async def embed_text(self, text: str) -> List[float]:
         """

@@ -3,18 +3,30 @@ Enhanced Multi-Engine Document Extraction Service.
 Matches the architecture diagram:
   - pdfplumber: Full text & section mapping
   - Camelot: Lattice + Stream table extraction (High-fidelity)
-  - pdf2image: Screenshot capture for visuals/charts (Stored in S3)
 """
 import io
 import re
 import tempfile
+import uuid
+import sys
 import os
 import asyncio
-import uuid
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional, Tuple, Callable
+
+# --- MULTIPROCESSING PATH FIX ---
+# On macOS ('spawn' mode), child processes don't inherit the parent's sys.path.
+# We must ensure the project root (ai_layer_backend) is in PYTHONPATH.
+_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if _root not in sys.path:
+    sys.path.insert(0, _root)
+# Propagate to children via environment variable
+os.environ["PYTHONPATH"] = _root + os.pathsep + os.environ.get("PYTHONPATH", "")
+
 import pdfplumber
 import camelot
-from pdf2image import convert_from_path
+import concurrent.futures
+from concurrent.futures import ProcessPoolExecutor
+import multiprocessing
 from app.core.logging import get_logger
 from app.services.s3 import s3_service
 
@@ -30,38 +42,76 @@ SUBSECTION_PREFIX_PATTERN = re.compile(r"^[A-Z][a-z]+(?:\s[A-Z][a-z]+)*", re.UNI
 
 
 def _to_markdown_table(rows: List[List[str]]) -> str:
-    """Safely convert a grid of strings to Markdown table format with full columns and rows."""
+    """
+    Safely convert a grid of strings to Markdown table format with full columns and rows.
+    Includes advanced Multi-Level Header Merging for financial tables.
+    """
     if not rows or not any(rows):
         return ""
     
-    # Escape pipe characters and normalize newlines
+    # 1. Cleaning and normalization
     clean_rows = []
     for row in rows:
         if not any(row): continue
         clean_row = []
         for c in row:
-            if c is None:
-                clean_row.append("")
+            if c is None: clean_row.append("")
             else:
                 s = str(c).replace("|", "\\|").replace("\n", " ").strip()
                 clean_row.append(s)
         clean_rows.append(clean_row)
         
-    if not clean_rows:
-        return ""
+    if not clean_rows: return ""
     
-    # Calculate max columns
+    # 2. Alignment
     max_cols = max(len(row) for row in clean_rows)
-    
-    # Ensure all rows have the same number of columns
     for row in clean_rows:
         while len(row) < max_cols:
             row.append("")
+
+    # 3. ADVANCED: Multi-Level Header Detection & Merging
+    # If the first row has many empty columns, it's likely a parent header row (e.g. "Fiscal 2024" covering 2 cols)
+    final_header = []
+    start_data_idx = 1
     
-    header = "| " + " | ".join(clean_rows[0]) + " |"
-    sep = "| " + " | ".join(["---"] * max_cols) + " |"
-    body = "\n".join("| " + " | ".join(row) + " |" for row in clean_rows[1:])
-    return "\n".join(filter(None, [header, sep, body]))
+    if len(clean_rows) > 1:
+        row0 = clean_rows[0]
+        row1 = clean_rows[1]
+        
+        # Heuristic: If row0 has trailing/internal empty cells next to labels, it's a multi-level header
+        empty_count = row0.count("")
+        has_numeric_r0 = any(re.search(r'\d', str(c)) for c in row0 if str(c).upper() not in ["2022", "2023", "2024", "2025"]) 
+        
+        if empty_count > (max_cols / 4) and not has_numeric_r0:
+            # Merging Strategy: Forward-fill the parent headers and append the child sub-headers
+            merged_header = []
+            curr_parent = ""
+            for i in range(max_cols):
+                parent = row0[i] if i < len(row0) else ""
+                child = row1[i] if i < len(row1) else ""
+                
+                if parent: curr_parent = parent
+                
+                if curr_parent and child and curr_parent != child:
+                    merged_header.append(f"{curr_parent} ({child})")
+                elif curr_parent:
+                    merged_header.append(curr_parent)
+                else:
+                    merged_header.append(child)
+            
+            final_header = merged_header
+            start_data_idx = 2
+        else:
+            final_header = row0
+    else:
+        final_header = clean_rows[0]
+
+    # 4. Final MDN Construction
+    header_str = "| " + " | ".join(final_header) + " |"
+    sep_str = "| " + " | ".join(["---"] * max_cols) + " |"
+    body_str = "\n".join("| " + " | ".join(row) + " |" for row in clean_rows[start_data_idx:])
+    
+    return "\n".join(filter(None, [header_str, sep_str, body_str]))
 
 
 def _extract_toc_mapping(pdf) -> List[Dict[str, Any]]:
@@ -202,11 +252,68 @@ def _clean_text_preserving_tables(text: str) -> str:
     return "\n".join(cleaned_lines).strip()
 
 
+def _camelot_worker(pdf_path: str, pages_str: str, flavor: str, edge_tol: int, batch_start: int, batch_end: int) -> Dict[str, Any]:
+    """Isolated worker for Camelot to prevent memory leaks and speed up extraction."""
+    import camelot
+    try:
+        # Each worker process gets its own Ghostscript instance via Camelot
+        tables = camelot.read_pdf(pdf_path, pages=pages_str, flavor=flavor, edge_tol=edge_tol)
+        batch_data = []
+        for t in tables:
+            batch_data.append({
+                "local_page": t.page,
+                "df_values": t.df.values.tolist(),
+                "bbox": t._bbox
+            })
+        return {"batch_start": batch_start, "batch_end": batch_end, "tables": batch_data}
+    except Exception as e:
+        return {"batch_start": batch_start, "batch_end": batch_end, "error": str(e), "tables": []}
+
+
+def _worker_init(root_path: str):
+    """Initializer to ensure child processes have the correct path."""
+    import sys
+    import os
+    if root_path not in sys.path:
+        sys.path.insert(0, root_path)
+    os.environ["PYTHONPATH"] = root_path + os.pathsep + os.environ.get("PYTHONPATH", "")
+
+
 class ExtractionService:
     """
     Service for multi-engine document extraction.
     Ensures Section IV and Tables are captured correctly.
     """
+
+    def _pdfplumber_fallback(self, pdf_path: str, start: int, end: int) -> List[Dict[str, Any]]:
+        """Fallback table extraction using pdfplumber when Camelot fails."""
+        import pdfplumber
+        tables_data = []
+        try:
+            with pdfplumber.open(pdf_path) as pdf:
+                # Iterate through requested pages
+                for p_num in range(start, end + 1):
+                    if p_num > len(pdf.pages): break
+                    page = pdf.pages[p_num - 1]
+                    h = page.height
+                    
+                    found = page.find_tables()
+                    for t in found:
+                        # Convert plumber bbox (x0, top, x1, bottom) to camelot-style (x0, y0, x1, y1)
+                        # Camelot y1 is plumber top, y0 is plumber bottom
+                        x0, top, x1, btm = t.bbox
+                        # Camelot coors are from btm up
+                        camelot_bbox = (x0, h - btm, x1, h - top)
+                        
+                        tables_data.append({
+                            "local_page": p_num - start + 1,
+                            "df_values": t.extract(),
+                            "bbox": camelot_bbox
+                        })
+            return tables_data
+        except Exception as e:
+            logger.error(f"pdfplumber fallback failed: {str(e)}")
+            return []
 
     def _get_table_heading(self, page_plumber, camelot_table) -> str:
         """Heuristic to find a table heading (text in a small box strictly above the table)."""
@@ -278,8 +385,7 @@ class ExtractionService:
         """
         Main multi-engine extraction flow.
         1. Global Table Extraction (Every page).
-        2. Visual references capture.
-        3. Text extraction & metadata mapping.
+        2. Text extraction & metadata mapping.
         """
         job_id = job_id or str(uuid.uuid4())
         temp_path = None
@@ -290,59 +396,131 @@ class ExtractionService:
 
             all_tables_storage = []
             
-            # --- 1. Global Table Extraction (High-Fidelity) ---
-            # Extract total page count first
+            # --- 1. Global Table Extraction (Parallelized) ---
+            # Extract total page count and TOC first
             with pdfplumber.open(temp_path) as pdf:
                 toc_map = provided_toc or _extract_toc_mapping(pdf)
                 total_pages = len(pdf.pages)
+            
+            # Identify Priority Pages (OUR BUSINESS, CAPITAL STRUCTURE, FINANCIAL INFORMATION)
+            priority_pages = set()
+            priority_keywords = ["OUR BUSINESS", "CAPITAL STRUCTURE", "FINANCIAL INFORMATION"]
+            for entry in toc_map:
+                e_name = entry.get("name", "").upper()
+                if any(kw in e_name for kw in priority_keywords):
+                    for p in range(entry["start_page"], entry["end_page"] + 1):
+                        priority_pages.add(p)
+
+            logger.info("Starting Parallel Global Table Scan", job_id=job_id, pages=total_pages, priority_pages=len(priority_pages))
+            
+            all_tables_storage = []
+            max_workers = min(4, multiprocessing.cpu_count()) 
+            
+            # --- MULTIPROCESSING CONTEXT ---
+            # On macOS, 'spawn' often fails to find the 'app' package in child processes.
+            # 'fork' is used here to ensure the child inherits the parent's sys.path and environment.
+            import multiprocessing as mp
+            try:
+                # Use fork on macOS for path inheritance; spawn on others for safety
+                method = "fork" if sys.platform == "darwin" else "spawn"
+                ctx = mp.get_context(method)
+            except Exception:
+                ctx = mp.get_context("spawn")
+            
+            with ProcessPoolExecutor(
+                max_workers=max_workers, 
+                mp_context=ctx,
+                initializer=_worker_init,
+                initargs=(_root,)
+            ) as executor:
+                loop = asyncio.get_event_loop()
+                futures = []
                 
-            logger.info("Starting Global Table Scan", job_id=job_id, pages=total_pages)
-
-            # Process in small chunks to avoid memory bloat and provide early storage
-            for batch_start in range(1, total_pages + 1, 20):
-                batch_end = min(batch_start + 19, total_pages)
-                try:
-                    logger.info(f"Camelot Batch: {batch_start}-{batch_end}")
-                    tables = camelot.read_pdf(temp_path, pages=f"{batch_start}-{batch_end}", flavor="stream", edge_tol=100)
+                # Setup batches (40 pages each)
+                step = 40
+                batches = []
+                for batch_start in range(1, total_pages + 1, step):
+                    batch_end = min(batch_start + step - 1, total_pages)
+                    batch_pages = set(range(batch_start, batch_end + 1))
+                    is_prio = not batch_pages.isdisjoint(priority_pages)
+                    batches.append((batch_start, batch_end, is_prio))
+                
+                # Re-order: Priority batches first (Stable sort keeps chronological order within groups)
+                batches.sort(key=lambda x: x[2], reverse=True)
+                
+                for b_start, b_end, is_prio in batches:
+                    pages_str = f"{b_start}-{b_end}"
+                    if is_prio:
+                        logger.info(f"Queuing PRIORITY Camelot Batch: {pages_str}", job_id=job_id)
+                    else:
+                        logger.info(f"Queuing Regular Camelot Batch: {pages_str}", job_id=job_id)
                     
-                    batch_tables = []
-                    # Isolated pdfplumber handle for this batch header scan
-                    with pdfplumber.open(temp_path) as current_pdf:
-                        for idx, table in enumerate(tables):
-                            table_df = table.df
-                            table_md = _to_markdown_table(table_df.values.tolist())
-                            if not table_md or len(table_df) < 2: continue
-                            
-                            global_page = batch_start + table.page - 1
-                            table_page_plumber = current_pdf.pages[global_page - 1]
-                            table_heading = self._get_table_heading(table_page_plumber, table)
-                            
-                            sec, sub, r_str = self._find_toc_entry_for_page(global_page, toc_map)
-                            
-                            table_metadata = {
-                                "table_id": str(uuid.uuid4()),
-                                "section": sec or "General",
-                                "subsection": sub or "",
-                                "subsection_range": r_str,
-                                "table_heading": table_heading,
-                                "page": global_page,
-                                "markdown": table_md,
-                                "headers": table_df.values.tolist()[0] if len(table_df) > 0 else []
-                            }
-                            batch_tables.append(table_metadata)
+                    futures.append(loop.run_in_executor(
+                        executor, 
+                        _camelot_worker, 
+                        temp_path, 
+                        pages_str, 
+                        "stream", 
+                        100, 
+                        b_start,
+                        b_end
+                    ))
 
-                    # --- Early Storage Callback (Streaming) ---
-                    if table_callback and batch_tables:
-                        await table_callback(batch_tables)
-                        logger.info(f"Streamed {len(batch_tables)} tables to database from batch {batch_start}")
-                    
-                    all_tables_storage.extend(batch_tables)
+                # Collect and post-process
+                for future in asyncio.as_completed(futures):
+                    try:
+                        result = await future
+                        b_start = result.get("batch_start")
+                        b_end = result.get("batch_end")
+                        b_err = result.get("error")
+                        b_tables_data = result.get("tables", [])
+                        
+                        if b_err:
+                            logger.warning(f"Batch {b_start} Camelot failed: {b_err}. Falling back to pdfplumber.")
+                            b_tables_data = self._pdfplumber_fallback(temp_path, b_start, b_end)
 
-                except Exception as e:
-                    logger.warning(f"Camelot batch {batch_start} failed: {str(e)}")
+                        batch_tables = []
+                        # Open pdfplumber once per batch for header lookup
+                        with pdfplumber.open(temp_path) as current_pdf:
+                            for t_data in b_tables_data:
+                                table_df_vals = t_data["df_values"]
+                                t_md = _to_markdown_table(table_df_vals)
+                                if not t_md or len(table_df_vals) < 2: continue
+                                
+                                global_p = b_start + t_data["local_page"] - 1
+                                if global_p > total_pages: continue
+                                
+                                # Create dummy object for header lookup
+                                class MockTable:
+                                    def __init__(self, bbox): self._bbox = bbox
+                                
+                                t_heading = self._get_table_heading(current_pdf.pages[global_p - 1], MockTable(t_data["bbox"]))
+                                sec, sub, r_str = self._find_toc_entry_for_page(global_p, toc_map)
+                                
+                                table_metadata = {
+                                    "table_id": str(uuid.uuid4()),
+                                    "section": sec or "General",
+                                    "subsection": sub or "",
+                                    "subsection_range": r_str,
+                                    "table_heading": t_heading,
+                                    "page": global_p,
+                                    "markdown": t_md,
+                                    "headers": table_df_vals[0] if table_df_vals else []
+                                }
+                                batch_tables.append(table_metadata)
 
-            # --- 1b. Table Stitching (Merge sequential tables) ---
+                        if table_callback and batch_tables:
+                            await table_callback(batch_tables)
+                            logger.info(f"Streamed {len(batch_tables)} tables for batch starting {b_start}")
+                        
+                        all_tables_storage.extend(batch_tables)
+
+                    except Exception as e:
+                        logger.error(f"Error in parallel batch processing: {str(e)}", exc_info=True)
+
+            # --- 1b. Table Stitching ---
             if all_tables_storage:
+                all_tables_storage.sort(key=lambda x: x["page"])
                 stitched = []
                 curr = all_tables_storage[0]
                 for next_t in all_tables_storage[1:]:
@@ -360,21 +538,8 @@ class ExtractionService:
                 # If we stitched, we might want to re-save or update Mongo?
                 # For now, summary pipeline can handle it from these results.
 
-            # --- 2. Screenshots & Text Extraction ---
+            # --- 2. Text Extraction ---
             with pdfplumber.open(temp_path) as pdf:
-                screenshots_urls = {}
-                try:
-                    images = convert_from_path(temp_path, dpi=200, first_page=1, last_page=min(50, total_pages))
-                    for i, img in enumerate(images):
-                        p_num = i + 1
-                        with io.BytesIO() as out:
-                            img.save(out, format="PNG")
-                            s3_key = f"visuals/{job_id}/page_{p_num}.png"
-                            if await s3_service.upload_file(out.getvalue(), s3_key, "image/png"):
-                                screenshots_urls[p_num] = s3_service.get_public_url(s3_key)
-                except Exception as ex_img:
-                    logger.warning(f"Screenshots failed: {str(ex_img)}")
-
                 processed_sections = []
                 for entry in toc_map:
                     sec_name = entry["name"]
@@ -383,7 +548,6 @@ class ExtractionService:
                     is_sub = (entry["type"] == "subsection")
                     
                     section_text_parts = []
-                    section_images = []
                     tables_in_this_entry = []
                     headings_in_this_entry = []
                     
@@ -396,11 +560,9 @@ class ExtractionService:
                         if p_text:
                             section_text_parts.append(f"\n--- [Page {p_num}] ---\n{p_text}")
                         
-                        # 2. Page visuals (Screenshots)
-                        if p_num in screenshots_urls:
-                            section_images.append(screenshots_urls[p_num])
+
                             
-                        # 3. Page Tables (High-Fidelity Markdown)
+                        # 2. Page Tables (High-Fidelity Markdown)
                         # Injecting tables immediately after their page text ensures they remain 
                         # in the same or adjacent chunks in Pinecone.
                         for t in all_tables_storage:
@@ -424,7 +586,6 @@ class ExtractionService:
                             "subsectionName": sec_name if is_sub else "",
                             "sectionStart&End": entry["range_str"],
                             "text": cleaned_section,
-                            "visual_references": section_images,
                             "table_count": len(tables_in_this_entry),
                             "table_headings": ", ".join(headings_in_this_entry) if headings_in_this_entry else ""
                         })

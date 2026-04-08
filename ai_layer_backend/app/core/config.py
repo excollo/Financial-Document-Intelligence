@@ -14,8 +14,10 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
-        case_sensitive=True,
-        extra="ignore"
+        case_sensitive=False,  # Environment variables are usually case-insensitive
+        extra="ignore",
+        alias_generator=lambda s: s.replace("_", "-"),
+        populate_by_name=True  # Allows using either underscored or hyphenated names
     )
     
     # Environment
@@ -49,8 +51,8 @@ class Settings(BaseSettings):
     API_APPINSIGHTS_CONNECTION_STRING: str = ""
     
     # MongoDB Configuration
-    MONGO_URI: str = "mongodb+srv://sonuv:Sonu12345@cluster0.makyp.mongodb.net/"
-    MONGO_DB_NAME: str = "pdf-summarizer"
+    MONGO_URI: str = ""
+    MONGO_DB_NAME: str = ""
     
     # Logging
     LOG_LEVEL: str = "INFO"
@@ -68,11 +70,11 @@ class Settings(BaseSettings):
     
     # Pinecone
     PINECONE_API_KEY: str = ""
-    PINECONE_ENVIRONMENT: str = "us-east-1"
+    PINECONE_ENVIRONMENT: str = ""
     
     # Pinecone Index settings (will be overridden by .env if provided)
-    PINECONE_INDEX: str ="drhp-test" #"drhp-summarizer"
-    PINECONE_INDEX_HOST: str ="https://drhp-test-w5m6qxe.svc.aped-4627-b74a.pinecone.io"    # "https://drhp-summarizer-y8firn8.svc.aped-4627-b74a.pinecone.io"
+    PINECONE_INDEX: str = ""
+    PINECONE_INDEX_HOST: str = ""
     
     PERPLEXITY_API_KEY: Optional[str] = None
     COHERE_API_KEY: Optional[str] = None
@@ -82,15 +84,32 @@ class Settings(BaseSettings):
     
     # Internal authentication (Node <-> Python)
     INTERNAL_SECRET: str = ""  # Shared secret for internal API calls
-    NODE_BACKEND_URL: str = "http://localhost:5000"  # Node.js backend base URL
+    NODE_BACKEND_URL: str = "http://127.0.0.1:5000"  # Node.js backend base URL
     
-    # Backend callback URLs (initialized in __init__)
-    BACKEND_STATUS_URL: str = ""
-    REPORT_CREATE_URL: str = ""
-    REPORT_STATUS_UPDATE_URL: str = ""
-    CHAT_STATUS_UPDATE_URL: str = ""
-    SUMMARY_CREATE_URL: str = ""
-    SUMMARY_STATUS_UPDATE_URL: str = ""
+    # Backend callback URLs (Properties to ensure they are always derived from NODE_BACKEND_URL)
+    @property
+    def BACKEND_STATUS_URL(self) -> str:
+        return f"{self.NODE_BACKEND_URL}/api/documents/upload-status/update"
+    
+    @property
+    def REPORT_CREATE_URL(self) -> str:
+        return f"{self.NODE_BACKEND_URL}/api/reports/create-report"
+    
+    @property
+    def REPORT_STATUS_UPDATE_URL(self) -> str:
+        return f"{self.NODE_BACKEND_URL}/api/reports/report-status/update"
+    
+    @property
+    def CHAT_STATUS_UPDATE_URL(self) -> str:
+        return f"{self.NODE_BACKEND_URL}/api/chats/chat-status/update"
+    
+    @property
+    def SUMMARY_CREATE_URL(self) -> str:
+        return f"{self.NODE_BACKEND_URL}/api/summaries/create"
+    
+    @property
+    def SUMMARY_STATUS_UPDATE_URL(self) -> str:
+        return f"{self.NODE_BACKEND_URL}/api/summaries/summary-status/update"
 
     # Cloudflare R2 / S3 Configuration
     R2_ACCESS_KEY_ID: str = ""
@@ -105,13 +124,7 @@ class Settings(BaseSettings):
         if self.NODE_BACKEND_URL.endswith("/"):
             self.NODE_BACKEND_URL = self.NODE_BACKEND_URL[:-1]
             
-        # Initialize callback URLs
-        self.BACKEND_STATUS_URL = f"{self.NODE_BACKEND_URL}/api/documents/upload-status/update"
-        self.REPORT_CREATE_URL = f"{self.NODE_BACKEND_URL}/api/reports/create-report"
-        self.REPORT_STATUS_UPDATE_URL = f"{self.NODE_BACKEND_URL}/api/reports/report-status/update"
-        self.CHAT_STATUS_UPDATE_URL = f"{self.NODE_BACKEND_URL}/api/chats/chat-status/update"
-        self.SUMMARY_CREATE_URL = f"{self.NODE_BACKEND_URL}/api/summaries/create"
-        self.SUMMARY_STATUS_UPDATE_URL = f"{self.NODE_BACKEND_URL}/api/summaries/summary-status/update"
+        # Callback URLs are now properties derived from NODE_BACKEND_URL
 
         # Auto-configure Redis URLs if not set
         base_redis_url = self.REDIS_URL

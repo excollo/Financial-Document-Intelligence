@@ -51,7 +51,6 @@ class ValuationService:
             md += f"| Issue Price (₹) | {r.get('issue_price', '-')} |\n"
             md += f"| Cumulative Equity Shares | {r.get('cumulative_equity_shares', '-')} |\n"
             md += f"| Round Raised (₹) | {r.get('round_raised', '-')} |\n"
-            md += f"| Dilution | {r.get('dilution', '-')} |\n"
             md += f"| Dilution (%) | {r.get('dilution_percent', '-'):.2f}% |\n"
             md += f"| Post Money Valuation (₹) | {r.get('post_money_valuation', '-'):.2f} |\n\n"
         return md
@@ -100,7 +99,6 @@ class ValuationService:
                         <tr><td style="padding: 10px; border: 1px solid #e5e7eb; color: #4b5563;">Issue Price (₹)</td><td style="padding: 10px; border: 1px solid #e5e7eb; font-weight: 700; color: #b45309;">{f_num(r.get('issue_price'))}</td></tr>
                         <tr><td style="padding: 10px; border: 1px solid #e5e7eb; color: #4b5563;">Cumulative Equity Shares</td><td style="padding: 10px; border: 1px solid #e5e7eb;">{f_num(r.get('cumulative_equity_shares'))}</td></tr>
                         <tr style="background-color: #fdfdfd;"><td style="padding: 10px; border: 1px solid #e5e7eb; color: #4b5563;">Round Raised (₹)</td><td style="padding: 10px; border: 1px solid #e5e7eb; font-weight: 600;">{f_num(r.get('round_raised'))}</td></tr>
-                        <tr><td style="padding: 10px; border: 1px solid #e5e7eb; color: #4b5563;">Dilution</td><td style="padding: 10px; border: 1px solid #e5e7eb;">{r.get('dilution', '-')}</td></tr>
                         <tr><td style="padding: 10px; border: 1px solid #e5e7eb; color: #4b5563;">Dilution (%)</td><td style="padding: 10px; border: 1px solid #e5e7eb; font-weight: 700; color: #059669;">{f_num(r.get('dilution_percent'))}%</td></tr>
                         <tr style="background-color: #fffef2;"><td style="padding: 10px; border: 1px solid #e5e7eb; font-weight: 700; color: #1e293b;">Post Money Valuation (₹)</td><td style="padding: 10px; border: 1px solid #e5e7eb; font-weight: 800; color: #111827;">{f_num(r.get('post_money_valuation'))}</td></tr>
                     </tbody>
