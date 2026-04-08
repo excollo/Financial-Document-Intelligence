@@ -14,7 +14,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Summary } from "../models/Summary";
 import { Report } from "../models/Report";
 import { Chat } from "../models/Chat";
-const INTERNAL_SECRET = process.env.INTERNAL_SECRET || "";
+const INTERNAL_SECRET = process.env["INTERNAL-SECRET"] || "";
 
 interface AuthRequest extends Request {
   user?: any;
@@ -923,7 +923,7 @@ export const documentController = {
 
       // Delete vectors from Pinecone
       try {
-        const pythonApiUrl = process.env.PYTHON_API_URL || "http://localhost:8000";
+        const pythonApiUrl = process.env["PYTHON-API-URL"] || "http://localhost:8000";
         // Ensure pythonApiUrl doesn't have trailing slash
         const baseUrl = pythonApiUrl.endsWith("/") ? pythonApiUrl.slice(0, -1) : pythonApiUrl;
 
@@ -1172,7 +1172,7 @@ export const documentController = {
       });
 
       // --- INTEGRATION: CALL PYTHON API INSTEAD OF N8N ---
-      const pythonApiUrl = process.env.PYTHON_API_URL || "http://localhost:8000";
+      const pythonApiUrl = process.env["PYTHON-API-URL"] || "http://localhost:8000";
 
       try {
         const fileUrl = await documentController.getPresignedUrl(fileKey);
@@ -1189,7 +1189,8 @@ export const documentController = {
             domain: document.domain || user.domain,
             domainId: document.domainId || userWithDomain.domainId,
             workspaceId: document.workspaceId || workspaceId,
-            directoryId: finalDirectoryId
+            directoryId: finalDirectoryId,
+            fileKey: fileKey  // So Python can download directly from R2 if presigned URL expires
           }
         }, {
           headers: {
@@ -1383,8 +1384,8 @@ export const documentController = {
   async uploadStatusUpdate(req: AuthRequest, res: Response) {
     console.log("🚀 Received upload-status update hit!");
     try {
-      // Accept both jobId and documentId from n8n (n8n might send either)
-      const { jobId, documentId, status, error } = req.body;
+      // Accept both jobId and documentId from n8n/Python (might send either)
+      const { jobId, documentId, status, error, namespace } = req.body;
       const identifier = jobId || documentId;
 
       if (!identifier || !status) {
@@ -1395,7 +1396,7 @@ export const documentController = {
       }
 
       const normalizedStatus = status.trim().toLowerCase();
-      console.log(`📥 Received status update for ${identifier}: ${normalizedStatus} (type: ${req.body.type || 'unknown'})`);
+      console.log(`📥 Received status update for ${identifier}: ${normalizedStatus} (type: ${req.body.type || 'unknown'}, namespace: ${namespace || 'none'})`);
 
       // Update document status in MongoDB - try multiple lookup methods
       try {
@@ -1411,6 +1412,11 @@ export const documentController = {
           document = await Document.findOne({ fileKey: identifier });
         }
 
+        // If still not found, try by namespace (Python always sends this = filename)
+        if (!document && namespace) {
+          document = await Document.findOne({ namespace: namespace });
+        }
+
         // If still not found, try by _id (MongoDB ObjectId)
         if (!document && identifier.match(/^[0-9a-fA-F]{24}$/)) {
           document = await Document.findById(identifier);
@@ -1423,7 +1429,8 @@ export const documentController = {
             $or: [
               { id: identifier },
               { fileKey: identifier },
-              { documentId: identifier }
+              { documentId: identifier },
+              ...(namespace ? [{ namespace: namespace }] : [])
             ]
           });
         }
@@ -1656,7 +1663,7 @@ export const documentController = {
       await drhp.save();
 
       // --- INTEGRATION: CALL PYTHON API INSTEAD OF N8N ---
-      const pythonApiUrl = process.env.PYTHON_API_URL || "http://localhost:8000";
+      const pythonApiUrl = process.env["PYTHON-API-URL"] || "http://localhost:8000";
       let finalStatus = "processing";
 
       try {

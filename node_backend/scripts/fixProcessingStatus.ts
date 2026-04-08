@@ -11,7 +11,7 @@ import { Summary } from "../models/Summary";
 
 dotenv.config();
 
-const MONGODB_URI = process.env.MONGODB_URI || "";
+const MONGODB_URI = process.env["MONGODB-URI"] || "";
 
 async function fixProcessingStatus() {
   try {

@@ -18,7 +18,7 @@ dotenv.config();
 async function migrateDirectories() {
   try {
     // Connect to MongoDB
-    const mongoUri = process.env.MONGODB_URI;
+    const mongoUri = process.env["MONGODB-URI"];
     if (!mongoUri) {
       console.error("❌ MONGODB_URI not found in environment variables");
       process.exit(1);

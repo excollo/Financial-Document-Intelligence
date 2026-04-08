@@ -224,7 +224,7 @@ export const shareController = {
           }
 
           // Get base URL from environment or construct it
-          const baseUrl = process.env.FRONTEND_URL || process.env.APP_URL || "http://localhost:5173";
+          const baseUrl = process.env["FRONTEND-URL"] || process.env["APP-URL"] || "http://localhost:5173";
           const dashboardUrl = `${baseUrl}/dashboard`;
           const signupUrl = `${baseUrl}/login`;
 

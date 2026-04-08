@@ -2,10 +2,10 @@ import { S3Client } from "@aws-sdk/client-s3";
 import dotenv from "dotenv";
 dotenv.config();
 
-const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID;
-const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY;
-const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME;
-const CLOUDFLARE_URI = process.env.CLOUDFLARE_URI;
+const R2_ACCESS_KEY_ID = process.env["R2-ACCESS-KEY-ID"];
+const R2_SECRET_ACCESS_KEY = process.env["R2-SECRET-ACCESS-KEY"];
+const R2_BUCKET_NAME = process.env["R2-BUCKET-NAME"];
+const CLOUDFLARE_URI = process.env["CLOUDFLARE-URI"];
 
 if (
   !R2_ACCESS_KEY_ID ||
