@@ -128,6 +128,9 @@ jobs:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
           allow-no-subscriptions: true
 
+      - name: Set Active Subscription
+        run: az account set --subscription ${{ fromJSON(secrets.AZURE_CREDENTIALS).subscriptionId }}
+
       # 🚀 Deploy Node Backend
       - name: Deploy Node Backend
         uses: azure/container-apps-deploy-action@v1
