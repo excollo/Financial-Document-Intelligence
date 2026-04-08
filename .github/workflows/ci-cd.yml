@@ -129,7 +129,7 @@ jobs:
           allow-no-subscriptions: true
 
       - name: Set Active Subscription
-        run: az account set --subscription ${{ fromJSON(secrets.AZURE_CREDENTIALS).subscriptionId }}
+        run: az account set --subscription 6e6db070-feb7-4437-af65-3337b7083bec
 
       # 🚀 Deploy Node Backend
       - name: Deploy Node Backend
