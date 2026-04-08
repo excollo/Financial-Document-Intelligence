@@ -1761,7 +1761,6 @@ export const StartConversation: React.FC = () => {
           duration: 4000,
         }
       );
-    } finally {
       setIsUploading(false);
     }
   };
