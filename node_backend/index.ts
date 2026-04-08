@@ -167,7 +167,7 @@ if (!MONGODB_URI) {
   throw new Error("MONGODB-URI is not set");
 }
 
-if (process.env["NODE-ENV"] !== 'test') {
+if (process.env.NODE_ENV !== 'test') {
   mongoose
     .connect(MONGODB_URI, {
       serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of 30s
@@ -250,7 +250,7 @@ process.on('SIGPIPE', () => {
   console.log('SIGPIPE received, ignoring...');
 });
 
-if (process.env["NODE-ENV"] !== 'test') {
+if (process.env.NODE_ENV !== 'test') {
   server.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
   });
@@ -339,7 +339,7 @@ async function recoverStaleDocuments() {
 }
 
 // Start the stale document watcher (5 minute interval)
-if (process.env["NODE-ENV"] !== 'test') {
+if (process.env.NODE_ENV !== 'test') {
   // Run first check after 2 minutes (let server stabilize)
   setTimeout(() => {
     recoverStaleDocuments();
