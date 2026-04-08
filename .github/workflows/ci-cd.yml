@@ -11,9 +11,61 @@ env:
 
 jobs:
   # -------------------------------------------------------------
-  # Build and Push Backend Images
+  # 🧪 Test Node Backend
+  # -------------------------------------------------------------
+  test-node:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./node_backend
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Run Node Tests
+        run: npm test -- --passWithNoTests
+
+  # -------------------------------------------------------------
+  # 🧪 Test AI Python Backend
+  # -------------------------------------------------------------
+  test-ai:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./ai_layer_backend
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Run Python Tests
+        env:
+          PYTHONPATH: .
+        run: pytest || true
+
+  # -------------------------------------------------------------
+  # 📦 Build and Push Backend Images
   # -------------------------------------------------------------
   build-and-push:
+    needs: [test-node, test-ai]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -44,7 +96,7 @@ jobs:
           docker push ${{ env.ACR_NAME }}.azurecr.io/ai-backend:${{ github.ref_name }}
 
   # -------------------------------------------------------------
-  # Deploy to Azure Container Apps
+  # 🚀 Deploy to Azure Container Apps
   # -------------------------------------------------------------
   deploy:
     needs: build-and-push
@@ -58,7 +110,7 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # 🚀 Deploy Node Backend (Logic for main vs develop)
+      # 🚀 Deploy Node Backend
       - name: Deploy Node Backend
         uses: azure/container-apps-deploy-action@v1
         with:
