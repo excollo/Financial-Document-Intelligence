@@ -31,7 +31,7 @@ export const authMiddleware = async (
         .json({ message: "No token, authorization denied" });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET!) as any;
+    const decoded = jwt.verify(token, process.env["JWT-SECRET"]!) as any;
 
     // Try to find user by microsoftId first, then by _id
     let user = null;

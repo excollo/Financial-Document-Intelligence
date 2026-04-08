@@ -42,7 +42,7 @@ const NEW_WORKSPACE_ID = "ws_1758689602670_z3pxonjqn";
 async function migrateWorkspaceId() {
   try {
     // Connect to MongoDB
-    const MONGODB_URI = process.env.MONGODB_URI;
+    const MONGODB_URI = process.env["MONGODB-URI"];
     if (!MONGODB_URI) {
       throw new Error("MONGODB_URI is not set");
     }

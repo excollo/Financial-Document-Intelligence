@@ -83,7 +83,7 @@ export function requireInternalSecret(
   res: Response,
   next: NextFunction
 ) {
-  const expected = process.env.INTERNAL_SECRET;
+  const expected = process.env["INTERNAL-SECRET"];
 
   if (!expected) {
     console.error(

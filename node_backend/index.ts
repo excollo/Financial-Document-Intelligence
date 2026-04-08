@@ -66,7 +66,7 @@ const io = new SocketIOServer(server, {
 // Make io accessible elsewhere
 export { io };
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env["PORT"] || 5000;
 
 // CORS configuration - must be before other middleware
 const allowedOrigins = [
@@ -162,12 +162,12 @@ app.use(readLimiter);
 app.use(writeLimiter);
 
 // MongoDB Connection
-const MONGODB_URI = process.env.MONGODB_URI;
+const MONGODB_URI = process.env["MONGODB-URI"];
 if (!MONGODB_URI) {
-  throw new Error("MONGODB_URI is not set");
+  throw new Error("MONGODB-URI is not set");
 }
 
-if (process.env.NODE_ENV !== 'test') {
+if (process.env["NODE-ENV"] !== 'test') {
   mongoose
     .connect(MONGODB_URI, {
       serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of 30s
@@ -250,10 +250,102 @@ process.on('SIGPIPE', () => {
   console.log('SIGPIPE received, ignoring...');
 });
 
-if (process.env.NODE_ENV !== 'test') {
+if (process.env["NODE-ENV"] !== 'test') {
   server.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
   });
+}
+
+// ============================================================================
+// STALE DOCUMENT RECOVERY WATCHER
+// Runs every 5 minutes. Finds documents stuck in "processing" for >20 minutes
+// and auto-resolves them. This is a safety net for failed Python→Node callbacks.
+// ============================================================================
+async function recoverStaleDocuments() {
+  try {
+    const { Document } = await import("./models/Document");
+    const STALE_THRESHOLD_MS = 20 * 60 * 1000; // 20 minutes
+    const cutoff = new Date(Date.now() - STALE_THRESHOLD_MS);
+
+    const staleDocs = await Document.find({
+      status: "processing",
+      uploadedAt: { $lt: cutoff },
+    }).limit(20);
+
+    if (staleDocs.length === 0) return;
+
+    console.warn(`⚠️ [StaleWatcher] Found ${staleDocs.length} document(s) stuck in 'processing' for >20 min. Attempting recovery...`);
+
+    for (const doc of staleDocs) {
+      try {
+        // Try to query the Python API Celery job status for this document
+        const pythonApiUrl = process.env["PYTHON-API-URL"] || "http://localhost:8001";
+        const axios = (await import("axios")).default;
+
+        let resolved = false;
+
+        try {
+          // Check if Celery has a job for this document's id (job_id may equal documentId due to our fix)
+          const jobRes = await axios.get(`${pythonApiUrl}/jobs/${doc.id}`, {
+            headers: { "X-Internal-Secret": process.env["INTERNAL-SECRET"] || "" },
+            timeout: 5000,
+          });
+
+          const celeryState = jobRes.data?.state;
+          console.log(`🔍 [StaleWatcher] Doc ${doc.id} Celery state: ${celeryState}`);
+
+          if (celeryState === "SUCCESS") {
+            doc.status = "completed";
+            await doc.save();
+            io.emit("upload_status", { jobId: doc.id, status: "completed" });
+            console.log(`✅ [StaleWatcher] Recovered doc ${doc.id} → completed (Celery SUCCESS)`);
+            resolved = true;
+          } else if (celeryState === "FAILURE") {
+            doc.status = "failed";
+            doc.error = { message: "Processing failed in Celery worker. Please re-upload." };
+            await doc.save();
+            io.emit("upload_status", { jobId: doc.id, status: "failed", error: "Processing failed" });
+            console.log(`❌ [StaleWatcher] Recovered doc ${doc.id} → failed (Celery FAILURE)`);
+            resolved = true;
+          }
+        } catch (jobCheckErr: any) {
+          // Celery job lookup failed (job may have been cleaned up already)
+          console.warn(`⚠️ [StaleWatcher] Could not check Celery state for doc ${doc.id}: ${jobCheckErr.message}`);
+        }
+
+        if (!resolved) {
+          // If we can NOT determine state from Celery, mark as failed after >30 additional minutes
+          const HARD_TIMEOUT_MS = 50 * 60 * 1000; // 50 min total = give up
+          const hardCutoff = new Date(Date.now() - HARD_TIMEOUT_MS);
+          if (doc.uploadedAt < hardCutoff) {
+            doc.status = "failed";
+            doc.error = { message: "Processing timed out. Please re-upload the document." };
+            await doc.save();
+            io.emit("upload_status", { jobId: doc.id, status: "failed", error: "Timed out" });
+            console.log(`⏱️ [StaleWatcher] Hard-timeout doc ${doc.id} → failed after 50 min`);
+          } else {
+            // Still within grace period — just emit a refresh signal to the frontend
+            io.emit("upload_status", { jobId: doc.id, status: "processing" });
+            console.log(`🔄 [StaleWatcher] Doc ${doc.id} still processing, refreshed frontend`);
+          }
+        }
+      } catch (docErr: any) {
+        console.error(`❌ [StaleWatcher] Error processing doc ${doc.id}:`, docErr.message);
+      }
+    }
+  } catch (err: any) {
+    console.error("❌ [StaleWatcher] Error in stale document recovery:", err.message);
+  }
+}
+
+// Start the stale document watcher (5 minute interval)
+if (process.env["NODE-ENV"] !== 'test') {
+  // Run first check after 2 minutes (let server stabilize)
+  setTimeout(() => {
+    recoverStaleDocuments();
+    setInterval(recoverStaleDocuments, 5 * 60 * 1000);
+  }, 2 * 60 * 1000);
+  console.log("🛡️ Stale document recovery watcher started (checks every 5 minutes)");
 }
 
 // Allow only your frontend domain

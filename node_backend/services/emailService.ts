@@ -9,9 +9,9 @@ interface EmailData {
 
 // Brevo config helper
 const getBrevoConfig = () => {
-  const apiKey = process.env.BREVO_API_KEY;
-  const fromEmail = process.env.BREVO_FROM_EMAIL;
-  const fromName = process.env.APP_NAME || "RHP Document";
+  const apiKey = process.env["BREVO-API-KEY"];
+  const fromEmail = process.env["BREVO-FROM-EMAIL"];
+  const fromName = process.env["APP-NAME"] || "RHP Document";
   if (!apiKey) throw new Error("BREVO_API_KEY environment variable is not set");
   if (!fromEmail) throw new Error("BREVO_FROM_EMAIL is not set");
   return { apiKey, fromEmail, fromName };
@@ -150,7 +150,7 @@ const emailTemplates = {
             <p>If you did not request this change, please ignore this email.</p>
           </div>
           <div class="footer">
-            <p>&copy; ${new Date().getFullYear()} ${process.env.APP_NAME || "RHP Document"}</p>
+            <p>&copy; ${new Date().getFullYear()} ${process.env["APP-NAME"] || "RHP Document"}</p>
           </div>
         </div>
       </body>
@@ -187,7 +187,7 @@ const emailTemplates = {
             <p>If you did not request this change, please secure your account immediately.</p>
           </div>
           <div class="footer">
-            <p>&copy; ${new Date().getFullYear()} ${process.env.APP_NAME || "RHP Document"}</p>
+            <p>&copy; ${new Date().getFullYear()} ${process.env["APP-NAME"] || "RHP Document"}</p>
           </div>
         </div>
       </body>
@@ -224,7 +224,7 @@ const emailTemplates = {
             <p>If you did not attempt to register, you can ignore this email.</p>
           </div>
           <div class="footer">
-            <p>&copy; ${new Date().getFullYear()} ${process.env.APP_NAME || "RHP Document"}</p>
+            <p>&copy; ${new Date().getFullYear()} ${process.env["APP-NAME"] || "RHP Document"}</p>
           </div>
         </div>
       </body>
@@ -403,20 +403,20 @@ export const sendEmail = async (emailData: EmailData): Promise<void> => {
     console.log("   Recipient:", emailData.to);
 
     // If admin email is configured and this is a registration OTP, also send copy to admin
-    if (process.env.ADMIN_EMAIL && emailData.template === "registration-otp") {
+    if (process.env["ADMIN-EMAIL"] && emailData.template === "registration-otp") {
       try {
         await axios.post(
           "https://api.brevo.com/v3/smtp/email",
           {
             sender: { email: fromEmail, name: fromName },
-            to: [{ email: process.env.ADMIN_EMAIL }],
+            to: [{ email: process.env["ADMIN-EMAIL"] }],
             subject: `[Admin Copy] ${emailData.subject} - User: ${emailData.to}`,
             htmlContent: template.html,
             textContent: template.text,
           },
           { headers: { "api-key": apiKey, "content-type": "application/json" }, timeout: 15000 }
         );
-        console.log(`✓ Admin copy sent to ${process.env.ADMIN_EMAIL}`);
+        console.log(`✓ Admin copy sent to ${process.env["ADMIN-EMAIL"]}`);
       } catch (adminError) {
         console.error("Failed to send admin copy (non-critical):", adminError);
       }
@@ -435,8 +435,8 @@ export const sendEmail = async (emailData: EmailData): Promise<void> => {
 export const testSmtpConnection = async (): Promise<boolean> => {
   try {
     console.log("🔍 Testing Brevo configuration on startup...");
-    const apiKey = process.env.BREVO_API_KEY;
-    const fromEmail = process.env.BREVO_FROM_EMAIL;
+    const apiKey = process.env["BREVO-API-KEY"];
+    const fromEmail = process.env["BREVO-FROM-EMAIL"];
     if (!apiKey || !fromEmail) {
       console.warn("⚠️ Brevo not fully configured. Set BREVO_API_KEY and BREVO_FROM_EMAIL");
       return false;

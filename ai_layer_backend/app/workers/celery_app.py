@@ -31,6 +31,9 @@ celery_app.conf.update(
     worker_max_tasks_per_child=100,
     task_acks_late=True,
     task_reject_on_worker_lost=True,
+    # SSL/TLS Support for Secure Redis (Upstash)
+    broker_use_ssl={'ssl_cert_reqs': 'none'} if settings.CELERY_BROKER_URL.startswith('rediss://') else None,
+    redis_backend_use_ssl={'ssl_cert_reqs': 'none'} if settings.CELERY_RESULT_BACKEND.startswith('rediss://') else None,
 )
 
 # Auto-discover tasks

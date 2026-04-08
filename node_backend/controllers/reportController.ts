@@ -21,7 +21,7 @@ interface AuthRequest extends Request {
   currentWorkspace?: string;
 }
 
-const INTERNAL_SECRET = process.env.INTERNAL_SECRET || "";
+const INTERNAL_SECRET = process.env["INTERNAL-SECRET"] || "";
 
 export const reportController = {
   async compareDocuments(req: AuthRequest, res: Response) {
@@ -39,7 +39,7 @@ export const reportController = {
         });
       }
 
-      const pythonApiUrl = process.env.PYTHON_API_URL || "http://localhost:8000";
+      const pythonApiUrl = process.env["PYTHON-API-URL"] || "http://localhost:8000";
       const domain = req.userDomain || (req as any).user?.domain;
 
       // Get domainId
@@ -565,7 +565,7 @@ export const reportController = {
           },
           {
             headers: {
-              "x-api-key": process.env.PDFCO_API_KEY,
+              "x-api-key": process.env["PDFCO-API-KEY"],
               "Content-Type": "application/json",
             },
           }

@@ -36,7 +36,6 @@ google-genai>=1.0.0
 
 # Table Extraction & Optical/Image
 camelot-py[cv]>=0.11.0
-pdf2image>=1.17.0
 opencv-python>=4.9.0
 
 # Output Builders

@@ -13,7 +13,7 @@ async function fixSharePermissionIndex() {
     // Connect to MongoDB - use the same connection string as the main app
     // Load environment variables
     require("dotenv").config();
-    const mongoUri = process.env.MONGODB_URI;
+    const mongoUri = process.env["MONGODB-URI"];
     if (!mongoUri) {
       throw new Error("MONGODB_URI environment variable is not set");
     }

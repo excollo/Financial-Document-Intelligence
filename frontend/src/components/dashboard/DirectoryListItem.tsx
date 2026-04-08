@@ -140,9 +140,9 @@ export const DirectoryListItem: React.FC<DirectoryListItemProps> = ({
         {directory.updatedAt ? new Date(directory.updatedAt).toLocaleDateString() : (directory.createdAt ? new Date(directory.createdAt).toLocaleDateString() : '')}
       </div>
 
-      <div className="col-span-1 flex items-center justify-end gap-1 opacity-10 group-hover/row:opacity-100 transition-opacity">
+      <div className="col-span-1 flex items-center justify-end gap-1">
         <button
-          className={`text-gray-400 hover:text-[#4B2A06] p-1.5 rounded-md hover:bg-gray-100 transition-all ${compareLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+          className={`text-[#4B2A06] p-1.5 rounded-md hover:bg-gray-100 transition-all ${compareLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
           onClick={(e) => {
             e.stopPropagation();
             if (!compareLoading) onCompare(directory);
@@ -158,7 +158,7 @@ export const DirectoryListItem: React.FC<DirectoryListItemProps> = ({
           />
         </button>
         <button
-          className="text-gray-400 hover:text-[#4B2A06] p-1.5 rounded-md hover:bg-gray-100 transition-all"
+          className="text-[#4B2A06] p-1.5 rounded-md hover:bg-gray-100 transition-all"
           onClick={(e) => {
             e.stopPropagation();
             onRename(directory);
@@ -168,7 +168,7 @@ export const DirectoryListItem: React.FC<DirectoryListItemProps> = ({
           <Pencil className="h-3.5 w-3.5" />
         </button>
         <button
-          className="text-gray-400 hover:text-[#4B2A06] p-1.5 rounded-md hover:bg-gray-100 transition-all"
+          className="text-[#4B2A06] p-1.5 rounded-md hover:bg-gray-100 transition-all"
           onClick={(e) => {
             e.stopPropagation();
             onShare(directory.id);
@@ -179,7 +179,7 @@ export const DirectoryListItem: React.FC<DirectoryListItemProps> = ({
         </button>
         {isAdmin && onMoveToWorkspace && (
           <button
-            className="text-gray-400 hover:text-[#4B2A06] p-1.5 rounded-md hover:bg-gray-100 transition-all"
+            className="text-[#4B2A06] p-1.5 rounded-md hover:bg-gray-100 transition-all"
             onClick={(e) => {
               e.stopPropagation();
               onMoveToWorkspace(directory.id, directory.name);
@@ -190,7 +190,7 @@ export const DirectoryListItem: React.FC<DirectoryListItemProps> = ({
           </button>
         )}
         <button
-          className="text-gray-400 hover:text-red-600 p-1.5 rounded-md hover:bg-red-50 transition-all"
+          className="text-red-500 hover:text-red-600 p-1.5 rounded-md hover:bg-red-50 transition-all"
           onClick={(e) => {
             e.stopPropagation();
             onDelete(directory);

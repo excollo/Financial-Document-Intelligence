@@ -28,7 +28,7 @@ jest.mock('../models/SharePermission', () => ({
 }));
 
 describe('Multi-Tenancy Domain Isolation', () => {
-    const JWT_SECRET = process.env.JWT_SECRET || 'test_secret';
+    const JWT_SECRET = process.env["JWT-SECRET"] || 'test_secret';
 
     beforeEach(() => {
         jest.clearAllMocks();
