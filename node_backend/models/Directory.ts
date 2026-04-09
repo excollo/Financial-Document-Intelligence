@@ -18,7 +18,7 @@ const directorySchema = new mongoose.Schema({
     index: true 
   },
   
-  // NEW: Statistics for better UX UI
+  // NEW: Statistics for better UX
   documentCount: { type: Number, default: 0 },
   drhpCount: { type: Number, default: 0 },
   rhpCount: { type: Number, default: 0 },
