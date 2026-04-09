@@ -32,7 +32,46 @@ import { HealthService } from "./services/healthService";
 
 dotenv.config();
 
+// ============================================================================
+// AZURE KEY VAULT AUTO-LOADER
+// ============================================================================
+async function loadKeyVaultSecrets() {
+  const vaultUri = "https://fdi-keyvault.vault.azure.net/";
+  if (process.env.NODE_ENV === 'production' || process.env.USE_KEYVAULT === 'true') {
+    try {
+      const { DefaultAzureCredential } = await import("@azure/identity");
+      const { SecretClient } = await import("@azure/keyvault-secrets");
+      
+      console.log(`🔐 Connecting to Key Vault: ${vaultUri}`);
+      const credential = new DefaultAzureCredential();
+      const client = new SecretClient(vaultUri, credential);
+
+      let count = 0;
+      for await (const secretProperties of client.listPropertiesOfSecrets()) {
+        if (secretProperties.enabled) {
+          const secret = await client.getSecret(secretProperties.name);
+          process.env[secret.name] = secret.value;
+          count++;
+        }
+      }
+      console.log(`✅ Loaded ${count} secrets from Key Vault`);
+    } catch (error: any) {
+      console.error("❌ Failed to load secrets from Key Vault:", error.message);
+    }
+  }
+}
+
 export const app = express();
+
+// Initialize secrets before starting services
+if (process.env.NODE_ENV !== 'test') {
+  loadKeyVaultSecrets().then(() => {
+    // Re-check mandatory environment variables after loading from KV
+    if (!process.env["MONGODB-URI"]) {
+       console.warn("⚠️ MONGODB-URI still not found after Key Vault sync");
+    }
+  });
+}
 
 // Trust proxy for Render deployment
 app.set('trust proxy', 1);
