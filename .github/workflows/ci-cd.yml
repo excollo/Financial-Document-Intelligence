@@ -134,7 +134,7 @@ jobs:
           az config set core.no_registration=true
 
       - name: Set Active Subscription
-        run: az account set --subscription 6e6db070-feb7-4437-af65-3337b7083bec
+        run: az account set --subscription f3ac2634-4e07-4d24-adc5-3e607e4bd177
 
       # 🚀 Deploy Node Backend
       - name: Deploy Node Backend
@@ -143,7 +143,7 @@ jobs:
             --name ${{ github.ref_name == 'main' && 'aca-node-backend-prod' || 'aca-node-backend-dev' }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --image ${{ env.ACR_NAME }}.azurecr.io/node-backend:${{ github.ref_name }} \
-            --subscription 6e6db070-feb7-4437-af65-3337b7083bec
+            --subscription f3ac2634-4e07-4d24-adc5-3e607e4bd177
 
       # 🚀 Deploy AI Backend
       - name: Deploy AI Backend
@@ -152,7 +152,7 @@ jobs:
             --name ${{ github.ref_name == 'main' && 'aca-ai-api-prod' || 'aca-ai-api-dev' }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --image ${{ env.ACR_NAME }}.azurecr.io/ai-backend:${{ github.ref_name }} \
-            --subscription 6e6db070-feb7-4437-af65-3337b7083bec
+            --subscription f3ac2634-4e07-4d24-adc5-3e607e4bd177
 
       # 🚀 Deploy AI Worker
       - name: Deploy AI Worker
