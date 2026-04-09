@@ -52,7 +52,6 @@ class Settings(BaseSettings):
     
     # MongoDB Configuration
     MONGO_URI: str = ""
-    MONGO_DB_NAME: str = ""
     
     # Logging
     LOG_LEVEL: str = "INFO"
