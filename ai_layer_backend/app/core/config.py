@@ -84,7 +84,7 @@ class Settings(BaseSettings):
     
     # Internal authentication (Node <-> Python)
     INTERNAL_SECRET: str = ""  # Shared secret for internal API calls
-    NODE_BACKEND_URL: str = "http://127.0.0.1:5000"  # Node.js backend base URL
+    NODE_BACKEND_URL: str = ""  # Node.js backend base URL
     
     # Backend callback URLs (Properties to ensure they are always derived from NODE_BACKEND_URL)
     @property

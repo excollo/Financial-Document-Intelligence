@@ -170,10 +170,10 @@ if (!MONGODB_URI) {
 if (process.env.NODE_ENV !== 'test') {
   mongoose
     .connect(MONGODB_URI, {
-      serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of 30s
-      socketTimeoutMS: 45000, // Close sockets after 45s of inactivity
-      connectTimeoutMS: 10000, // Give up initial connection after 10s
-      retryWrites: true,
+      serverSelectionTimeoutMS: 5000, 
+      socketTimeoutMS: 45000, 
+      connectTimeoutMS: 10000, 
+      retryWrites: false, // Must be false for Cosmos DB
       retryReads: true,
     })
     .then(async () => {

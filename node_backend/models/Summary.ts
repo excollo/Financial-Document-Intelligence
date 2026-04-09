@@ -14,5 +14,7 @@ const summarySchema = new mongoose.Schema({
   userId: { type: String }, // Optional: for tracking who created it
 });
 
+// Index for sorting summaries by date
+summarySchema.index({ updatedAt: -1 });
 
 export const Summary = mongoose.model("Summary", summarySchema);
