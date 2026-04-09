@@ -22,7 +22,22 @@ jobs:
 
     steps:
       - name: Checkout to the branch
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Dependencies
+        run: |
+          cd node_backend
+          npm install
+
+      - name: Run Node Tests
+        run: |
+          cd node_backend
+          npm test -- --passWithNoTests
 
       - name: Azure Login
         uses: azure/login@v2
