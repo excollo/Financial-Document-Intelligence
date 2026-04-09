@@ -149,18 +149,21 @@ jobs:
         run: |
           az containerapp update \
             --ids "/subscriptions/f3ac2634-4e07-4d24-adc5-3e607e4bd177/resourceGroups/DRHP-summarizer/providers/Microsoft.App/containerApps/${{ github.ref_name == 'main' && 'aca-node-backend-prod' || 'aca-node-backend-dev' }}" \
-            --image ${{ env.ACR_NAME }}.azurecr.io/node-backend:${{ github.ref_name }}
+            --image ${{ env.ACR_NAME }}.azurecr.io/node-backend:${{ github.ref_name }} \
+            --min-replicas 0
 
       # 🚀 Deploy AI Backend
       - name: Deploy AI Backend
         run: |
           az containerapp update \
             --ids "/subscriptions/f3ac2634-4e07-4d24-adc5-3e607e4bd177/resourceGroups/DRHP-summarizer/providers/Microsoft.App/containerApps/${{ github.ref_name == 'main' && 'aca-ai-api-prod' || 'aca-ai-api-dev' }}" \
-            --image ${{ env.ACR_NAME }}.azurecr.io/ai-backend:${{ github.ref_name }}
+            --image ${{ env.ACR_NAME }}.azurecr.io/ai-backend:${{ github.ref_name }} \
+            --min-replicas 0
 
       # 🚀 Deploy AI Worker
       - name: Deploy AI Worker
         run: |
           az containerapp update \
             --ids "/subscriptions/f3ac2634-4e07-4d24-adc5-3e607e4bd177/resourceGroups/DRHP-summarizer/providers/Microsoft.App/containerApps/${{ github.ref_name == 'main' && 'aca-ai-worker-prod' || 'aca-ai-worker-dev' }}" \
-            --image ${{ env.ACR_NAME }}.azurecr.io/ai-backend:${{ github.ref_name }}
+            --image ${{ env.ACR_NAME }}.azurecr.io/ai-backend:${{ github.ref_name }} \
+            --min-replicas 0
