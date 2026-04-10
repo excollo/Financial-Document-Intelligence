@@ -73,6 +73,8 @@ RUN apt-get update && apt-get install -y \
     libxrender-dev \
     ghostscript \
     python3-tk \
+    libxml2 \
+    libxslt1-dev \
     && rm -rf /var/lib/apt/lists/*
 
 COPY ai_layer_backend/requirements.txt ./
