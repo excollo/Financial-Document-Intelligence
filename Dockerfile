@@ -84,10 +84,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
 COPY ai_layer_backend/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
+#  ADD THIS LINE HERE
+RUN pip list | grep langchain
 # Copy backend code
 COPY ai_layer_backend/ .
 
