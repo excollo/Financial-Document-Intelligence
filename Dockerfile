@@ -24,7 +24,6 @@ FROM node-base AS frontend-test
 COPY frontend/package*.json ./
 RUN npm install
 COPY frontend/ .
-# Using CI=true to ensure non-interactive test run
 ENV CI=true
 RUN npm test -- --watchAll=false
 
@@ -38,7 +37,6 @@ CMD ["nginx", "-g", "daemon off;"]
 # NODE BACKEND BUILDER
 # ==========================================
 FROM node-base AS node-backend-builder
-# Install dependencies for canvas/sharp if needed (omitted for now since not in package.json)
 COPY node_backend/package*.json ./
 RUN npm install
 COPY node_backend/ .
@@ -63,29 +61,49 @@ CMD ["npm", "start"]
 # ==========================================
 # AI LAYER BACKEND (PYTHON)
 # ==========================================
-FROM python-base AS ai-backend
-# System dependencies for camelot/opencv
-RUN apt-get update && apt-get install -y \
-    libgl1-mesa-glx \
+FROM python:3.11-slim AS ai-backend
+
+WORKDIR /app
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# ✅ FIXED SYSTEM DEPENDENCIES (IMPORTANT)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    gcc \
+    libgl1 \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
-    libxrender-dev \
+    libxrender1 \
     ghostscript \
     python3-tk \
     libxml2 \
-    libxslt1-dev \
+    libxslt1.1 \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+# Install Python dependencies
 COPY ai_layer_backend/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Copy backend code
 COPY ai_layer_backend/ .
 
+# ==========================================
 # AI BACKEND TESTER
+# ==========================================
 FROM ai-backend AS ai-backend-test
 RUN pip install pytest pytest-asyncio httpx
 RUN pytest tests/
 
+# ==========================================
+# FINAL RUNNER (DEFAULT API)
+# ==========================================
+FROM ai-backend AS final
+
 EXPOSE 8000
+
+# Default API command (ACA overrides for worker)
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
