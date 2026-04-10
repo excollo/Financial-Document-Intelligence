@@ -19,7 +19,9 @@ RUN npm install
 COPY frontend/ .
 RUN npm run build
 
+# ==========================================
 # FRONTEND TESTER
+# ==========================================
 FROM node-base AS frontend-test
 COPY frontend/package*.json ./
 RUN npm install
@@ -27,7 +29,9 @@ COPY frontend/ .
 ENV CI=true
 RUN npm test -- --watchAll=false
 
+# ==========================================
 # FRONTEND RUNNER (NGINX)
+# ==========================================
 FROM nginx:alpine AS frontend
 COPY --from=frontend-builder /app/dist /usr/share/nginx/html
 EXPOSE 80
@@ -42,7 +46,9 @@ RUN npm install
 COPY node_backend/ .
 RUN npm run build
 
+# ==========================================
 # NODE BACKEND TESTER
+# ==========================================
 FROM node-base AS node-backend-test
 COPY node_backend/package*.json ./
 RUN npm install
@@ -50,7 +56,9 @@ COPY node_backend/ .
 ENV CI=true
 RUN npm test
 
+# ==========================================
 # NODE BACKEND RUNNER
+# ==========================================
 FROM node-base AS node-backend
 COPY --from=node-backend-builder /app/dist ./dist
 COPY --from=node-backend-builder /app/package*.json ./
@@ -68,7 +76,7 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-# ✅ FIXED SYSTEM DEPENDENCIES (IMPORTANT)
+# System dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     gcc \
@@ -84,18 +92,29 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-COPY ai_layer_backend/requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+# Cache-busting arg for ACR builds
+ARG CACHE_BUST=1
+RUN echo "CACHE_BUST=${CACHE_BUST}"
 
-#  ADD THIS LINE HERE
-RUN python -c "from langchain_text_splitters import RecursiveCharacterTextSplitter; print('langchain_text_splitters OK')"# Copy backend code
+# Copy and verify requirements
+COPY ai_layer_backend/requirements.txt ./
+RUN cat requirements.txt
+
+# Install Python dependencies
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Verify critical dependency is actually importable
+RUN python -c "from langchain_text_splitters import RecursiveCharacterTextSplitter; print('langchain_text_splitters OK')"
+
+# Copy backend code
 COPY ai_layer_backend/ .
 
 # ==========================================
 # AI BACKEND TESTER
 # ==========================================
 FROM ai-backend AS ai-backend-test
-RUN pip install pytest pytest-asyncio httpx
+RUN pip install --no-cache-dir pytest pytest-asyncio httpx
 RUN pytest tests/
 
 # ==========================================
@@ -105,5 +124,5 @@ FROM ai-backend AS final
 
 EXPOSE 8000
 
-# Default API command (ACA overrides for worker)
+# Default API command (ACA overrides this for worker)
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
