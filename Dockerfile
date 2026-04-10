@@ -88,8 +88,7 @@ COPY ai_layer_backend/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 #  ADD THIS LINE HERE
-RUN pip list | grep langchain
-# Copy backend code
+RUN python -c "from langchain_text_splitters import RecursiveCharacterTextSplitter; print('langchain_text_splitters OK')"# Copy backend code
 COPY ai_layer_backend/ .
 
 # ==========================================
