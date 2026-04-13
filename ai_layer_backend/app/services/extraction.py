@@ -23,7 +23,6 @@ if _root not in sys.path:
 os.environ["PYTHONPATH"] = _root + os.pathsep + os.environ.get("PYTHONPATH", "")
 
 import pdfplumber
-import camelot
 import concurrent.futures
 from concurrent.futures import ProcessPoolExecutor
 import multiprocessing
@@ -31,6 +30,16 @@ from app.core.logging import get_logger
 from app.services.s3 import s3_service
 
 logger = get_logger(__name__)
+
+# Lazy import camelot to prevent startup failure if system libs are missing
+try:
+    import camelot
+    CAMELOT_AVAILABLE = True
+except ImportError as _e:
+    CAMELOT_AVAILABLE = False
+    camelot = None
+    import warnings
+    warnings.warn(f"camelot-py could not be loaded: {_e}. Table extraction will fall back to pdfplumber.", RuntimeWarning)
 
 # --------------------------------------------------------------------------- #
 # Patterns & Helpers
@@ -254,10 +263,13 @@ def _clean_text_preserving_tables(text: str) -> str:
 
 def _camelot_worker(pdf_path: str, pages_str: str, flavor: str, edge_tol: int, batch_start: int, batch_end: int) -> Dict[str, Any]:
     """Isolated worker for Camelot to prevent memory leaks and speed up extraction."""
-    import camelot
+    try:
+        import camelot as _camelot
+    except ImportError as e:
+        return {"batch_start": batch_start, "batch_end": batch_end, "error": f"camelot unavailable: {e}", "tables": []}
     try:
         # Each worker process gets its own Ghostscript instance via Camelot
-        tables = camelot.read_pdf(pdf_path, pages=pages_str, flavor=flavor, edge_tol=edge_tol)
+        tables = _camelot.read_pdf(pdf_path, pages=pages_str, flavor=flavor, edge_tol=edge_tol)
         batch_data = []
         for t in tables:
             batch_data.append({
