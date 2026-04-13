@@ -6,9 +6,9 @@ import { linkAccess } from "../middleware/linkAccess";
 import { requireCreateInDirectory, requireDocumentPermission } from "../middleware/permissions";
 import multer from "multer";
 import { Request, Response, NextFunction } from "express";
-import { r2Client, R2_BUCKET } from "../config/r2";
+import { storageService } from "../services/storageService";
 import { rateLimitByWorkspace } from "../middleware/rateLimitByWorkspace";
-import multerS3 from "multer-s3";
+const Mau = require("multer-azure-blob-storage").MulterAzureStorage;
 
 const router = express.Router();
 
@@ -23,23 +23,25 @@ router.use(authMiddleware);
 // Apply domain middleware to all routes (respects link access domain)
 router.use(domainAuthMiddleware);
 
+const azureStorage = new Mau({
+  connectionString: process.env.AZURE_BLOB_STORAGE_CONNECTION_STRING,
+  accessKey: process.env.AZURE_BLOB_ACCOUNT_KEY,
+  accountName: process.env.AZURE_BLOB_ACCOUNT_NAME,
+  containerName: process.env.AZURE_BLOB_CONTAINER_NAME || "drhp-files",
+  blobName: (req: any, file: any) => {
+    return `${Date.now()}-${file.originalname}`;
+  },
+  metadata: (req: any, file: any) => {
+    return { fieldName: file.fieldname };
+  },
+  contentSettings: (req: any, file: any) => {
+    return { contentType: file.mimetype };
+  }
+});
+
 const upload = multer({
-  storage: multerS3({
-    s3: r2Client,
-    bucket: R2_BUCKET,
-    contentType: multerS3.AUTO_CONTENT_TYPE,
-    key: function (
-      req: Request,
-      file: Express.Multer.File,
-      cb: (error: Error | null, key?: string) => void
-    ) {
-      // Use a unique key for each file, e.g., timestamp + original name
-      const uniqueKey = `${Date.now()}-${file.originalname}`;
-      cb(null, uniqueKey);
-    },
-    acl: "private", // or 'public-read' if you want public access
-  }),
-  limits: { fileSize: 100 * 1024 * 1024 }, // 50MB limit
+  storage: azureStorage,
+  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB limit
 });
 
 // Get all documents for current user (supports directoryId and includeDeleted)

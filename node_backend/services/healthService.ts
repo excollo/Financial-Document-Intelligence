@@ -1,7 +1,6 @@
 import mongoose from "mongoose";
 import axios from "axios";
-import { r2Client, R2_BUCKET } from "../config/r2";
-import { ListBucketsCommand } from "@aws-sdk/client-s3";
+import { blobServiceClient, AZURE_BLOB_CONTAINER } from "../config/azureStorage";
 import { testSmtpConnection } from "./emailService";
 import sendEmail from "./emailService";
 
@@ -24,7 +23,6 @@ export interface SystemHealthReport {
     services: {
         mongodb: ServiceStatus;
         brevo: ServiceStatus;
-        cloudflare_r2: ServiceStatus;
         azure_storage: ServiceStatus;
         ai_platform: ServiceStatus;
         external_ai?: {
@@ -65,24 +63,38 @@ export class HealthService {
         };
     }
 
-    static async checkCloudflareR2(): Promise<ServiceStatus> {
+    static async checkAzureBlobStorage(): Promise<ServiceStatus> {
         const start = Date.now();
         try {
-            // Use HeadBucket or ListObjects instead of ListBuckets (which often requires account-level permissions)
-            const { ListObjectsV2Command } = await import("@aws-sdk/client-s3");
-            await r2Client.send(new ListObjectsV2Command({ Bucket: R2_BUCKET, MaxKeys: 1 }));
+            if (!blobServiceClient) {
+                return {
+                    status: "not_configured",
+                    message: "Azure Blob Storage is not configured",
+                };
+            }
+
+            const containerClient = blobServiceClient.getContainerClient(AZURE_BLOB_CONTAINER);
+            const exists = await containerClient.exists();
+
+            if (!exists) {
+                return {
+                    status: "error",
+                    message: `Azure Container '${AZURE_BLOB_CONTAINER}' does not exist`,
+                    error_code: "AZURE_STORAGE_CONTAINER_MISSING",
+                };
+            }
 
             return {
                 status: "operational",
-                message: `Successfully connected to Cloudflare R2 (Bucket: ${R2_BUCKET})`,
+                message: `Successfully connected to Azure Blob Storage (Container: ${AZURE_BLOB_CONTAINER})`,
                 latency: Date.now() - start,
             };
         } catch (error: any) {
-            console.error("R2 Health Check Error:", error);
+            console.error("Azure Storage Health Check Error:", error);
             return {
                 status: "error",
-                message: error.name === "AccessDenied" ? "Access Denied (Check token permissions)" : error.message,
-                error_code: "R2_ACCESS_ERROR",
+                message: error.message,
+                error_code: "AZURE_STORAGE_ERROR",
             };
         }
     }
@@ -129,36 +141,30 @@ export class HealthService {
 
     static async generateFullReport(): Promise<SystemHealthReport> {
         console.log("HealthService: Starting full report generation...");
-        let mongodb, brevo, cloudflare_r2, azure_storage, ai_platform;
-
         try {
-            [mongodb, brevo, cloudflare_r2, azure_storage, ai_platform] = await Promise.all([
+            const [mongodb, brevo, azure_storage, ai_platform] = await Promise.all([
                 this.checkMongoDB().catch(e => ({ status: "error", message: `MongoDB Check Crash: ${e.message}` } as ServiceStatus)),
                 this.checkBrevo().catch(e => ({ status: "error", message: `Brevo Check Crash: ${e.message}` } as ServiceStatus)),
-                this.checkCloudflareR2().catch(e => ({ status: "error", message: `R2 Check Crash: ${e.message}` } as ServiceStatus)),
-                this.checkAzureStorage().catch(e => ({ status: "error", message: `Azure Check Crash: ${e.message}` } as ServiceStatus)),
+                this.checkAzureBlobStorage().catch(e => ({ status: "error", message: `Azure Check Crash: ${e.message}` } as ServiceStatus)),
                 this.checkAIPlatform().catch(e => ({ status: "error", message: `AI Platform Check Crash: ${e.message}` } as ServiceStatus)),
             ]);
             console.log("HealthService Results:", {
                 mongodb: mongodb.status,
                 brevo: brevo.status,
-                cloudflare_r2: cloudflare_r2.status,
+                azure_storage: azure_storage.status,
                 ai_platform: ai_platform.status,
                 ai_platform_overall: ai_platform.details?.overall_status
             });
-        } catch (e: any) {
-            console.error("HealthService: Promise.all failed critically:", e);
-            throw e;
-        }
 
-        let overall = "operational";
-        if ([mongodb, brevo, cloudflare_r2, ai_platform].some(s => s.status === "error")) {
-            overall = "error";
-        } else if (ai_platform.details?.overall_status === "error") {
-            overall = "error";
-        } else if ([mongodb, brevo, cloudflare_r2, ai_platform].some(s => s.status === "degraded")) {
-            overall = "degraded";
-        }
+            // Status aggregation
+            let overall = "operational";
+            if ([mongodb, brevo, azure_storage, ai_platform].some(s => s.status === "error")) {
+                overall = "error";
+            } else if (ai_platform.details?.overall_status === "error") {
+                overall = "error";
+            } else if ([mongodb, brevo, azure_storage, ai_platform].some(s => s.status === "degraded")) {
+                overall = "degraded";
+            }
 
         const externalAiServices = ai_platform.details?.services || {};
 
@@ -173,7 +179,6 @@ export class HealthService {
             services: {
                 mongodb,
                 brevo,
-                cloudflare_r2,
                 azure_storage,
                 ai_platform,
                 external_ai: {
