@@ -148,12 +148,12 @@ jobs:
       - name: 'Deploy AI API to App Service'
         uses: azure/webapps-deploy@v2
         with:
-          app-name: ${{ github.ref_name == 'main' && 'fdi-api-backend-prod' || 'fdi-ai-api-dev' }}
+          app-name: ${{ github.ref_name == 'main' && 'fdi-ai-api-prod' || 'fdi-ai-api-dev' }}
           images: ${{ env.ACR_NAME }}.azurecr.io/ai-backend:${{ github.ref_name }}
 
       # 🚀 Deploy AI Worker
       - name: 'Deploy AI Worker to App Service'
         uses: azure/webapps-deploy@v2
         with:
-          app-name: ${{ github.ref_name == 'main' && 'fdi-worker-backend-prod' || 'fdi-ai-worker-dev' }}
+          app-name: ${{ github.ref_name == 'main' && 'fdi-ai-worker-prod' || 'fdi-ai-worker-dev' }}
           images: ${{ env.ACR_NAME }}.azurecr.io/ai-backend:${{ github.ref_name }}
