@@ -7,7 +7,7 @@ import { MongoClient } from "mongodb";
 
 async function migrate() {
   const sourceUri = "mongodb+srv://Sonu7891:Sonu1234@cluster0.qfv4x.mongodb.net/pdf-summarizer";
-  const destUri = process.env["MONGODB-URI"]!;
+  const destUri = process.env.MONGODB_URI!;
 
   const sourceClient = new MongoClient(sourceUri);
   const destClient = new MongoClient(destUri);

@@ -4,12 +4,12 @@ import dotenv from "dotenv";
 dotenv.config();
 
 async function checkUsers() {
-  const originalUri = process.env["MONGODB-URI"];
+  const originalUri = process.env.MONGODB_URI;
   // Move the database name before the ?
   const fixedUri = originalUri?.replace("/?ssl=true", "/financial-doc-intelligence?ssl=true").split("/financial-doc-intelligence")[0] + "/financial-doc-intelligence" + originalUri?.split("?")[1] ? "?" + originalUri?.split("?")[1].replace("/financial-doc-intelligence", "") : "";
   
   // Actually, let's just construct it simply for the test
-  const testUri = process.env["MONGODB-URI"];
+  const testUri = process.env.MONGODB_URI;
 
   console.log("Connecting to Fixed URI:", testUri);
   

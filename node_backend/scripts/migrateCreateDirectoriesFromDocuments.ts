@@ -178,7 +178,7 @@ async function updateDirectoryStats(directoryId: string, workspaceId: string) {
 async function migrateDocumentsToDirectories() {
   try {
     // Connect to MongoDB
-    const mongoUri = process.env["MONGODB-URI"];
+    const mongoUri = process.env.MONGODB_URI;
     if (!mongoUri) {
       console.error("❌ MONGODB_URI not found in environment variables");
       process.exit(1);

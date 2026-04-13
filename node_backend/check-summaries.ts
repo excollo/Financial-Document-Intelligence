@@ -7,7 +7,7 @@ dotenv.config();
 
 async function checkSummaries() {
     try {
-        await mongoose.connect(process.env["MONGODB-URI"] as string);
+        await mongoose.connect(process.env.MONGODB_URI as string);
         console.log("Connected to MongoDB");
 
         // Get latest 5 summaries

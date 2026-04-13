@@ -13,7 +13,7 @@ load_dotenv(find_dotenv(use_root=False))
 def load_key_vault_secrets():
     vault_uri = "https://fdi-keyvault.vault.azure.net/"
     # Now this will correctly pick up APP-ENV from .env (as APP_ENV)
-    app_env = os.getenv("APP-ENV") or os.getenv("APP_ENV") or "sandbox"
+    app_env = os.getenv("APP_ENV") or os.getenv("APP_ENV") or "sandbox"
     use_kv = os.getenv("USE_KEYVAULT", "false").lower() == "true"
     
     if app_env in ["prod", "dev"] or use_kv:

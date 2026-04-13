@@ -19,7 +19,7 @@ async function createSharePermissions() {
     console.log("🔧 Creating SharePermissions for invited user...");
 
     // Connect to MongoDB
-    const mongoUri = process.env["MONGODB-URI"];
+    const mongoUri = process.env.MONGODB_URI;
     if (!mongoUri) {
       throw new Error("MONGODB_URI environment variable is not set");
     }

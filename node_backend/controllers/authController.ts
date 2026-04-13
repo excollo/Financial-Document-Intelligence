@@ -25,7 +25,7 @@ const generateTokens = async (user: any) => {
       domain: user.domain,
       domainId: domainId, // Add domainId to JWT
     },
-    process.env["JWT-SECRET"]!,
+    process.env.JWT_SECRET!,
     { expiresIn: "1d" }
   );
   const refreshToken = jwt.sign(
@@ -36,7 +36,7 @@ const generateTokens = async (user: any) => {
       domain: user.domain,
       domainId: domainId, // Add domainId to JWT
     },
-    process.env["JWT-REFRESH-SECRET"]!,
+    process.env.JWT_REFRESH_SECRET!,
     { expiresIn: "7d" }
   );
 
@@ -361,7 +361,7 @@ export const authController = {
     }
 
     try {
-      const decoded = jwt.verify(token, process.env["JWT-REFRESH-SECRET"]!) as any;
+      const decoded = jwt.verify(token, process.env.JWT_REFRESH_SECRET!) as any;
       const user = await User.findById(decoded.userId);
 
       if (!user || !user.refreshTokens.includes(token)) {
@@ -374,7 +374,7 @@ export const authController = {
 
       const accessToken = jwt.sign(
         { userId: user._id, email: user.email, role: user.role, domain: user.domain, domainId: domainId },
-        process.env["JWT-SECRET"]!,
+        process.env.JWT_SECRET!,
         { expiresIn: "1d" }
       );
 
@@ -390,7 +390,7 @@ export const authController = {
     try {
       const decoded = jwt.verify(
         refreshToken,
-        process.env["JWT-REFRESH-SECRET"]!
+        process.env.JWT_REFRESH_SECRET!
       ) as any;
       const user = await User.findById(decoded.userId);
       if (user) {
@@ -424,20 +424,20 @@ export const authController = {
 
       // Send email
       const transporter = nodemailer.createTransport({
-        host: process.env["SMTP-HOST"],
-        port: Number(process.env["SMTP-PORT"]) || 587,
+        host: process.env.SMTP_HOST,
+        port: Number(process.env.SMTP_PORT) || 587,
         secure: false,
         auth: {
-          user: process.env["SMTP-USER"],
-          pass: process.env["SMTP-PASS"],
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS,
         },
       });
       const resetUrl = `${
-        process.env["FRONTEND-URL"] || "http://localhost:8080"
+        process.env.FRONTEND_URL || "http://localhost:8080"
       }/reset-password?token=${token}&email=${encodeURIComponent(email)}`;
       await transporter.sendMail({
         to: email,
-        from: process.env["SMTP-FROM"] || process.env["SMTP-USER"],
+        from: process.env.SMTP_FROM || process.env.SMTP_USER,
         subject: "Password Reset Request",
         html: `<p>You requested a password reset.</p><p>Click <a href="${resetUrl}">here</a> to reset your password. This link is valid for 1 hour.</p>`,
       });

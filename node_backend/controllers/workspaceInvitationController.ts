@@ -1953,7 +1953,7 @@ export const workspaceInvitationController = {
 
 // Helper function to send invitation email
 async function sendInvitationEmail(invitation: any) {
-  const invitationUrl = `${process.env["FRONTEND-URL"]}/invitation/${invitation.invitationId}`;
+  const invitationUrl = `${process.env.FRONTEND_URL}/invitation/${invitation.invitationId}`;
 
   const emailData = {
     to: invitation.inviteeEmail,

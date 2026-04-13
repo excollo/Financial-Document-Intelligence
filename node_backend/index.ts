@@ -67,7 +67,7 @@ export const app = express();
 if (process.env.NODE_ENV !== 'test') {
   loadKeyVaultSecrets().then(() => {
     // Re-check mandatory environment variables after loading from KV
-    if (!process.env["MONGODB-URI"]) {
+    if (!process.env.MONGODB_URI) {
        console.warn("⚠️ MONGODB-URI still not found after Key Vault sync");
     }
   });
@@ -201,7 +201,7 @@ app.use(readLimiter);
 app.use(writeLimiter);
 
 // MongoDB Connection
-const MONGODB_URI = process.env["MONGODB-URI"];
+const MONGODB_URI = process.env.MONGODB_URI;
 if (!MONGODB_URI) {
   throw new Error("MONGODB-URI is not set");
 }
@@ -318,7 +318,7 @@ async function recoverStaleDocuments() {
     for (const doc of staleDocs) {
       try {
         // Try to query the Python API Celery job status for this document
-        const pythonApiUrl = process.env["PYTHON-API-URL"] || "http://localhost:8001";
+        const pythonApiUrl = process.env.PYTHON_API_URL || "http://localhost:8001";
         const axios = (await import("axios")).default;
 
         let resolved = false;
@@ -326,7 +326,7 @@ async function recoverStaleDocuments() {
         try {
           // Check if Celery has a job for this document's id (job_id may equal documentId due to our fix)
           const jobRes = await axios.get(`${pythonApiUrl}/jobs/${doc.id}`, {
-            headers: { "X-Internal-Secret": process.env["INTERNAL-SECRET"] || "" },
+            headers: { "X-Internal-Secret": process.env.INTERNAL_SECRET || "" },
             timeout: 5000,
           });
 

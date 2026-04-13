@@ -4,7 +4,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 async function checkUsers() {
-  const uri = process.env["MONGODB-URI"];
+  const uri = process.env.MONGODB_URI;
   console.log("Connecting to:", uri);
   
   try {

@@ -24,9 +24,9 @@ router.post("/logout", authController.logout);
 router.get("/microsoft", (req, res) => {
   const authUrl =
     `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?` +
-    `client_id=${process.env["CLIENT-ID"]}&` +
+    `client_id=${process.env.CLIENT_ID}&` +
     `response_type=code&` +
-    `redirect_uri=${encodeURIComponent(process.env["REDIRECT-URI"]!)}&` +
+    `redirect_uri=${encodeURIComponent(process.env.REDIRECT_URI!)}&` +
     `scope=${encodeURIComponent("openid profile email")}&` +
     `response_mode=query`;
 
@@ -55,10 +55,10 @@ router.get("/callback", async (req, res) => {
           "Content-Type": "application/x-www-form-urlencoded",
         },
         body: new URLSearchParams({
-          client_id: process.env["CLIENT-ID"]!,
-          client_secret: process.env["CLIENT-SECRET"]!,
+          client_id: process.env.CLIENT_ID!,
+          client_secret: process.env.CLIENT_SECRET!,
           code: code as string,
-          redirect_uri: process.env["REDIRECT-URI"]!,
+          redirect_uri: process.env.REDIRECT_URI!,
           grant_type: "authorization_code",
         }),
       }
@@ -142,7 +142,7 @@ router.get("/callback", async (req, res) => {
         name: user.name,
         email: user.email,
       },
-      process.env["JWT-SECRET"]!,
+      process.env.JWT_SECRET!,
       { expiresIn: "7d" }
     );
 
@@ -153,7 +153,7 @@ router.get("/callback", async (req, res) => {
         name: user.name,
         email: user.email,
       },
-      process.env["JWT-REFRESH-SECRET"]!,
+      process.env.JWT_REFRESH_SECRET!,
       { expiresIn: "7d" }
     );
 
@@ -162,7 +162,7 @@ router.get("/callback", async (req, res) => {
     await user.save();
 
     // Redirect to frontend with both tokens
-    const frontendUrl = process.env["FRONTEND-URL"] || "http://localhost:8080";
+    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:8080";
     res.redirect(
       `${frontendUrl}/auth-callback?token=${token}&refreshToken=${refreshToken}`
     );

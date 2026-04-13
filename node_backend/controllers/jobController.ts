@@ -5,8 +5,8 @@ import { AdverseFinding } from "../models/AdverseFinding";
 import { SopConfig } from "../models/SopConfig";
 import axios from "axios";
 
-const PYTHON_API_URL = process.env["PYTHON-API-URL"] || "http://localhost:8001";
-const INTERNAL_SECRET = process.env["INTERNAL-SECRET"] || "";
+const PYTHON_API_URL = process.env.PYTHON_API_URL || "http://localhost:8001";
+const INTERNAL_SECRET = process.env.INTERNAL_SECRET || "";
 
 interface AuthRequest extends Request {
   user?: any;

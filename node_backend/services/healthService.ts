@@ -89,7 +89,7 @@ export class HealthService {
 
     static async checkAzureStorage(): Promise<ServiceStatus> {
         // Placeholder for future Azure integration
-        if (!process.env["AZURE-STORAGE-CONNECTION-STRING"] && !process.env["AZURE-STORAGE-ACCOUNT-NAME"]) {
+        if (!process.env.AZURE_STORAGE_CONNECTION_STRING && !process.env.AZURE_STORAGE_ACCOUNT_NAME) {
             return {
                 status: "not_configured",
                 message: "Azure Storage variables not set. Skipping.",
@@ -103,8 +103,8 @@ export class HealthService {
 
     static async checkAIPlatform(): Promise<ServiceStatus> {
         const start = Date.now();
-        const pythonUrl = process.env["PYTHON-API-URL"] || "http://localhost:8001";
-        const INTERNAL_SECRET = process.env["INTERNAL-SECRET"] || "";
+        const pythonUrl = process.env.PYTHON_API_URL || "http://localhost:8001";
+        const INTERNAL_SECRET = process.env.INTERNAL_SECRET || "";
         try {
             const response = await axios.get(`${pythonUrl}/health/detailed`, { 
                 headers: {
@@ -205,7 +205,7 @@ export class HealthService {
     }
 
     private static async sendEmailAlert(report: SystemHealthReport) {
-        const adminEmail = process.env["ADMIN-EMAIL"] || process.env["BREVO-FROM-EMAIL"];
+        const adminEmail = process.env.ADMIN_EMAIL || process.env.BREVO_FROM_EMAIL;
         if (!adminEmail) return;
 
         try {
@@ -222,7 +222,7 @@ export class HealthService {
                     overall_status: report.overall_status,
                     services: report.services,
                     failingServices,
-                    dashboardUrl: `${process.env["FRONTEND-URL"]}/admin/dashboard?tab=health`
+                    dashboardUrl: `${process.env.FRONTEND_URL}/admin/dashboard?tab=health`
                 }
             });
             console.log("Health alert email sent to admin");

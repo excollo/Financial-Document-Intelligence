@@ -33,13 +33,13 @@ jobs:
       - name: Create Test Env File
         run: |
           cat <<EOF > .env
-          R2-ACCESS-KEY-ID=dummy-access-key
-          R2-SECRET-ACCESS-KEY=dummy-secret-key
-          R2-BUCKET-NAME=dummy-bucket
-          CLOUDFLARE-URI=https://dummy.cloudflarestorage.com
-          MONGODB-URI=mongodb://localhost:27017/test
-          JWT-SECRET=dummy-jwt-secret
-          JWT-REFRESH-SECRET=dummy-jwt-refresh-secret
+          R2_ACCESS_KEY_ID=dummy-access-key
+          R2_SECRET_ACCESS_KEY=dummy-secret-key
+          R2_BUCKET_NAME=dummy-bucket
+          CLOUDFLARE_URI=https://dummy.cloudflarestorage.com
+          MONGODB_URI=mongodb://localhost:27017/test
+          JWT_SECRET=dummy-jwt-secret
+          JWT_REFRESH_SECRET=dummy-jwt-refresh-secret
           EOF
 
       - name: Run Node Tests

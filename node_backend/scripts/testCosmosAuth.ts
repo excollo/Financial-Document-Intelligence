@@ -1,7 +1,7 @@
 import { MongoClient } from "mongodb";
 
 async function checkUser() {
-  const destUri = process.env["MONGODB-URI"]!;
+  const destUri = process.env.MONGODB_URI!;
   const client = new MongoClient(destUri);
 
   try {

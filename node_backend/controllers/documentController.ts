@@ -14,7 +14,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Summary } from "../models/Summary";
 import { Report } from "../models/Report";
 import { Chat } from "../models/Chat";
-const INTERNAL_SECRET = process.env["INTERNAL-SECRET"] || "";
+const INTERNAL_SECRET = process.env.INTERNAL_SECRET || "";
 
 interface AuthRequest extends Request {
   user?: any;
@@ -923,7 +923,7 @@ export const documentController = {
 
       // Delete vectors from Pinecone
       try {
-        const pythonApiUrl = process.env["PYTHON-API-URL"] || "http://localhost:8000";
+        const pythonApiUrl = process.env.PYTHON_API_URL || "http://localhost:8000";
         // Ensure pythonApiUrl doesn't have trailing slash
         const baseUrl = pythonApiUrl.endsWith("/") ? pythonApiUrl.slice(0, -1) : pythonApiUrl;
 
@@ -1172,7 +1172,7 @@ export const documentController = {
       });
 
       // --- INTEGRATION: CALL PYTHON API INSTEAD OF N8N ---
-      const pythonApiUrl = process.env["PYTHON-API-URL"] || "http://localhost:8000";
+      const pythonApiUrl = process.env.PYTHON_API_URL || "http://localhost:8000";
 
       try {
         const fileUrl = await documentController.getPresignedUrl(fileKey);
@@ -1663,7 +1663,7 @@ export const documentController = {
       await drhp.save();
 
       // --- INTEGRATION: CALL PYTHON API INSTEAD OF N8N ---
-      const pythonApiUrl = process.env["PYTHON-API-URL"] || "http://localhost:8000";
+      const pythonApiUrl = process.env.PYTHON_API_URL || "http://localhost:8000";
       let finalStatus = "processing";
 
       try {

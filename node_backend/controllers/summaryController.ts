@@ -18,7 +18,7 @@ interface AuthRequest extends Request {
   currentWorkspace?: string;
 }
 
-const INTERNAL_SECRET = process.env["INTERNAL-SECRET"] || "";
+const INTERNAL_SECRET = process.env.INTERNAL_SECRET || "";
 
 export const summaryController = {
   async triggerSummary(req: AuthRequest, res: Response) {
@@ -29,7 +29,7 @@ export const summaryController = {
         return res.status(400).json({ error: "Missing required fields (namespace, docType)" });
       }
 
-      const pythonApiUrl = process.env["PYTHON-API-URL"] || "http://localhost:8000";
+      const pythonApiUrl = process.env.PYTHON_API_URL || "http://localhost:8000";
       const domain = req.userDomain || (req as any).user?.domain;
 
       // Get domainId
@@ -633,7 +633,7 @@ export const summaryController = {
           },
           {
             headers: {
-              "x-api-key": process.env["PDFCO-API-KEY"],
+              "x-api-key": process.env.PDFCO_API_KEY,
               "Content-Type": "application/json",
             },
           }
