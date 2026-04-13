@@ -203,7 +203,7 @@ app.use(writeLimiter);
 // MongoDB Connection
 const MONGODB_URI = process.env.MONGODB_URI;
 if (!MONGODB_URI) {
-  throw new Error("MONGODB-URI is not set");
+  throw new Error("MONGODB_URI is not set");
 }
 
 if (process.env.NODE_ENV !== 'test') {

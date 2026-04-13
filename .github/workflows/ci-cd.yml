@@ -33,13 +33,15 @@ jobs:
       - name: Create Test Env File
         run: |
           cat <<EOF > .env
-          R2_ACCESS_KEY_ID=dummy-access-key
-          R2_SECRET_ACCESS_KEY=dummy-secret-key
-          R2_BUCKET_NAME=dummy-bucket
-          CLOUDFLARE_URI=https://dummy.cloudflarestorage.com
+          AZURE_BLOB_ACCOUNT_NAME=dummy-account
+          AZURE_BLOB_ACCOUNT_KEY=dummy-key
+          AZURE_BLOB_CONTAINER_NAME=drhp-files
+          AZURE_BLOB_STORAGE_CONNECTION_STRING=DefaultEndpointsProtocol=https;AccountName=dummy;AccountKey=dummy;EndpointSuffix=core.windows.net
+          AZURE_BLOB_MAX_FILE_SIZE_MB=100
           MONGODB_URI=mongodb://localhost:27017/test
           JWT_SECRET=dummy-jwt-secret
           JWT_REFRESH_SECRET=dummy-jwt-refresh-secret
+          INTERNAL_SECRET=dummy-internal-secret
           EOF
 
       - name: Run Node Tests
