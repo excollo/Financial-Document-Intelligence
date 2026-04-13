@@ -146,14 +146,18 @@ jobs:
 
       # 🚀 Deploy AI API
       - name: 'Deploy AI API to App Service'
-        uses: azure/webapps-deploy@v2
-        with:
-          app-name: ${{ github.ref_name == 'main' && 'fdi-ai-api-prod' || 'fdi-ai-api-dev' }}
-          images: ${{ env.ACR_NAME }}.azurecr.io/ai-backend:${{ github.ref_name }}
+        run: |
+          az webapp config container set \
+            --name ${{ github.ref_name == 'main' && 'fdi-ai-api-prod' || 'fdi-ai-api-dev' }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --docker-custom-image-name ${{ env.ACR_NAME }}.azurecr.io/ai-backend:${{ github.ref_name }}
+          az webapp restart --name ${{ github.ref_name == 'main' && 'fdi-ai-api-prod' || 'fdi-ai-api-dev' }} --resource-group ${{ env.RESOURCE_GROUP }}
 
       # 🚀 Deploy AI Worker
       - name: 'Deploy AI Worker to App Service'
-        uses: azure/webapps-deploy@v2
-        with:
-          app-name: ${{ github.ref_name == 'main' && 'fdi-ai-worker-prod' || 'fdi-ai-worker-dev' }}
-          images: ${{ env.ACR_NAME }}.azurecr.io/ai-backend:${{ github.ref_name }}
+        run: |
+          az webapp config container set \
+            --name ${{ github.ref_name == 'main' && 'fdi-ai-worker-prod' || 'fdi-ai-worker-dev' }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --docker-custom-image-name ${{ env.ACR_NAME }}.azurecr.io/ai-backend:${{ github.ref_name }}
+          az webapp restart --name ${{ github.ref_name == 'main' && 'fdi-ai-worker-prod' || 'fdi-ai-worker-dev' }} --resource-group ${{ env.RESOURCE_GROUP }}
