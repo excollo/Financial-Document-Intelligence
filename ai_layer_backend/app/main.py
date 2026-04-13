@@ -4,11 +4,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 # ============================================================================
-# AZURE KEY VAULT AUTO-LOADER
+# ENVIRONMENT LOADER
 # ============================================================================
+from dotenv import load_dotenv, find_dotenv
+# Explicitly find .env relative to this project structure
+load_dotenv(find_dotenv(use_root=False))
+
 def load_key_vault_secrets():
     vault_uri = "https://fdi-keyvault.vault.azure.net/"
-    app_env = os.getenv("APP_ENV", "sandbox")
+    # Now this will correctly pick up APP-ENV from .env (as APP_ENV)
+    app_env = os.getenv("APP-ENV") or os.getenv("APP_ENV") or "sandbox"
     use_kv = os.getenv("USE_KEYVAULT", "false").lower() == "true"
     
     if app_env in ["prod", "dev"] or use_kv:

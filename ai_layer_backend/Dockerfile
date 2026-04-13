@@ -3,15 +3,13 @@ FROM python:3.11-slim AS ai-backend
 
 WORKDIR /app
 
-# System dependencies for OpenCV, Camelot, and Ghostscript
+# :white_check_mark: System dependencies (IMPORTANT for camelot + opencv)
 RUN apt-get update && apt-get install -y \
     libgl1 \
-    libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
     ghostscript \
     python3-tk \
+    libxml2 \
+    libxslt1-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Environment variables

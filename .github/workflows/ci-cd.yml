@@ -117,7 +117,7 @@ jobs:
           docker push ${{ env.ACR_NAME }}.azurecr.io/ai-backend:${{ github.ref_name }}
 
   # -------------------------------------------------------------
-  # 🚀 Deploy to Azure Container Apps
+  # 🚀 Deploy to Azure App Service
   # -------------------------------------------------------------
   deploy:
     needs: build-and-push
@@ -129,7 +129,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # Login to Azure using OIDC (Proven working secrets)
+      # Login to Azure using OIDC
       - name: Azure Login
         uses: azure/login@v2
         with:
@@ -137,33 +137,23 @@ jobs:
           tenant-id: ${{ secrets.ACANODEBACKENDDEV_AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.ACANODEBACKENDDEV_AZURE_SUBSCRIPTION_ID }}
 
-      - name: Install Azure Container Apps Extension
-        run: |
-          az extension add --name containerapp --upgrade
-          az config set core.no_registration=true
-
-
-
       # 🚀 Deploy Node Backend
-      - name: Deploy Node Backend
-        run: |
-          az containerapp update \
-            --ids "/subscriptions/f3ac2634-4e07-4d24-adc5-3e607e4bd177/resourceGroups/DRHP-summarizer/providers/Microsoft.App/containerApps/${{ github.ref_name == 'main' && 'aca-node-backend-prod' || 'aca-node-backend-dev' }}" \
-            --image ${{ env.ACR_NAME }}.azurecr.io/node-backend:${{ github.ref_name }} \
-            --min-replicas 0
+      - name: 'Deploy Node Backend to App Service'
+        uses: azure/webapps-deploy@v2
+        with:
+          app-name: ${{ github.ref_name == 'main' && 'fdi-node-backend-prod' || 'fdi-node-backend-dev' }}
+          images: ${{ env.ACR_NAME }}.azurecr.io/node-backend:${{ github.ref_name }}
 
-      # 🚀 Deploy AI Backend
-      - name: Deploy AI Backend
-        run: |
-          az containerapp update \
-            --ids "/subscriptions/f3ac2634-4e07-4d24-adc5-3e607e4bd177/resourceGroups/DRHP-summarizer/providers/Microsoft.App/containerApps/${{ github.ref_name == 'main' && 'aca-ai-api-prod' || 'aca-ai-api-dev' }}" \
-            --image ${{ env.ACR_NAME }}.azurecr.io/ai-backend:${{ github.ref_name }} \
-            --min-replicas 0
+      # 🚀 Deploy AI API
+      - name: 'Deploy AI API to App Service'
+        uses: azure/webapps-deploy@v2
+        with:
+          app-name: ${{ github.ref_name == 'main' && 'fdi-api-backend-prod' || 'fdi-ai-api-dev' }}
+          images: ${{ env.ACR_NAME }}.azurecr.io/ai-backend:${{ github.ref_name }}
 
       # 🚀 Deploy AI Worker
-      - name: Deploy AI Worker
-        run: |
-          az containerapp update \
-            --ids "/subscriptions/f3ac2634-4e07-4d24-adc5-3e607e4bd177/resourceGroups/DRHP-summarizer/providers/Microsoft.App/containerApps/${{ github.ref_name == 'main' && 'aca-ai-worker-prod' || 'aca-ai-worker-dev' }}" \
-            --image ${{ env.ACR_NAME }}.azurecr.io/ai-backend:${{ github.ref_name }} \
-            --min-replicas 0
+      - name: 'Deploy AI Worker to App Service'
+        uses: azure/webapps-deploy@v2
+        with:
+          app-name: ${{ github.ref_name == 'main' && 'fdi-worker-backend-prod' || 'fdi-ai-worker-dev' }}
+          images: ${{ env.ACR_NAME }}.azurecr.io/ai-backend:${{ github.ref_name }}

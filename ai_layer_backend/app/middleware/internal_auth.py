@@ -13,13 +13,18 @@ Usage in routers:
         ...
 """
 from fastapi import Request, HTTPException, Depends
+from fastapi.security import APIKeyHeader
 from app.core.config import settings
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
+internal_secret_header = APIKeyHeader(name="X-Internal-Secret", auto_error=False)
 
-async def require_internal_secret(request: Request) -> None:
+async def require_internal_secret(
+    request: Request,
+    provided_key: str = Depends(internal_secret_header)
+) -> None:
     """
     FastAPI dependency that validates the X-Internal-Secret header.
     
@@ -38,7 +43,8 @@ async def require_internal_secret(request: Request) -> None:
             },
         )
     
-    provided = request.headers.get("x-internal-secret", "")
+    # Use key from header (via APIKeyHeader) or from the request itself as fallback
+    provided = provided_key or request.headers.get("x-internal-secret", "")
     
     if not provided or provided != expected:
         logger.warning(
