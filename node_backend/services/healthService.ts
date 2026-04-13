@@ -198,6 +198,10 @@ export class HealthService {
 
         this.lastReport = report;
         return report;
+        } catch (error: any) {
+            console.error("HealthService: Error generating report:", error);
+            throw error;
+        }
     }
 
     private static shouldSendAlert(report: SystemHealthReport): boolean {
