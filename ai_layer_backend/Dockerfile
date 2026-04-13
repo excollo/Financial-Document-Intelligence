@@ -6,6 +6,8 @@ WORKDIR /app
 # :white_check_mark: System dependencies (IMPORTANT for camelot + opencv)
 RUN apt-get update && apt-get install -y \
     libgl1 \
+    libglib2.0-0 \
+    poppler-utils \
     ghostscript \
     python3-tk \
     libxml2 \
