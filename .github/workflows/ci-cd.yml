@@ -86,13 +86,13 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # Login to Azure using OIDC (Proven working secrets)
+      # Login to Azure using OIDC
       - name: Azure Login
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.ACANODEBACKENDDEV_AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.ACANODEBACKENDDEV_AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.ACANODEBACKENDDEV_AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_B953055700A1448D828BDD500A13D066 }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_038C3B5AD8C34641A8B618343B76608F }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_0B47EF5A196D4AA59065B1555D1BE5ED }}
 
       # Login to ACR natively using Admin Credentials
       - name: Login to ACR
@@ -133,9 +133,9 @@ jobs:
       - name: Azure Login
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.ACANODEBACKENDDEV_AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.ACANODEBACKENDDEV_AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.ACANODEBACKENDDEV_AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_B953055700A1448D828BDD500A13D066 }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_038C3B5AD8C34641A8B618343B76608F }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_0B47EF5A196D4AA59065B1555D1BE5ED }}
 
       # 🚀 Deploy Node Backend
       - name: 'Deploy Node Backend to App Service'
