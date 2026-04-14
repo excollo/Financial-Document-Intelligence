@@ -96,7 +96,7 @@ JWT_REFRESH_SECRET=your_jwt_refresh_secret
 CLIENT_ID=your_microsoft_client_id
 CLIENT_SECRET=your_microsoft_client_secret
 REDIRECT_URI=https://smart-rhtp-backend-2.onrender.com/api/auth/callback
-FRONTEND_URL=https://rhp-document-summarizer.vercel.app/
+FRONTEND_URL=https://financial-document-intelligence.vercel.app/
 
 # Cloudflare R2 (S3-compatible) configuration
 R2_ACCESS_KEY_ID=your_r2_access_key_id

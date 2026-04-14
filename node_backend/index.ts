@@ -84,7 +84,7 @@ const io = new SocketIOServer(server, {
       if (!origin) return callback(null, true);
 
       const allowedOrigins = [
-        "https://rhp-document-summarizer.vercel.app",
+        "https://financial-document-intelligence.vercel.app",
         "http://localhost:8080",
         "http://localhost:3000",
       ];
@@ -109,7 +109,7 @@ const PORT = process.env["PORT"] || 5000;
 
 // CORS configuration - must be before other middleware
 const allowedOrigins = [
-  "https://rhp-document-summarizer.vercel.app",
+  "https://financial-document-intelligence.vercel.app",
   "http://localhost:8080",
   "http://localhost:3000",
 ];
