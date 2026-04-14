@@ -9,6 +9,7 @@ from pinecone import Pinecone
 import cohere
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.db.mongo import mongodb
 
 logger = get_logger(__name__)
 
@@ -189,8 +190,56 @@ class HealthService:
                 "error_code": "GEMINI_ERROR"
             }
 
+    async def check_mongodb(self) -> Dict[str, Any]:
+        """Check MongoDB connectivity."""
+        start_time = time.time()
+        try:
+            # The mongodb object is already managed by the app lifespan
+            # We just need to check if we can execute a simple command
+            await mongodb.db.command("ping")
+            return {
+                "status": "operational",
+                "latency": round(time.time() - start_time, 3),
+                "message": "Successfully pinged MongoDB"
+            }
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": str(e),
+                "error_code": "MONGODB_ERROR"
+            }
+
+    async def check_redis(self) -> Dict[str, Any]:
+        """Check Redis connectivity."""
+        start_time = time.time()
+        try:
+            import redis
+            # Use a short timeout to prevent hanging the health check
+            r = redis.from_url(
+                settings.REDIS_URL, 
+                socket_connect_timeout=2,
+                socket_timeout=2
+            )
+            r.ping()
+            return {
+                "status": "operational",
+                "latency": round(time.time() - start_time, 3),
+                "message": "Successfully pinged Redis (Queue)"
+            }
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": str(e),
+                "error_code": "REDIS_ERROR"
+            }
+
     async def get_full_status(self) -> Dict[str, Any]:
         """Aggregate all health checks."""
+        # Core Infrastructure
+        mongodb_status = await self.check_mongodb()
+        redis_status = await self.check_redis()
+        
+        # AI Services
         openai_status = await self.check_openai()
         pinecone_status = await self.check_pinecone()
         cohere_status = await self.check_cohere()
@@ -199,7 +248,8 @@ class HealthService:
 
         # Overall health logic
         overall = "operational"
-        critical_services = [openai_status, pinecone_status, gemini_status]
+        critical_services = [mongodb_status, redis_status, openai_status, pinecone_status]
+        
         if any(s["status"] == "error" for s in critical_services):
             overall = "error"
         elif any(s["status"] == "degraded" for s in critical_services):
@@ -214,7 +264,11 @@ class HealthService:
                 "version": settings.APP_VERSION,
                 "status": "operational"
             },
-            "services": {
+            "infrastructure": {
+                "mongodb": mongodb_status,
+                "redis": redis_status
+            },
+            "ai_services": {
                 "openai": openai_status,
                 "pinecone": pinecone_status,
                 "cohere": cohere_status,

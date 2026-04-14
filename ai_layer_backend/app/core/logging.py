@@ -19,22 +19,7 @@ def setup_logging() -> None:
     # Determine log level
     log_level = getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO)
 
-    # Configure Azure Monitor if connection string is present
-    if settings.APPLICATIONINSIGHTS_CONNECTION_STRING:
-        try:
-            # Opentelemetry initialization
-            from azure.monitor.opentelemetry import configure_azure_monitor
-            configure_azure_monitor(
-                connection_string=settings.APPLICATIONINSIGHTS_CONNECTION_STRING,
-            )
-            # Use standard logging for the handshake to ensure it's captured
-            logging.info("📈 Azure Monitor: INITIALIZED")
-        except Exception as e:
-            # Fallback to stdout if Azure Monitor fails (don't block boot)
-            sys.stderr.write(f"⚠️ Azure Monitor PENDING/FAILED: {str(e)}\n")
-            logging.warning(f"Azure Monitor initialization skipped: {str(e)}")
-    
-    # Configure standard library logging
+    # Configure standard library logging FIRST (so we get logs immediately)
     logging.basicConfig(
         format="%(message)s",
         stream=sys.stdout,
@@ -68,6 +53,19 @@ def setup_logging() -> None:
         logger_factory=structlog.stdlib.LoggerFactory(),
         cache_logger_on_first_use=True,
     )
+
+    # Configure Azure Monitor if connection string is present
+    # We do this LAST so it doesn't block the initial console logs
+    if settings.APPLICATIONINSIGHTS_CONNECTION_STRING:
+        try:
+            from azure.monitor.opentelemetry import configure_azure_monitor
+            configure_azure_monitor(
+                connection_string=settings.APPLICATIONINSIGHTS_CONNECTION_STRING,
+            )
+            logging.info("📈 Azure Monitor tracing: INITIALIZED")
+        except Exception as e:
+            sys.stderr.write(f"⚠️ Azure Monitor PENDING/FAILED: {str(e)}\n")
+            logging.warning(f"Azure Monitor initialization skipped: {str(e)}")
 
 
 def get_logger(name: str = __name__) -> structlog.BoundLogger:

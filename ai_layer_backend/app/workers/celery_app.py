@@ -64,7 +64,15 @@ celery_app.conf.update(
     task_acks_late=True,
     task_reject_on_worker_lost=True,
 
+    # Connection and Transport Resilience
     broker_connection_retry_on_startup=True,
+    broker_connection_timeout=10,  # Don't wait forever
+    broker_transport_options={
+        "socket_timeout": 5,      # Timeout for individual operations
+        "socket_connect_timeout": 5, # Timeout for initial connection
+        "visibility_timeout": 3600,  # 1 hour
+        "retry_on_timeout": True,
+    },
 )
 
 # ✅ Auto-discover tasks
