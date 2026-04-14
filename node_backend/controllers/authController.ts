@@ -9,6 +9,15 @@ import { validateEmail, getPrimaryDomain } from "../config/domainConfig";
 import { publishEvent } from "../lib/events";
 import { sendEmail } from "../services/emailService";
 
+const withTimeout = async <T>(promise: Promise<T>, ms: number, label: string): Promise<T> => {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+    ),
+  ]);
+};
+
 // Helper to generate tokens
 // Creates an access token and a refresh token, stores the refresh
 // token in the user's document for later revocation, and returns both.
@@ -44,7 +53,7 @@ const generateTokens = async (user: any) => {
     user.refreshTokens = [];
   }
   user.refreshTokens.push(refreshToken);
-  await user.save();
+  await withTimeout(user.save(), 12000, "Persist refresh token");
 
   return { accessToken, refreshToken };
 };
@@ -329,12 +338,18 @@ export const authController = {
     const { email, password } = req.body;
     try {
       const loginStart = Date.now();
-      const user = await User.findOne({ email });
+      const user = await withTimeout(
+        User.findOne({ email }).maxTimeMS(10000),
+        12000,
+        "Find user"
+      );
       if (!user || !user.password) {
         return res.status(400).json({ message: "Invalid credentials" });
       }
 
       const isMatch = await bcrypt.compare(password, user.password);
+      const bcryptMs = Date.now() - loginStart;
+      console.log(`[login] password check finished in ${bcryptMs}ms for ${email}`);
       if (!isMatch) {
         return res.status(400).json({ message: "Invalid credentials" });
       }
@@ -355,6 +370,9 @@ export const authController = {
       console.log(`[login] success for ${email} in ${elapsedMs}ms`);
     } catch (error) {
       console.error("Login error:", error);
+      if (error instanceof Error && /timed out/i.test(error.message)) {
+        return res.status(504).json({ message: "Login timed out. Please retry." });
+      }
       res.status(500).json({ message: "Server error" });
     }
   },
