@@ -329,6 +329,7 @@ export const authController = {
   async login(req: Request, res: Response) {
     const { email, password } = req.body;
     try {
+      const loginStart = Date.now();
       const user = await User.findOne({ email });
       if (!user || !user.password) {
         return res.status(400).json({ message: "Invalid credentials" });
@@ -340,13 +341,19 @@ export const authController = {
       }
 
       user.lastLogin = new Date();
-      await user.save();
-
-      // Link SharePermissions by email to user ID (for cross-domain shares)
-      await linkSharePermissionsToUser(user);
 
       const tokens = await generateTokens(user);
       res.json(tokens);
+
+      // Do post-login linking in background so auth response is not blocked.
+      setImmediate(() => {
+        linkSharePermissionsToUser(user).catch((err) => {
+          console.error("[login] background share linking failed:", err);
+        });
+      });
+
+      const elapsedMs = Date.now() - loginStart;
+      console.log(`[login] success for ${email} in ${elapsedMs}ms`);
     } catch (error) {
       console.error("Login error:", error);
       res.status(500).json({ message: "Server error" });
