@@ -13,9 +13,8 @@ import { sendEmail } from "../services/emailService";
 // Creates an access token and a refresh token, stores the refresh
 // token in the user's document for later revocation, and returns both.
 const generateTokens = async (user: any) => {
-  // Get domainId from user if available
-  const userWithDomain = await User.findById(user._id).select("domainId").lean();
-  const domainId = userWithDomain?.domainId || (user.domainId);
+  // Use domainId already present on loaded user document to avoid extra DB roundtrip.
+  const domainId = user.domainId;
   
   const accessToken = jwt.sign(
     {

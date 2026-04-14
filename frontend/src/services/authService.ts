@@ -73,6 +73,9 @@ export const authService = {
     const response = await axios.post(`${API_URL}/auth/login`, {
       email,
       password,
+    }, {
+      timeout: 20000,
+      timeoutErrorMessage: "Login request timed out. Please try again.",
     });
     return response.data;
   },
