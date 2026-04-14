@@ -94,12 +94,12 @@ class PipelineOrchestrator:
             raise e
 
     async def _prepare_document(self):
-        """Download document from S3/R2 and perform initial text extraction."""
-        logger.info("Downloading PDF from S3", job_id=self.ctx.job_id, key=self.ctx.s3_input_key)
+        """Download document from Azure Blob Storage and perform initial text extraction."""
+        logger.info("Downloading PDF from Azure Blob Storage", job_id=self.ctx.job_id, key=self.ctx.s3_input_key)
         
         file_content = await s3_service.download_file(self.ctx.s3_input_key)
         if not file_content:
-            raise FileNotFoundError(f"Could not download PDF from S3: {self.ctx.s3_input_key}")
+            raise FileNotFoundError(f"Could not download PDF from Azure Blob Storage: {self.ctx.s3_input_key}")
 
         logger.info("Extracting all sections and tables from PDF (Parallel)", job_id=self.ctx.job_id)
         

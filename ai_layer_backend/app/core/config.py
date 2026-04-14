@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     
     # MongoDB Configuration
     MONGO_URI: str = ""
+    MONGO_DB_NAME: str = "pdf-summarizer"
     
     # Logging
     LOG_LEVEL: str = "INFO"
@@ -79,6 +80,12 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: Optional[str] = None
     SERPER_API_KEY: Optional[str] = None
     GPT_MODEL: str = "gpt-4o-mini"
+    
+    # Azure Blob Storage
+    AZURE_BLOB_ACCOUNT_NAME: str = ""
+    AZURE_BLOB_ACCOUNT_KEY: str = ""
+    AZURE_BLOB_CONTAINER_NAME: str = "drhp-files"
+    AZURE_BLOB_STORAGE_CONNECTION_STRING: str = ""
     
     # Internal authentication (Node <-> Python)
     INTERNAL_SECRET: str = ""  # Shared secret for internal API calls
@@ -109,12 +116,7 @@ class Settings(BaseSettings):
     def SUMMARY_STATUS_UPDATE_URL(self) -> str:
         return f"{self.NODE_BACKEND_URL}/api/summaries/summary-status/update"
 
-    # Cloudflare R2 / S3 Configuration
-    R2_ACCESS_KEY_ID: str = ""
-    R2_SECRET_ACCESS_KEY: str = ""
-    R2_BUCKET_NAME: str = "drhp-files"
-    CLOUDFLARE_URI: str = "https://0656c3a93c4bf3f9004bdca37344b55d.r2.cloudflarestorage.com"
-    S3_REGION: str = "auto"
+
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

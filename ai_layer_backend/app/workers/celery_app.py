@@ -13,15 +13,14 @@ from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
-# ✅ FORCE ENV VARIABLES (fallback if settings fails)
-BROKER_URL = os.getenv("CELERY_BROKER_URL") or os.getenv("REDIS_URL")
-RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", BROKER_URL)
+from app.core.config import settings
+
+# ✅ Use settings (loads from .env automatically via Pydantic)
+BROKER_URL = settings.CELERY_BROKER_URL
+RESULT_BACKEND = settings.CELERY_RESULT_BACKEND
 
 if not BROKER_URL:
-    # Try to find REDIS-URL (hyphenated) just in case
-    BROKER_URL = os.getenv("REDIS-URL")
-    if not BROKER_URL:
-        raise ValueError("❌ CELERY_BROKER_URL or REDIS_URL is not set!")
+    raise ValueError("❌ CELERY_BROKER_URL or REDIS_URL is not set in settings!")
 
 logger.info(f"Using Celery Broker: {BROKER_URL}")
 

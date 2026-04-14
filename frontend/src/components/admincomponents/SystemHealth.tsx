@@ -113,7 +113,7 @@ export const SystemHealth: React.FC = () => {
                 />
                 <ServiceCard title="Database (Mongo)" status={report?.services?.mongodb} loading={loading} />
                 <ServiceCard title="Email (Brevo)" status={report?.services?.brevo} loading={loading} />
-                <ServiceCard title="Cloudflare R2" status={report?.services?.cloudflare_r2} loading={loading} />
+
                 <ServiceCard title="Azure Storage" status={report?.services?.azure_storage} loading={loading} />
 
                 {/* External AI APIs */}

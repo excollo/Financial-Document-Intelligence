@@ -780,7 +780,7 @@ export const documentController = {
         return res.status(404).json({ error: "Document not found" });
       }
 
-      // HARD DELETE: remove file(s) from R2 and Mongo based on type
+      // HARD DELETE: remove file(s) from Azure Blob Storage and Mongo based on type
       if (document.fileKey) {
         try {
           await storageService.deleteFile(document.fileKey);
@@ -959,8 +959,10 @@ export const documentController = {
       }
       const originalname = req.file.originalname;
       // Ensure cross-compatibility with AWS S3 (key) and Azure Blob Storage (url/blobName)
-      const rawUrl = (req.file as any).url;
-      const fileKey = (req.file as any).key || (req.file as any).blobName || (rawUrl ? decodeURIComponent(rawUrl.split('?')[0].split('/').pop() || "") : undefined);
+      const rawUrl = (req.file as any).url || (req.file as any).path;
+      const fileKey = (req.file as any).key || 
+                     (req.file as any).blobName || 
+                     (typeof rawUrl === 'string' ? decodeURIComponent(rawUrl.split('?')[0].split('/').pop() || "") : undefined);
       
       if (!fileKey) {
         return res.status(400).json({ error: "Internal storage error: Upload succeeded but could not determine blob key." });
@@ -1521,8 +1523,10 @@ export const documentController = {
       if (!drhp) return res.status(404).json({ error: "DRHP not found" });
 
       // Ensure cross-compatibility with AWS S3 (key) and Azure Blob Storage (url/blobName)
-      const rawUrl = (req.file as any).url;
-      const fileKey = (req.file as any).key || (req.file as any).blobName || (rawUrl ? decodeURIComponent(rawUrl.split('?')[0].split('/').pop() || "") : undefined);
+      const rawUrl = (req.file as any).url || (req.file as any).path;
+      const fileKey = (req.file as any).key || 
+                     (req.file as any).blobName || 
+                     (typeof rawUrl === 'string' ? decodeURIComponent(rawUrl.split('?')[0].split('/').pop() || "") : undefined);
 
       if (!fileKey) {
         return res.status(400).json({ error: "Internal storage error: Upload succeeded but could not determine blob key." });

@@ -1312,7 +1312,7 @@ export const StartConversation: React.FC = () => {
               directoryId: document.directoryId,
               drhpId,
               rhpId,
-              title: `${document.name.split('.')[0]} Intelligence Report`
+              title: `${(document?.name || 'Document').split('.')[0]} Intelligence Report`
             });
 
             // Refresh jobs for this directory if we are inside it
@@ -1381,7 +1381,7 @@ export const StartConversation: React.FC = () => {
         directoryId: selectedDoc.directoryId || targetDoc.directoryId,
         drhpId,
         rhpId,
-        title: `${selectedDoc.name.split('.')[0]} Intelligence Report`
+        title: `${(selectedDoc?.name || 'Document').split('.')[0]} Intelligence Report`
       });
 
       // Close modal

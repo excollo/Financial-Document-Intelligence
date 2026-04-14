@@ -94,10 +94,11 @@ export const reportController = {
       const currentWorkspace = req.currentWorkspace || req.userDomain;
       const domain = req.userDomain || (link?.domain);
 
-      const query: any = {
-        domain: domain, // Use link domain if available, otherwise user domain
-        workspaceId: currentWorkspace,
-      };
+      const query: any = {};
+      if (domain) query.domain = domain;
+      if (currentWorkspace) query.workspaceId = currentWorkspace;
+
+      console.log("Fetching reports with query:", JSON.stringify(query));
 
       // Handle link access
       if (link) {
@@ -246,16 +247,22 @@ export const reportController = {
       // Visibility: All members of the workspace can see all reports in that workspace.
       // Do not further restrict by userId/microsoftId for reads.
 
-      const rawReports = await Report.find(query);
+    const rawReports = await Report.find(query).lean();
+      console.log(`Found ${rawReports.length} reports`);
+      
       const reports = rawReports.sort((a: any, b: any) => {
         const timeA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
         const timeB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
         return timeB - timeA;
       });
       res.json(reports);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching reports:", error);
-      res.status(500).json({ message: "Error fetching reports" });
+      res.status(500).json({ 
+        message: "Error fetching reports", 
+        details: error.message,
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      });
     }
   },
 
@@ -663,10 +670,19 @@ export const reportController = {
       const workspaceMap = new Map(workspaces.map(ws => [ws.workspaceId, { workspaceId: ws.workspaceId, name: ws.name, slug: ws.slug }]));
 
       // Add workspace information to each report
-      const reportsWithWorkspace = reports.map(report => ({
-        ...report.toObject(),
-        workspaceId: workspaceMap.get(report.workspaceId) || { workspaceId: report.workspaceId, name: workspaceMap.get(report.workspaceId)?.name ? workspaceMap.get(report.workspaceId)?.name : 'Excollo', slug: 'unknown' }
-      }));
+      const reportsWithWorkspace = reports.map(report => {
+        const reportObj = report.toObject ? report.toObject() : report;
+        const wsData = workspaceMap.get(reportObj.workspaceId);
+        
+        return {
+          ...reportObj,
+          workspaceId: wsData || { 
+            workspaceId: reportObj.workspaceId, 
+            name: 'Excollo', 
+            slug: 'unknown' 
+          }
+        };
+      });
 
       res.json(reportsWithWorkspace);
     } catch (error) {

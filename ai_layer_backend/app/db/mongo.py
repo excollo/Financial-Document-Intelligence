@@ -41,8 +41,11 @@ class MongoDB:
 
             if self.client is None:
                 self.client = AsyncIOMotorClient(settings.MONGO_URI, serverSelectionTimeoutMS=5000)
-                # Automatically get the database name from the URI
-                self.db = self.client.get_default_database()
+                # Use default database from URI, or fallback to settings.MONGO_DB_NAME
+                try:
+                    self.db = self.client.get_default_database()
+                except Exception:
+                    self.db = self.client[settings.MONGO_DB_NAME]
                 
             # Always ensure db is reachable
             await self.client.admin.command('ping')
@@ -66,8 +69,11 @@ class MongoDB:
         """Establish synchronous MongoDB connection (for Celery workers)."""
         try:
             self.sync_client = MongoClient(settings.MONGO_URI, serverSelectionTimeoutMS=5000)
-            # Automatically get the database name from the URI
-            self.sync_db = self.sync_client.get_default_database()
+            # Use default database from URI, or fallback to settings.MONGO_DB_NAME
+            try:
+                self.sync_db = self.sync_client.get_default_database()
+            except Exception:
+                self.sync_db = self.sync_client[settings.MONGO_DB_NAME]
             # Test connection
             self.sync_client.admin.command('ping')
             db_name = self.sync_db.name if self.sync_db is not None else "unknown"
