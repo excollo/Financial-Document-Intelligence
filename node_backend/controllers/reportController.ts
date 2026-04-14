@@ -9,9 +9,7 @@ import path from "path";
 import os from "os";
 import { io } from "../index";
 import { publishEvent } from "../lib/events";
-import { r2Client, R2_BUCKET } from "../config/r2";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { GetObjectCommand } from "@aws-sdk/client-s3";
+
 
 const execAsync = promisify(exec);
 

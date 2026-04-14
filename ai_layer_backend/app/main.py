@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # ============================================================================
 from dotenv import load_dotenv, find_dotenv
 # Explicitly find .env relative to this project structure
-load_dotenv(find_dotenv(use_root=False))
+load_dotenv(find_dotenv())
 
 def load_key_vault_secrets():
     vault_uri = "https://fdi-keyvault.vault.azure.net/"

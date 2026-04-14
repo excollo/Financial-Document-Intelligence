@@ -16,8 +16,7 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=False,  # Environment variables are usually case-insensitive
         extra="ignore",
-        alias_generator=lambda s: s.replace("_", "-"),
-        populate_by_name=True  # Allows using either underscored or hyphenated names
+        populate_by_name=True
     )
     
     # Environment

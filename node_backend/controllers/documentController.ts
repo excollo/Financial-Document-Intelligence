@@ -7,10 +7,8 @@ import { User } from "../models/User";
 import axios from "axios";
 import FormData from "form-data";
 import { io } from "../index";
-import { r2Client, R2_BUCKET } from "../config/r2";
+import { storageService } from "../services/storageService";
 import { publishEvent } from "../lib/events";
-import { GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Summary } from "../models/Summary";
 import { Report } from "../models/Report";
 import { Chat } from "../models/Chat";
@@ -38,14 +36,9 @@ export const documentController = {
     return s;
   },
 
-  // Helper to generate a pre-signed URL for a file in R2
+  // Helper to generate a SAS URL for a file in Azure Blob Storage
   async getPresignedUrl(fileKey: string): Promise<string> {
-    const command = new GetObjectCommand({
-      Bucket: R2_BUCKET,
-      Key: fileKey,
-    });
-    // URL expires in 1 hour
-    return await getSignedUrl(r2Client, command, { expiresIn: 3600 });
+    return await storageService.getPresignedUrl(fileKey, 60);
   },
 
   // Helper to check if user has access to a directory
@@ -790,13 +783,9 @@ export const documentController = {
       // HARD DELETE: remove file(s) from R2 and Mongo based on type
       if (document.fileKey) {
         try {
-          const deleteCommand = new DeleteObjectCommand({
-            Bucket: R2_BUCKET,
-            Key: document.fileKey,
-          });
-          await r2Client.send(deleteCommand);
+          await storageService.deleteFile(document.fileKey);
         } catch (err) {
-          console.error("Failed to delete file from R2:", err);
+          console.error("Failed to delete file from Azure Blob Storage:", err);
         }
       }
 
@@ -1060,18 +1049,7 @@ export const documentController = {
       let rejectionReason = "Document validation failed. Unable to verify document content.";
 
       try {
-        const getObjectCommand = new GetObjectCommand({
-          Bucket: R2_BUCKET,
-          Key: fileKey,
-        });
-        const s3Response = await r2Client.send(getObjectCommand);
-
-        const chunks: Uint8Array[] = [];
-        // @ts-ignore
-        for await (const chunk of s3Response.Body) {
-          chunks.push(chunk);
-        }
-        const buffer = Buffer.concat(chunks);
+        const buffer = await storageService.downloadFile(fileKey);
 
         // Parse PDF
         // @ts-ignore
@@ -1128,11 +1106,7 @@ export const documentController = {
       if (!isContentValid) {
         // Delete from R2
         try {
-          const deleteCommand = new DeleteObjectCommand({
-            Bucket: R2_BUCKET,
-            Key: fileKey,
-          });
-          await r2Client.send(deleteCommand);
+          await storageService.deleteFile(fileKey);
         } catch (e) { }
 
         return res.status(400).json({ error: rejectionReason });
@@ -1216,11 +1190,7 @@ export const documentController = {
           await Document.deleteOne({ _id: document._id });
           // Also delete from R2? It was uploaded before creating document...
           if (fileKey) {
-            const deleteCommand = new DeleteObjectCommand({
-              Bucket: R2_BUCKET,
-              Key: fileKey,
-            });
-            await r2Client.send(deleteCommand);
+            await storageService.deleteFile(fileKey);
           }
           console.log(`Rolled back document ${document.id} due to ingestion failure.`);
         } catch (rollbackErr) {
@@ -1317,18 +1287,8 @@ export const documentController = {
           }; filename =\"${document.name}\"`,
         "Cache-Control": "private, max-age=60",
       });
-      const getObjectCommand = new GetObjectCommand({
-        Bucket: R2_BUCKET,
-        Key: document.fileKey,
-      });
-      const s3Response = await r2Client.send(getObjectCommand);
-      if (s3Response.Body) {
-        (s3Response.Body as any).pipe(res).on("error", () => {
-          res.status(500).json({ error: "Error downloading file" });
-        });
-      } else {
-        res.status(500).json({ error: "File stream not available" });
-      }
+      const buffer = await storageService.downloadFile(document.fileKey);
+      res.send(buffer);
     } catch (error) {
       console.error("Error in downloadDocument:", error);
       res.status(500).json({ error: "Failed to download document" });
@@ -1598,18 +1558,7 @@ export const documentController = {
       let rejectionReason = "Document validation failed. Unable to verify document content.";
 
       try {
-        const getObjectCommand = new GetObjectCommand({
-          Bucket: R2_BUCKET,
-          Key: fileKey,
-        });
-        const s3Response = await r2Client.send(getObjectCommand);
-
-        const chunks: Uint8Array[] = [];
-        // @ts-ignore
-        for await (const chunk of s3Response.Body) {
-          chunks.push(chunk);
-        }
-        const buffer = Buffer.concat(chunks);
+        const buffer = await storageService.downloadFile(fileKey);
 
         // Parse PDF
         // @ts-ignore
@@ -1645,11 +1594,7 @@ export const documentController = {
       if (!isContentValid) {
         // Delete from R2
         try {
-          const deleteCommand = new DeleteObjectCommand({
-            Bucket: R2_BUCKET,
-            Key: fileKey,
-          });
-          await r2Client.send(deleteCommand);
+          await storageService.deleteFile(fileKey);
         } catch (e) { }
 
         return res.status(400).json({ error: rejectionReason });
@@ -1710,11 +1655,7 @@ export const documentController = {
         try {
           await Document.deleteOne({ _id: rhpDoc._id });
           // Also delete from R2
-          const deleteCommand = new DeleteObjectCommand({
-            Bucket: R2_BUCKET,
-            Key: fileKey,
-          });
-          await r2Client.send(deleteCommand);
+          await storageService.deleteFile(fileKey);
 
           // Also UNLINK from DRHP
           drhp.relatedRhpId = undefined as any;
@@ -2011,11 +1952,7 @@ export const documentController = {
       // 1. Delete from R2
       if (document.fileKey) {
         try {
-          const deleteCommand = new DeleteObjectCommand({
-            Bucket: R2_BUCKET,
-            Key: document.fileKey,
-          });
-          await r2Client.send(deleteCommand);
+          await storageService.deleteFile(document.fileKey);
         } catch (err) {
           console.error("Failed to delete file from R2 during internal cleanup:", err);
         }

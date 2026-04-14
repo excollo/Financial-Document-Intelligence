@@ -203,17 +203,19 @@ app.use(writeLimiter);
 // MongoDB Connection
 const MONGODB_URI = process.env.MONGODB_URI;
 if (!MONGODB_URI) {
-  throw new Error("MONGODB-URI is not set");
+  throw new Error("MONGODB_URI is not set");
 }
 
 if (process.env.NODE_ENV !== 'test') {
+  console.log(`[DB] Connecting to MongoDB... URI starts with: ${MONGODB_URI.substring(0, 30)}***`);
   mongoose
     .connect(MONGODB_URI, {
-      serverSelectionTimeoutMS: 5000, 
-      socketTimeoutMS: 45000, 
-      connectTimeoutMS: 10000, 
+      serverSelectionTimeoutMS: 30000,  // Give more time for Cosmos/firewall
+      socketTimeoutMS: 60000,
+      connectTimeoutMS: 30000,
       retryWrites: false, // Must be false for Cosmos DB
       retryReads: true,
+      tls: MONGODB_URI.includes("cosmos.azure.com"), // Force TLS for CosmosDB
     })
     .then(async () => {
       console.log("Connected to MongoDB");
