@@ -23,6 +23,7 @@ openai>=1.30.0
 aioboto3>=13.0.0
 azure-storage-blob>=12.24.0
 azure-identity>=1.19.0
+azure-keyvault-secrets>=4.9.0
 
 # AI/ML
 numpy>=1.26.0
