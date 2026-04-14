@@ -16,7 +16,7 @@ def load_key_vault_secrets():
     app_env = os.getenv("APP_ENV") or os.getenv("APP_ENV") or "sandbox"
     use_kv = os.getenv("USE_KEYVAULT", "false").lower() == "true"
     
-    if app_env in ["prod", "dev"] or use_kv:
+    if use_kv:
         try:
             from azure.identity import DefaultAzureCredential
             from azure.keyvault.secrets import SecretClient
