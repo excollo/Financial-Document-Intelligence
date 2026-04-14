@@ -22,7 +22,19 @@ RESULT_BACKEND = settings.CELERY_RESULT_BACKEND
 if not BROKER_URL:
     raise ValueError("❌ CELERY_BROKER_URL or REDIS_URL is not set in settings!")
 
-logger.info(f"Using Celery Broker: {BROKER_URL}")
+logger.info(f"Using Celery Broker: {BROKER_URL.split('@')[-1] if '@' in BROKER_URL else BROKER_URL}")
+
+# ✅ Startup Diagnostic: Verify Redis connectivity
+def check_redis_connectivity():
+    import redis
+    try:
+        r = redis.from_url(BROKER_URL, socket_connect_timeout=5)
+        r.ping()
+        logger.info("📡 Redis Connectivity: SUCCESS")
+    except Exception as e:
+        logger.error(f"📡 Redis Connectivity: FAILED - {str(e)}", exc_info=True)
+
+check_redis_connectivity()
 
 # ✅ Create Celery app
 celery_app = Celery(

@@ -3,43 +3,6 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-# ============================================================================
-# ENVIRONMENT LOADER
-# ============================================================================
-from dotenv import load_dotenv, find_dotenv
-# Explicitly find .env relative to this project structure
-load_dotenv(find_dotenv())
-
-def load_key_vault_secrets():
-    vault_uri = "https://fdi-keyvault.vault.azure.net/"
-    # Now this will correctly pick up APP-ENV from .env (as APP_ENV)
-    app_env = os.getenv("APP_ENV") or os.getenv("APP_ENV") or "sandbox"
-    use_kv = os.getenv("USE_KEYVAULT", "false").lower() == "true"
-    
-    if use_kv:
-        try:
-            from azure.identity import DefaultAzureCredential
-            from azure.keyvault.secrets import SecretClient
-            
-            print(f"🔐 Connecting to Key Vault: {vault_uri}")
-            credential = DefaultAzureCredential()
-            client = SecretClient(vault_url=vault_uri, credential=credential)
-            
-            secrets = client.list_properties_of_secrets()
-            count = 0
-            for secret_prop in secrets:
-                if secret_prop.enabled:
-                    retrieved_secret = client.get_secret(secret_prop.name)
-                    # Set environment variable safely
-                    os.environ[secret_prop.name] = retrieved_secret.value
-                    count += 1
-            print(f"✅ Loaded {count} secrets from Key Vault")
-        except Exception as e:
-            print(f"❌ Failed to load secrets from Key Vault: {str(e)}")
-
-# Run before settings are imported to ensure variables are available
-load_key_vault_secrets()
-
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.mongo import mongodb

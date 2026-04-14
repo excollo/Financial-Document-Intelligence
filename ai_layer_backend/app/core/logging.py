@@ -18,6 +18,19 @@ def setup_logging() -> None:
     """
     # Determine log level
     log_level = getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO)
+
+    # Configure Azure Monitor if connection string is present
+    if settings.APPLICATIONINSIGHTS_CONNECTION_STRING:
+        try:
+            from azure.monitor.opentelemetry import configure_azure_monitor
+            configure_azure_monitor(
+                connection_string=settings.APPLICATIONINSIGHTS_CONNECTION_STRING,
+            )
+            # Use a dummy logger to verify initialization
+            logging.getLogger("azure.monitor").info("Azure Monitor initialized successfully")
+        except Exception as e:
+            # Fallback to stdout if Azure Monitor fails
+            sys.stderr.write(f"⚠️ Failed to initialize Azure Monitor: {str(e)}\n")
     
     # Configure standard library logging
     logging.basicConfig(

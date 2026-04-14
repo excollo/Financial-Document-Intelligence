@@ -177,5 +177,5 @@ jobs:
           az webapp config set \
             --name ${{ github.ref_name == 'main' && 'fdi-ai-worker-prod' || 'fdi-ai-worker-dev' }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --startup-file "celery -A app.workers.celery_app worker --loglevel=info"
+            --startup-file "celery -A app.workers.celery_app worker --loglevel=info --pool=solo --concurrency=1"
           az webapp restart --name ${{ github.ref_name == 'main' && 'fdi-ai-worker-prod' || 'fdi-ai-worker-dev' }} --resource-group ${{ env.RESOURCE_GROUP }}

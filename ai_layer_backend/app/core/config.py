@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     CELERY_ENABLE_UTC: bool = False
     
     # Azure Application Insights (Logging & Monitoring)
-    API_APPINSIGHTS_CONNECTION_STRING: str = ""
+    APPLICATIONINSIGHTS_CONNECTION_STRING: str = ""
     
     # MongoDB Configuration
     MONGO_URI: str = ""

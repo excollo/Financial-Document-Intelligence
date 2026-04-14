@@ -1,107 +1,80 @@
-#!/usr/bin/env python3
-"""
-Startup verification script.
-Checks if all dependencies are properly configured.
-"""
+import os
 import sys
-import importlib
+import logging
+from typing import Dict, Any
 
+# Ensure we can import from app
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__))))
 
-def check_imports():
-    """Check if all required packages can be imported."""
-    required_packages = [
-        'fastapi',
-        'uvicorn',
-        'celery',
-        'redis',
-        'pymongo',
-        'motor',
-        'structlog',
-        'pydantic',
-        'pydantic_settings',
-        'dotenv',
-        'requests',
-        'numpy',
+from app.core.config import settings
+from app.core.logging import get_logger
+
+logger = get_logger("verify_setup")
+
+def verify_environment():
+    """
+    Diagnostic script to check environment health on Azure App Service.
+    """
+    print("\n" + "="*50)
+    print("🔍 AI BACKEND ENVIRONMENT DIAGNOSTIC")
+    print("="*50)
+    
+    # 1. Check Core Settings
+    critical_vars = [
+        "APP_ENV",
+        "MONGO_URI",
+        "REDIS_URL",
+        "OPENAI_API_KEY",
+        "INTERNAL_SECRET",
+        "NODE_BACKEND_URL",
+        "APPLICATIONINSIGHTS_CONNECTION_STRING"
     ]
     
     missing = []
-    for package in required_packages:
-        try:
-            importlib.import_module(package)
-            print(f"✓ {package}")
-        except ImportError:
-            print(f"✗ {package}")
-            missing.append(package)
-    
-    return missing
-
-
-def check_structure():
-    """Check if all required files and directories exist."""
-    import os
-    
-    required_paths = [
-        'app/__init__.py',
-        'app/main.py',
-        'app/core/config.py',
-        'app/core/logging.py',
-        'app/db/mongo.py',
-        'app/api/jobs.py',
-        'app/workers/celery_app.py',
-        'app/workers/document_pipeline.py',
-        'app/services/extraction.py',
-        'app/services/chunking.py',
-        'app/services/embedding.py',
-        'requirements.txt',
-        '.env.example',
-        'docker/api.Dockerfile',
-        'docker/worker.Dockerfile',
-    ]
-    
-    missing = []
-    for path in required_paths:
-        if os.path.exists(path):
-            print(f"✓ {path}")
+    for var in critical_vars:
+        val = getattr(settings, var, None)
+        if not val:
+            print(f"❌ {var}: MISSING")
+            missing.append(var)
         else:
-            print(f"✗ {path}")
-            missing.append(path)
-    
-    return missing
-
-
-def main():
-    """Run all checks."""
-    print("=" * 60)
-    print("AI Python Platform - Verification Script")
-    print("=" * 60)
-    
-    print("\n📦 Checking Python packages...")
-    print("-" * 60)
-    missing_packages = check_imports()
-    
-    print("\n📁 Checking project structure...")
-    print("-" * 60)
-    missing_files = check_structure()
-    
-    print("\n" + "=" * 60)
-    if not missing_packages and not missing_files:
-        print("✅ All checks passed! Platform is ready to run.")
-        print("\nNext steps:")
-        print("  1. Copy .env.example to .env and configure")
-        print("  2. Start Redis: redis-server")
-        print("  3. Start MongoDB: mongod")
-        print("  4. Start API: python -m app.main")
-        print("  5. Start Worker: celery -A app.workers.celery_app worker --loglevel=info")
-        return 0
+            # Mask sensitive values
+            masked = str(val)[:5] + "..." + str(val)[-5:] if len(str(val)) > 10 else "***"
+            print(f"✅ {var}: {masked}")
+            
+    # 2. Test MongoDB connectivity
+    print("\n📦 Testing MongoDB Connection...")
+    try:
+        from pymongo import MongoClient
+        client = MongoClient(settings.MONGO_URI, serverSelectionTimeoutMS=5000)
+        client.admin.command('ping')
+        print("✅ MongoDB: CONNECTED")
+    except Exception as e:
+        print(f"❌ MongoDB: FAILED - {str(e)}")
+        
+    # 3. Test Redis Connectivity
+    print("\n📡 Testing Redis (Queue) Connection...")
+    try:
+        import redis
+        r = redis.from_url(settings.REDIS_URL, socket_connect_timeout=5)
+        r.ping()
+        print("✅ Redis: CONNECTED")
+    except Exception as e:
+        print(f"❌ Redis: FAILED - {str(e)}")
+        
+    # 4. Test Azure App Insights Initialization
+    print("\n📈 Testing Azure App Insights Integration...")
+    if settings.APPLICATIONINSIGHTS_CONNECTION_STRING:
+        print("✅ App Insights String: PRESENT")
+        logger.info("DIAGNOSTIC: App Insights Test Pulse", status="verifying")
     else:
-        print("❌ Some checks failed!")
-        if missing_packages:
-            print(f"\nMissing packages: {', '.join(missing_packages)}")
-            print("Run: pip install -r requirements.txt")
-        if missing_files:
-            print(f"\nMissing files: {', '.join(missing_files)}")
-        return 1
+        print("⚠️ App Insights String: ABSENT (Logs will only go to Log Stream)")
 
+    print("\n" + "="*50)
+    if not missing:
+        print("🎉 ENVIRONMENT HEALTH: GREEN")
+    else:
+        print(f"🛑 ENVIRONMENT HEALTH: RED (Missing {len(missing)} variables)")
+    print("="*50 + "\n")
 
 if __name__ == "__main__":
-    sys.exit(main())
+    verify_environment()
