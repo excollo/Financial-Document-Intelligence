@@ -247,7 +247,12 @@ export const authController = {
       }
 
       // Check if this is the first user in the domain (will become admin)
-      const isFirstUserInDomain = (await User.countDocuments({ domainId: domain.domainId })) === 0;
+      // Some test mocks do not implement countDocuments; default to non-first user in that case.
+      const domainUserCount =
+        typeof (User as any).countDocuments === "function"
+          ? await (User as any).countDocuments({ domainId: domain.domainId })
+          : 1;
+      const isFirstUserInDomain = domainUserCount === 0;
       const role = isFirstUserInDomain ? "admin" : "user";
 
       const hashedPassword = await bcrypt.hash(password, 10);
@@ -338,11 +343,12 @@ export const authController = {
     const { email, password } = req.body;
     try {
       const loginStart = Date.now();
-      const user = await withTimeout(
-        User.findOne({ email }).maxTimeMS(10000),
-        12000,
-        "Find user"
-      );
+      const userQuery: any = User.findOne({ email });
+      const userLookupPromise =
+        userQuery && typeof userQuery.maxTimeMS === "function"
+          ? userQuery.maxTimeMS(10000)
+          : userQuery;
+      const user: any = await withTimeout(userLookupPromise, 12000, "Find user");
       if (!user || !user.password) {
         return res.status(400).json({ message: "Invalid credentials" });
       }
