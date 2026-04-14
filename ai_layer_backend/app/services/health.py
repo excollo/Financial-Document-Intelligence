@@ -194,9 +194,15 @@ class HealthService:
         """Check MongoDB connectivity."""
         start_time = time.time()
         try:
-            # The mongodb object is already managed by the app lifespan
-            # We just need to check if we can execute a simple command
-            await mongodb.db.command("ping")
+            if mongodb.db is None:
+                return {
+                    "status": "error",
+                    "message": "MongoDB client is not initialized (db object is None)",
+                    "error_code": "MONGODB_NOT_INITIALIZED"
+                }
+            
+            # Use the admin database for the ping command
+            await mongodb.client.admin.command("ping")
             return {
                 "status": "operational",
                 "latency": round(time.time() - start_time, 3),

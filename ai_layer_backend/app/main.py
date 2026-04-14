@@ -24,6 +24,17 @@ async def lifespan(app: FastAPI):
         version=settings.APP_VERSION
     )
     
+    # Diagnostic: Print all registered routes
+    for route in app.routes:
+        path = getattr(route, 'path', 'unknown')
+        name = getattr(route, 'name', 'unknown')
+        logger.info(f"Route Registered: {path} [{name}]")
+    
+    # Diagnostic: Masked URI check
+    uri = settings.MONGODB_URI
+    masked_uri = f"{uri[:15]}..." if uri else "EMPTY"
+    logger.info(f"Connecting with MONGODB_URI: {masked_uri}")
+    
     # Connect to MongoDB
     await mongodb.connect()
     
@@ -62,19 +73,7 @@ app.add_middleware(
 )
 
 
-# Health check endpoint
-@app.get("/health")
-async def health_check():
-    """
-    Health check endpoint.
-    Returns application status and environment.
-    """
-    return {
-        "status": "healthy",
-        "environment": settings.APP_ENV,
-        "version": settings.APP_VERSION,
-        "service": "ai-python-platform"
-    }
+# Health check routers are included below in the 'Include routers' section
 
 
 # Include routers

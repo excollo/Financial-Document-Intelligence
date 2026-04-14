@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     APPLICATIONINSIGHTS_CONNECTION_STRING: str = ""
     
     # MongoDB Configuration
-    MONGO_URI: str = ""
+    MONGODB_URI: str = ""
     MONGO_DB_NAME: str = "pdf-summarizer"
     
     # Logging

@@ -40,7 +40,7 @@ class MongoDB:
                 self.client = None
 
             if self.client is None:
-                self.client = AsyncIOMotorClient(settings.MONGO_URI, serverSelectionTimeoutMS=5000)
+                self.client = AsyncIOMotorClient(settings.MONGODB_URI, serverSelectionTimeoutMS=5000)
                 # Use default database from URI, or fallback to settings.MONGO_DB_NAME
                 try:
                     self.db = self.client.get_default_database()
@@ -68,7 +68,7 @@ class MongoDB:
     def connect_sync(self) -> None:
         """Establish synchronous MongoDB connection (for Celery workers)."""
         try:
-            self.sync_client = MongoClient(settings.MONGO_URI, serverSelectionTimeoutMS=5000)
+            self.sync_client = MongoClient(settings.MONGODB_URI, serverSelectionTimeoutMS=5000)
             # Use default database from URI, or fallback to settings.MONGO_DB_NAME
             try:
                 self.sync_db = self.sync_client.get_default_database()
