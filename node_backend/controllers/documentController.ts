@@ -958,7 +958,13 @@ export const documentController = {
         return res.status(400).json({ error: "No file uploaded" });
       }
       const originalname = req.file.originalname;
-      const fileKey = (req.file as any).key;
+      // Ensure cross-compatibility with AWS S3 (key) and Azure Blob Storage (url/blobName)
+      const rawUrl = (req.file as any).url;
+      const fileKey = (req.file as any).key || (req.file as any).blobName || (rawUrl ? decodeURIComponent(rawUrl.split('?')[0].split('/').pop() || "") : undefined);
+      
+      if (!fileKey) {
+        return res.status(400).json({ error: "Internal storage error: Upload succeeded but could not determine blob key." });
+      }
       const user = (req as any).user;
       // Use original filename for namespace to preserve .pdf extension
       // Workspace is required for document upload
@@ -1100,7 +1106,10 @@ export const documentController = {
         }
       } catch (valError: any) {
         console.error("Validation error:", valError);
-        rejectionReason = "Validation error: " + (valError.message || "Unknown error");
+        // If pdf-parse crashes due to malformed metadata, allow the upload to proceed and trust the user!
+        console.warn(`⚠️ PDF parsing threw an error. Falling back to requested type: ${documentType}`);
+        isContentValid = true;
+        docData.type = documentType;
       }
 
       if (!isContentValid) {
@@ -1511,7 +1520,13 @@ export const documentController = {
       const drhp = await Document.findById(drhpId);
       if (!drhp) return res.status(404).json({ error: "DRHP not found" });
 
-      const fileKey = (req.file as any).key;
+      // Ensure cross-compatibility with AWS S3 (key) and Azure Blob Storage (url/blobName)
+      const rawUrl = (req.file as any).url;
+      const fileKey = (req.file as any).key || (req.file as any).blobName || (rawUrl ? decodeURIComponent(rawUrl.split('?')[0].split('/').pop() || "") : undefined);
+
+      if (!fileKey) {
+        return res.status(400).json({ error: "Internal storage error: Upload succeeded but could not determine blob key." });
+      }
       const user = (req as any).user;
 
       // Workspace is required for document upload

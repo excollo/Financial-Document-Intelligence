@@ -422,7 +422,10 @@ export const sendEmail = async (emailData: EmailData): Promise<void> => {
       }
     }
   } catch (error: any) {
-    console.error("❌ Error sending email:", error);
+    console.error("❌ Error sending email:", error?.message || "Unknown error");
+    if (error?.response) {
+      console.error("   Brevo Error Details:", error.response.data);
+    }
     console.error("Error details:", {
       message: error?.message,
       stack: error?.stack,

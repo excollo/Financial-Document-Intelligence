@@ -246,7 +246,12 @@ export const reportController = {
       // Visibility: All members of the workspace can see all reports in that workspace.
       // Do not further restrict by userId/microsoftId for reads.
 
-      const reports = await Report.find(query).sort({ updatedAt: -1 });
+      const rawReports = await Report.find(query);
+      const reports = rawReports.sort((a: any, b: any) => {
+        const timeA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+        const timeB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+        return timeB - timeA;
+      });
       res.json(reports);
     } catch (error) {
       console.error("Error fetching reports:", error);
@@ -645,7 +650,12 @@ export const reportController = {
         domain: req.user?.domain || req.userDomain, // Use user's actual domain for admin
       };
 
-      const reports = await Report.find(query).sort({ updatedAt: -1 });
+      const rawReports = await Report.find(query);
+      const reports = rawReports.sort((a: any, b: any) => {
+        const timeA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+        const timeB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+        return timeB - timeA;
+      });
 
       // Get all workspaces to map workspaceId to workspace name
       const { Workspace } = await import("../models/Workspace");
