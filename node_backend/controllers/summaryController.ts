@@ -31,6 +31,7 @@ export const summaryController = {
 
       const pythonApiUrl = process.env.PYTHON_API_URL || "http://localhost:8000";
       const domain = req.userDomain || (req as any).user?.domain;
+      const SUMMARY_TRIGGER_TIMEOUT_MS = Number(process.env.SUMMARY_TRIGGER_TIMEOUT_MS || 120000);
 
       // Get domainId
       let domainId = (req as any).user?.domainId;
@@ -58,7 +59,9 @@ export const summaryController = {
         headers: {
           "X-Internal-Secret": INTERNAL_SECRET
         },
-        timeout: 30000
+        timeout: Number.isFinite(SUMMARY_TRIGGER_TIMEOUT_MS) && SUMMARY_TRIGGER_TIMEOUT_MS > 0
+          ? SUMMARY_TRIGGER_TIMEOUT_MS
+          : 120000
       });
 
       if (pythonResponse.data && pythonResponse.data.status === "accepted") {
@@ -71,8 +74,23 @@ export const summaryController = {
 
       res.status(500).json({ error: "Failed to start summary job", details: pythonResponse.data });
     } catch (error: any) {
-      console.error("Error in triggerSummary:", error.message);
-      res.status(500).json({ error: "Summary trigger failed", message: error.message });
+      const upstreamMessage =
+        error?.response?.data?.detail ||
+        error?.response?.data?.message ||
+        error?.response?.data?.error ||
+        error?.message ||
+        "Unknown upstream error";
+      console.error("Error in triggerSummary:", upstreamMessage);
+
+      if (error?.code === "ECONNABORTED" || /timeout/i.test(String(upstreamMessage))) {
+        return res.status(504).json({
+          error: "Summary trigger timed out",
+          message: "Summary service took too long to acknowledge. Please retry.",
+          details: upstreamMessage,
+        });
+      }
+
+      return res.status(500).json({ error: "Summary trigger failed", message: upstreamMessage });
     }
   },
 
