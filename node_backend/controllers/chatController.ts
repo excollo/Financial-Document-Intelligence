@@ -22,6 +22,7 @@ export const chatController = {
 
       const pythonApiUrl = process.env.PYTHON_API_URL || "http://localhost:8001";
       const INTERNAL_SECRET = process.env.INTERNAL_SECRET || "";
+      const CHAT_TIMEOUT_MS = Number(process.env.CHAT_TIMEOUT_MS || 240000);
 
       console.log(`Forwarding chat query to Python: ${namespace}`);
 
@@ -39,7 +40,7 @@ export const chatController = {
           "X-Internal-Secret": INTERNAL_SECRET,
           "Content-Type": "application/json",
         },
-        timeout: 90000 // Chat might take a while, increased to 90s
+        timeout: Number.isFinite(CHAT_TIMEOUT_MS) && CHAT_TIMEOUT_MS > 0 ? CHAT_TIMEOUT_MS : 240000,
       });
 
       if (pythonResponse.data && pythonResponse.data.status === "success") {
@@ -53,8 +54,32 @@ export const chatController = {
 
       res.status(500).json({ error: "Failed to get response from Chat AI", details: pythonResponse.data });
     } catch (error: any) {
-      console.error("Error in sendMessage:", error.message);
-      res.status(500).json({ error: "Chat processing failed", message: error.message });
+      const upstreamStatus = error?.response?.status;
+      const upstreamMessage =
+        error?.response?.data?.detail ||
+        error?.response?.data?.message ||
+        error?.response?.data?.error ||
+        error?.message ||
+        "Unknown upstream error";
+
+      console.error("Error in sendMessage:", upstreamMessage);
+
+      if (error?.code === "ECONNABORTED" || /timeout/i.test(String(upstreamMessage))) {
+        return res.status(504).json({
+          error: "Chat request timed out",
+          message: "The AI service took too long to respond. Please retry.",
+          details: upstreamMessage,
+        });
+      }
+
+      if (upstreamStatus && upstreamStatus >= 400) {
+        return res.status(502).json({
+          error: "Upstream chat service error",
+          message: upstreamMessage,
+        });
+      }
+
+      res.status(500).json({ error: "Chat processing failed", message: upstreamMessage });
     }
   },
 
