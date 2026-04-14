@@ -62,9 +62,20 @@ class Settings(BaseSettings):
     EMBEDDING_DIMENSION: int = 3072  # text-embedding-3-large
     EMBEDDING_MODEL: str = "text-embedding-3-large"
     
-    # OpenAI
+    # OpenAI (kept for fallback; Azure OpenAI takes priority when endpoint is set)
     OPENAI_API_KEY: str = ""
     SUMMARY_MODEL: str = "gpt-4.1-mini"
+
+    # Azure OpenAI / AI Foundry (preferred)
+    AZURE_OPENAI_API_KEYS: str = ""      # AZURE_OPENAI_API_KEYS in Azure App Service
+    AZURE_OPENAI_ENDPOINT: str = ""      # e.g. https://fdi-drhp-foundry.openai.azure.com/openai/v1
+    AZURE_OPENAI_API_VERSION: str = "2025-04-14"
+    AZURE_OPENAI_DEPLOYMENT_NAME: str = "gpt-4.1-mini"
+
+    @property
+    def USE_AZURE_OPENAI(self) -> bool:
+        """True when Azure OpenAI credentials are provided."""
+        return bool(self.AZURE_OPENAI_ENDPOINT and self.AZURE_OPENAI_API_KEYS)
     
     # Pinecone
     PINECONE_API_KEY: str = ""

@@ -9,6 +9,7 @@ from pinecone import Pinecone
 import cohere
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.core.openai_client import get_openai_client, DEPLOYMENT_MODEL
 
 logger = get_logger(__name__)
 
@@ -16,33 +17,37 @@ class HealthService:
     """Service for checking the health of external AI dependencies."""
 
     def __init__(self):
-        self.openai_client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
+        self.openai_client = get_openai_client()
         self.pinecone_client = Pinecone(api_key=settings.PINECONE_API_KEY)
         self.cohere_client = None
         if settings.COHERE_API_KEY:
             self.cohere_client = cohere.Client(settings.COHERE_API_KEY)
 
     async def check_openai(self) -> Dict[str, Any]:
-        """Check OpenAI connectivity and basic functionality."""
+        """Check Azure OpenAI / OpenAI connectivity via a minimal chat completion."""
         start_time = time.time()
         try:
-            # list models is a lightweight way to check API key and connectivity
-            self.openai_client.models.list()
+            self.openai_client.chat.completions.create(
+                model=DEPLOYMENT_MODEL,
+                messages=[{"role": "user", "content": "ping"}],
+                max_tokens=1
+            )
+            provider = "Azure OpenAI" if settings.USE_AZURE_OPENAI else "OpenAI"
             return {
                 "status": "operational",
                 "latency": round(time.time() - start_time, 3),
-                "message": "Successfully connected to OpenAI"
+                "message": f"Successfully connected to {provider}"
             }
         except openai.AuthenticationError:
             return {
                 "status": "error",
-                "message": "Invalid OpenAI API Key",
+                "message": "Invalid OpenAI/Azure API Key",
                 "error_code": "AUTH_ERROR"
             }
         except openai.RateLimitError:
             return {
                 "status": "degraded",
-                "message": "OpenAI Rate limit exceeded or quota reached",
+                "message": "Rate limit exceeded or quota reached",
                 "error_code": "QUOTA_EXCEEDED"
             }
         except Exception as e:

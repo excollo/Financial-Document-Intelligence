@@ -5,6 +5,7 @@ from pymongo import MongoClient
 import openai
 import json
 from app.core.config import settings
+from app.core.openai_client import get_openai_client, DEPLOYMENT_MODEL
 from app.services.summarization.prompts import (
     SUBQUERIES,
     INVESTOR_EXTRACTOR_SYSTEM_PROMPT,
@@ -33,7 +34,7 @@ class OnboardingAgent:
         self.client = MongoClient(settings.MONGO_URI)
         self.db = self.client[settings.MONGO_DB_NAME]
         self.collection = self.db["domains"]
-        self.openai_client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
+        self.openai_client = get_openai_client()
 
     def extract_text(self, file_content: bytes, filename: str) -> str:
         """Extracts text from PDF or DOCX file content."""
@@ -89,7 +90,7 @@ class OnboardingAgent:
         
         try:
             response = self.openai_client.chat.completions.create(
-                model="gpt-4o",
+                model=DEPLOYMENT_MODEL,
                 messages=[
                     {"role": "system", "content": ONBOARDING_MASTER_SYSTEM_PROMPT},
                     {"role": "user", "content": f"Analyze this SOP and Baseline Context. SOP:\n{sop_text}\n\nBaseline:\n{baseline_context}"}

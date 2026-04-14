@@ -42,6 +42,7 @@ from app.services.summarization.markdown_converter import MarkdownConverter
 from app.services.summarization.research import research_service
 import openai
 import json
+from app.core.openai_client import get_async_openai_client, DEPLOYMENT_MODEL
 
 logger = get_logger(__name__)
 
@@ -64,7 +65,7 @@ class SummaryPipeline:
     
     def __init__(self):
         self.embedding = EmbeddingService()
-        self.client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+        self.client = get_async_openai_client()
         self.md_converter = MarkdownConverter()
     
     def _localize_prompt(self, text: str, doc_type: str) -> str:
@@ -308,7 +309,7 @@ class SummaryPipeline:
         
         try:
             response = await self.client.chat.completions.create(
-                model="gpt-4.1-mini",
+            model=DEPLOYMENT_MODEL,
                 messages=[
                     {"role": "system", "content": custom_prompt or INVESTOR_EXTRACTOR_SYSTEM_PROMPT},
                     {"role": "user", "content": f"TARGET INVESTORS TO SEARCH AND MATCH:\n{TARGET_INVESTORS}\n\nExtract investor data and matched target investors from this DRHP context:\n\n{context}"}
@@ -377,7 +378,7 @@ class SummaryPipeline:
         
         try:
             response = await self.client.chat.completions.create(
-                model="gpt-4.1-mini",
+            model=DEPLOYMENT_MODEL,
                 messages=[
                     {"role": "system", "content": custom_prompt or CAPITAL_HISTORY_EXTRACTOR_SYSTEM_PROMPT},
                     {"role": "user", "content": f"Extract and summarize share capital from this DRHP context:\n\n{context}"}
@@ -696,7 +697,7 @@ class SummaryPipeline:
 
         try:
             response = await self.client.chat.completions.create(
-                model="gpt-4.1-mini",
+            model=DEPLOYMENT_MODEL,
                 messages=[
                     {"role": "system", "content": custom_business_sop if custom_business_sop else BUSINESS_TABLE_EXTRACTOR_SYSTEM_PROMPT},
                     {

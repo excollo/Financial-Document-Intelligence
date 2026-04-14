@@ -13,13 +13,14 @@ from app.services.rerank import rerank_service
 from app.services.comparison.prompts import COMPARISON_SYSTEM_PROMPT, COMPARISON_QUERIES
 from app.services.comparison.formatter import comparison_formatter
 import openai
+from app.core.openai_client import get_async_openai_client, DEPLOYMENT_MODEL
 
 logger = get_logger(__name__)
 
 class ComparisonPipeline:
     def __init__(self):
         self.embedding = EmbeddingService()
-        self.client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+        self.client = get_async_openai_client()
 
     async def _retrieve_context_from_index(
         self, 
@@ -160,7 +161,7 @@ class ComparisonPipeline:
 
         try:
             response = await self.client.chat.completions.create(
-                model=settings.SUMMARY_MODEL,
+                model=DEPLOYMENT_MODEL,
                 messages=[
                     {"role": "system", "content": COMPARISON_SYSTEM_PROMPT},
                     {"role": "user", "content": f"Compare these contexts and highlight material changes:\n\n{full_context}"}
