@@ -91,6 +91,8 @@ const io = new SocketIOServer(server, {
 
       if (allowedOrigins.indexOf(origin) !== -1) {
         callback(null, true);
+      } else if (origin.endsWith('.vercel.app') || origin.endsWith('.excollo.com')) {
+        callback(null, true);
       } else if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
         callback(null, true);
       } else {
@@ -121,6 +123,8 @@ app.use(
       if (!origin) return callback(null, true);
 
       if (allowedOrigins.indexOf(origin) !== -1) {
+        callback(null, true);
+      } else if (origin.endsWith('.vercel.app') || origin.endsWith('.excollo.com')) {
         callback(null, true);
       } else {
         // For development, allow any localhost origin
