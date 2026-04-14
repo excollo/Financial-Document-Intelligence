@@ -24,17 +24,20 @@ if not BROKER_URL:
 
 logger.info(f"Using Celery Broker: {BROKER_URL.split('@')[-1] if '@' in BROKER_URL else BROKER_URL}")
 
-# ✅ Startup Diagnostic: Verify Redis connectivity
+# ✅ Startup Diagnostic: Verify Redis connectivity (Non-blocking)
 def check_redis_connectivity():
     import redis
     try:
-        r = redis.from_url(BROKER_URL, socket_connect_timeout=5)
+        # Use a very short timeout for the initial boot check
+        r = redis.from_url(BROKER_URL, socket_connect_timeout=2, socket_timeout=2)
         r.ping()
         logger.info("📡 Redis Connectivity: SUCCESS")
     except Exception as e:
-        logger.error(f"📡 Redis Connectivity: FAILED - {str(e)}", exc_info=True)
+        logger.warning(f"📡 Redis Connectivity: PENDING (Worker will retry automatically) - {str(e)}")
 
-check_redis_connectivity()
+# Run check but don't let it crash the boot
+if os.environ.get("SKIP_REDIS_CHECK") != "true":
+    check_redis_connectivity()
 
 # ✅ Create Celery app
 celery_app = Celery(
