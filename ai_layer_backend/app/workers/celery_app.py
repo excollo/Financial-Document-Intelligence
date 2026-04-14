@@ -15,8 +15,23 @@ from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
+# Handle accidental "KEY=value" strings in env var values.
+def _strip_env_assignment_prefix(url: str | None) -> str | None:
+    if not url:
+        return url
+    value = url.strip()
+    for prefix in ("CELERY_BROKER_URL=", "CELERY_RESULT_BACKEND=", "REDIS_URL="):
+        if value.startswith(prefix):
+            logger.warning("Detected malformed Redis/Celery URL with assignment prefix; normalizing value")
+            return value[len(prefix):].strip()
+    return value
+
 # Ensure rediss URLs include ssl_cert_reqs so Celery/redis backend can initialize.
 def _normalize_rediss_url(url: str | None) -> str | None:
+    if not url:
+        return url
+
+    url = _strip_env_assignment_prefix(url)
     if not url or not url.startswith("rediss://"):
         return url
 
