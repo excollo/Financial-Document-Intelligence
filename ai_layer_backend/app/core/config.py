@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     )
     
     # Environment
-    APP_ENV: Literal["sandbox", "dev", "prod"] = "sandbox"
+    APP_ENV: Literal["sandbox", "dev", "prod", "test"] = "sandbox"
     APP_NAME: str = "AI Python Platform"
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
