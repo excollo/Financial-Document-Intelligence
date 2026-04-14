@@ -32,7 +32,46 @@ import { HealthService } from "./services/healthService";
 
 dotenv.config();
 
+// ============================================================================
+// AZURE KEY VAULT AUTO-LOADER
+// ============================================================================
+async function loadKeyVaultSecrets() {
+  const vaultUri = "https://fdi-keyvault.vault.azure.net/";
+  if (process.env.NODE_ENV === 'production' || process.env.USE_KEYVAULT === 'true') {
+    try {
+      const { DefaultAzureCredential } = await import("@azure/identity");
+      const { SecretClient } = await import("@azure/keyvault-secrets");
+      
+      console.log(`🔐 Connecting to Key Vault: ${vaultUri}`);
+      const credential = new DefaultAzureCredential();
+      const client = new SecretClient(vaultUri, credential);
+
+      let count = 0;
+      for await (const secretProperties of client.listPropertiesOfSecrets()) {
+        if (secretProperties.enabled) {
+          const secret = await client.getSecret(secretProperties.name);
+          process.env[secret.name] = secret.value;
+          count++;
+        }
+      }
+      console.log(`✅ Loaded ${count} secrets from Key Vault`);
+    } catch (error: any) {
+      console.error("❌ Failed to load secrets from Key Vault:", error.message);
+    }
+  }
+}
+
 export const app = express();
+
+// Initialize secrets before starting services
+if (process.env.NODE_ENV !== 'test') {
+  loadKeyVaultSecrets().then(() => {
+    // Re-check mandatory environment variables after loading from KV
+    if (!process.env.MONGODB_URI) {
+       console.warn("⚠️ MONGODB-URI still not found after Key Vault sync");
+    }
+  });
+}
 
 // Trust proxy for Render deployment
 app.set('trust proxy', 1);
@@ -66,7 +105,7 @@ const io = new SocketIOServer(server, {
 // Make io accessible elsewhere
 export { io };
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env["PORT"] || 5000;
 
 // CORS configuration - must be before other middleware
 const allowedOrigins = [
@@ -168,13 +207,15 @@ if (!MONGODB_URI) {
 }
 
 if (process.env.NODE_ENV !== 'test') {
+  console.log(`[DB] Connecting to MongoDB... URI starts with: ${MONGODB_URI.substring(0, 30)}***`);
   mongoose
     .connect(MONGODB_URI, {
-      serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of 30s
-      socketTimeoutMS: 45000, // Close sockets after 45s of inactivity
-      connectTimeoutMS: 10000, // Give up initial connection after 10s
-      retryWrites: true,
+      serverSelectionTimeoutMS: 30000,  // Give more time for Cosmos/firewall
+      socketTimeoutMS: 60000,
+      connectTimeoutMS: 30000,
+      retryWrites: false, // Must be false for Cosmos DB
       retryReads: true,
+      tls: MONGODB_URI.includes("cosmos.azure.com"), // Force TLS for CosmosDB
     })
     .then(async () => {
       console.log("Connected to MongoDB");
@@ -254,6 +295,98 @@ if (process.env.NODE_ENV !== 'test') {
   server.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
   });
+}
+
+// ============================================================================
+// STALE DOCUMENT RECOVERY WATCHER
+// Runs every 5 minutes. Finds documents stuck in "processing" for >20 minutes
+// and auto-resolves them. This is a safety net for failed Python→Node callbacks.
+// ============================================================================
+async function recoverStaleDocuments() {
+  try {
+    const { Document } = await import("./models/Document");
+    const STALE_THRESHOLD_MS = 20 * 60 * 1000; // 20 minutes
+    const cutoff = new Date(Date.now() - STALE_THRESHOLD_MS);
+
+    const staleDocs = await Document.find({
+      status: "processing",
+      uploadedAt: { $lt: cutoff },
+    }).limit(20);
+
+    if (staleDocs.length === 0) return;
+
+    console.warn(`⚠️ [StaleWatcher] Found ${staleDocs.length} document(s) stuck in 'processing' for >20 min. Attempting recovery...`);
+
+    for (const doc of staleDocs) {
+      try {
+        // Try to query the Python API Celery job status for this document
+        const pythonApiUrl = process.env.PYTHON_API_URL || "http://localhost:8001";
+        const axios = (await import("axios")).default;
+
+        let resolved = false;
+
+        try {
+          // Check if Celery has a job for this document's id (job_id may equal documentId due to our fix)
+          const jobRes = await axios.get(`${pythonApiUrl}/jobs/${doc.id}`, {
+            headers: { "X-Internal-Secret": process.env.INTERNAL_SECRET || "" },
+            timeout: 5000,
+          });
+
+          const celeryState = jobRes.data?.state;
+          console.log(`🔍 [StaleWatcher] Doc ${doc.id} Celery state: ${celeryState}`);
+
+          if (celeryState === "SUCCESS") {
+            doc.status = "completed";
+            await doc.save();
+            io.emit("upload_status", { jobId: doc.id, status: "completed" });
+            console.log(`✅ [StaleWatcher] Recovered doc ${doc.id} → completed (Celery SUCCESS)`);
+            resolved = true;
+          } else if (celeryState === "FAILURE") {
+            doc.status = "failed";
+            doc.error = { message: "Processing failed in Celery worker. Please re-upload." };
+            await doc.save();
+            io.emit("upload_status", { jobId: doc.id, status: "failed", error: "Processing failed" });
+            console.log(`❌ [StaleWatcher] Recovered doc ${doc.id} → failed (Celery FAILURE)`);
+            resolved = true;
+          }
+        } catch (jobCheckErr: any) {
+          // Celery job lookup failed (job may have been cleaned up already)
+          console.warn(`⚠️ [StaleWatcher] Could not check Celery state for doc ${doc.id}: ${jobCheckErr.message}`);
+        }
+
+        if (!resolved) {
+          // If we can NOT determine state from Celery, mark as failed after >30 additional minutes
+          const HARD_TIMEOUT_MS = 50 * 60 * 1000; // 50 min total = give up
+          const hardCutoff = new Date(Date.now() - HARD_TIMEOUT_MS);
+          if (doc.uploadedAt < hardCutoff) {
+            doc.status = "failed";
+            doc.error = { message: "Processing timed out. Please re-upload the document." };
+            await doc.save();
+            io.emit("upload_status", { jobId: doc.id, status: "failed", error: "Timed out" });
+            console.log(`⏱️ [StaleWatcher] Hard-timeout doc ${doc.id} → failed after 50 min`);
+          } else {
+            // Still within grace period — just emit a refresh signal to the frontend
+            io.emit("upload_status", { jobId: doc.id, status: "processing" });
+            console.log(`🔄 [StaleWatcher] Doc ${doc.id} still processing, refreshed frontend`);
+          }
+        }
+      } catch (docErr: any) {
+        console.error(`❌ [StaleWatcher] Error processing doc ${doc.id}:`, docErr.message);
+      }
+    }
+  } catch (err: any) {
+    console.error("❌ [StaleWatcher] Error in stale document recovery:", err.message);
+  }
+}
+
+// Start the stale document watcher (5 minute interval)
+if (process.env.NODE_ENV !== 'test') {
+  // Run first check after 2 minutes (let server stabilize)
+  setTimeout(() => {
+    recoverStaleDocuments();
+    setInterval(recoverStaleDocuments, 5 * 60 * 1000);
+  }, 2 * 60 * 1000);
+  console.log("🛡️ Stale document recovery watcher started (checks every 5 minutes)");
 }
 
 // Allow only your frontend domain

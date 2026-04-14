@@ -31,3 +31,6 @@ Thumbs.db
 .idea/
 *.sublime-workspace
 *.sublime-project
+
+# Deployment Plans
+AZURE_DEPLOYMENT_PLAN.md

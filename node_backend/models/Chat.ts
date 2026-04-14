@@ -27,5 +27,7 @@ chatSchema.pre("validate", function (next) {
     next();
   }
 });
+// Index for sorting chats by date
+chatSchema.index({ updatedAt: -1 });
 
 export const Chat = mongoose.model("Chat", chatSchema);

@@ -25,14 +25,14 @@ class BackendNotifier:
         document_id: Optional[str] = None
     ) -> bool:
         """
-        Send status update to backend.
+        Send status update to backend with exponential backoff.
         Matched to n8n node "Send Error to Backend3" and webhook response logic.
         """
         payload = {
-            "jobId": job_id,
+            "jobId": document_id or job_id,
             "status": status,
             "namespace": namespace,
-            "documentId": document_id,
+            "documentId": document_id or job_id,
             "execution": {
                 "workflowId": "python-platform",
                 "executionId": execution_id or job_id
@@ -49,20 +49,29 @@ class BackendNotifier:
                 "timestamp": str(time.time())
             }
             
-        try:
-            logger.info("Notifying backend of status", job_id=job_id, status=status)
-            response = requests.post(
-                settings.BACKEND_STATUS_URL,
-                json=payload,
-                headers={"Content-Type": "application/json"},
-                timeout=10
-            )
-            response.raise_for_status()
-            logger.info("Backend notified successfully", status_code=response.status_code)
-            return True
-        except Exception as e:
-            logger.error("Failed to notify backend", error=str(e), job_id=job_id)
-            return False
+        max_retries = 3
+        backoff = 1
+        for attempt in range(max_retries):
+            try:
+                logger.info("Notifying backend of status", job_id=job_id, status=status, attempt=attempt + 1)
+                response = requests.post(
+                    settings.BACKEND_STATUS_URL,
+                    json=payload,
+                    headers={"Content-Type": "application/json"},
+                    timeout=10
+                )
+                response.raise_for_status()
+                logger.info("Backend notified successfully", status_code=response.status_code)
+                return True
+            except Exception as e:
+                logger.warning("Failed to notify backend", error=str(e), job_id=job_id, attempt=attempt + 1)
+                if attempt < max_retries - 1:
+                    time.sleep(backoff)
+                    backoff *= 2
+                else:
+                    logger.error("Max retries reached. Failed to notify backend", job_id=job_id)
+                    return False
+        return False
 
     @staticmethod
     def create_report(

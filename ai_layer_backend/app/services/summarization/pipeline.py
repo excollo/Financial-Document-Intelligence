@@ -28,9 +28,15 @@ from app.services.summarization.prompts import (
     SUBQUERIES,
     INVESTOR_EXTRACTOR_SYSTEM_PROMPT,
     CAPITAL_HISTORY_EXTRACTOR_SYSTEM_PROMPT,
-    MAIN_SUMMARY_SYSTEM_PROMPT,
     BUSINESS_EXTRACTION_QUERIES,
     BUSINESS_TABLE_EXTRACTOR_SYSTEM_PROMPT,
+    AGENT_4_SECTION_I_II_PROMPT,
+    AGENT_5_SECTION_IV_V_PROMPT,
+    AGENT_6_SECTION_VII_PROMPT,
+    AGENT_7_SECTION_VIII_IX_PROMPT,
+    AGENT_8_SECTION_X_PROMPT,
+    AGENT_9_SECTION_XI_XII_PROMPT,
+    TARGET_INVESTORS,
 )
 from app.services.summarization.markdown_converter import MarkdownConverter
 from app.services.summarization.research import research_service
@@ -44,11 +50,16 @@ class SummaryPipeline:
     """
     4-Agent Summary Pipeline:
     - Agent 1: Investor Extractor (returns JSON)
-    - Agent 2: Capital History & Valuation Extractor (returns JSON)
-    - Agent 3: DRHP Summary Generator (returns markdown)
-    - Agent 4: Summary Validator/Previewer (returns verified markdown)
+    - Agent 2: Capital History & Section VI Summary (JSON + Markdown)
+    - Agent 3: Business Table Extractor (Section III Markdown)
+    - Agent 4: Section I & II Generator (Markdown)
+    - Agent 5: Section IV & V Generator (Markdown)
+    - Agent 6: Section VII Generator (Financial Specialist - Markdown)
+    - Agent 7: Section VIII & IX Generator (Markdown)
+    - Agent 8: Section X Generator (Markdown)
+    - Agent 9: Section XI & XII Generator (Markdown)
     
-    All outputs converted to markdown and merged based on tenant toggles.
+    All outputs assembled sequentially from Section I to XII.
     """
     
     def __init__(self):
@@ -109,11 +120,11 @@ class SummaryPipeline:
 
         return markdown
         
-    async def _retrieve_tables(self, job_id: str = None, namespace: str = None, page_range: Optional[tuple] = None) -> str:
+    async def _retrieve_tables(self, job_id: str = None, namespace: str = None, page_range: Optional[tuple] = None, min_cells: int = 15) -> str:
         """
         Retrieve structured tables from MongoDB extraction_results.
         Supports page_range=(start, end).
-        Automatically filters out RPT tables to allow Pinecone to handle them exclusively.
+        min_cells: Minimum number of pipe characters to consider valid table (default 15).
         """
         try:
             from app.db.mongo import mongodb
@@ -128,7 +139,6 @@ class SummaryPipeline:
                 query["page"] = {"$gte": page_range[0], "$lte": page_range[1]}
 
             # EXCLUSION: Skip RPT tables so Pinecone can handle them in Section X
-            # Matches the user directive: "remove rpt extraction table from mongo functionality"
             rpt_keywords = ["Related Party", "Transactions with Related Party", "Nature of Transaction", "RPT"]
             query["markdown"] = {
                 "$not": {
@@ -137,8 +147,6 @@ class SummaryPipeline:
                 }
             }
 
-            if not query: return ""
-                
             cursor = collection.find(query).sort("page", 1)
             tables = await cursor.to_list(length=200)
             
@@ -146,12 +154,12 @@ class SummaryPipeline:
                 
             table_md_blocks = []
             for t in tables:
-                sec = t.get("section", "General")
+                sec = t.get("section", t.get("chapter", "General"))
                 pg = t.get("page", "?")
                 md = t.get("markdown", "")
                 
-                # Double-check: ensure it's not a generic glossary entry (small table)
-                if len(md.split("|")) < 15:
+                # Double-check: ensure it's not a generic glossary entry
+                if len(md.split("|")) < min_cells:
                     continue
                     
                 table_md_blocks.append(f"### Table from {sec} (Page {pg})\n{md}")
@@ -263,6 +271,8 @@ class SummaryPipeline:
     async def _agent_1_investor_extractor(
         self,
         namespace: str,
+        custom_prompt: Optional[str] = None,
+        custom_subqueries: Optional[List[str]] = None,
         index_name: str = None,
         host: str = None,
         metadata_filter: Optional[Dict[str, Any]] = None
@@ -275,14 +285,14 @@ class SummaryPipeline:
         logger.info("Agent 1: Investor Extractor - Starting", namespace=namespace)
         
         # Retrieve context (50 chunks, reranked via Cohere)
-        investor_query = ["Extract complete shareholding pattern, investor list, and capital structure from DRHP"]
+        investor_query = custom_subqueries or ["Extract complete shareholding pattern, investor list, and capital structure from DRHP"]
         context = await self._retrieve_context(
             investor_query,
             namespace,
             index_name,
             host,
-            vector_top_k=8,
-            rerank_top_n=8,
+            vector_top_k=10,
+            rerank_top_n=10,
             metadata_filter=metadata_filter
         )
         
@@ -300,8 +310,8 @@ class SummaryPipeline:
             response = await self.client.chat.completions.create(
                 model="gpt-4.1-mini",
                 messages=[
-                    {"role": "system", "content": INVESTOR_EXTRACTOR_SYSTEM_PROMPT},
-                    {"role": "user", "content": f"Extract investor data from this DRHP context:\n\n{context}"}
+                    {"role": "system", "content": custom_prompt or INVESTOR_EXTRACTOR_SYSTEM_PROMPT},
+                    {"role": "user", "content": f"TARGET INVESTORS TO SEARCH AND MATCH:\n{TARGET_INVESTORS}\n\nExtract investor data and matched target investors from this DRHP context:\n\n{context}"}
                 ],
                 temperature=0.1,
                 max_tokens=8192,
@@ -330,26 +340,28 @@ class SummaryPipeline:
     async def _agent_2_capital_history_extractor(
         self,
         namespace: str,
+        custom_prompt: Optional[str] = None,
+        custom_subqueries: Optional[List[str]] = None,
         index_name: str = None,
         host: str = None,
         metadata_filter: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
-        Agent 2: Capital History & Valuation Extractor
+        Agent 2: Capital History & Valuation Extractor + Section VI Summary
         Node: A-2:-sectionVI capital history extractor3
-        Returns: JSON with share capital table and premium rounds
+        Returns: JSON with share capital table and SECTION VI markdown
         """
         logger.info("Agent 2: Capital History Extractor - Starting", namespace=namespace)
         
-        # Retrieve context (10 chunks, reranked via Cohere)
-        capital_query = ["Extract complete equity share capital history table and premium rounds from DRHP"]
+        # Retrieve context
+        capital_query = custom_subqueries or ["Extract complete equity share capital history table and premium rounds from DRHP"]
         context = await self._retrieve_context(
             capital_query,
             namespace,
             index_name,
             host,
-            vector_top_k=10,
-            rerank_top_n=10,
+            vector_top_k=12,
+            rerank_top_n=12,
             metadata_filter=metadata_filter
         )
         
@@ -367,19 +379,21 @@ class SummaryPipeline:
             response = await self.client.chat.completions.create(
                 model="gpt-4.1-mini",
                 messages=[
-                    {"role": "system", "content": CAPITAL_HISTORY_EXTRACTOR_SYSTEM_PROMPT},
-                    {"role": "user", "content": f"Extract share capital history from this DRHP context:\n\n{context}"}
+                    {"role": "system", "content": custom_prompt or CAPITAL_HISTORY_EXTRACTOR_SYSTEM_PROMPT},
+                    {"role": "user", "content": f"Extract and summarize share capital from this DRHP context:\n\n{context}"}
                 ],
                 temperature=0.0,
                 max_tokens=8192,
                 response_format={"type": "json_object"}
             )
             
-            capital_json = json.loads(response.choices[0].message.content)
+            # The agent now returns {"json_data": {...}, "markdown_summary": "..."}
+            result_json = json.loads(response.choices[0].message.content)
+            capital_json = result_json.get("json_data", {})
+            markdown_summary = result_json.get("markdown_summary", "")
             usage = response.usage
             
             logger.info("Agent 2: Completed", 
-                        premium_rounds=capital_json.get("calculation_parameters", {}).get("total_premium_rounds", 0),
                         input_tokens=usage.prompt_tokens,
                         output_tokens=usage.completion_tokens)
             
@@ -388,11 +402,212 @@ class SummaryPipeline:
                 "input": usage.prompt_tokens,
                 "output": usage.completion_tokens
             }
+            # Attach the markdown summary to the JSON for the orchestrator to pick up
+            capital_json["_markdown_summary"] = markdown_summary
+            
             return capital_json
             
         except Exception as e:
             logger.error("Agent 2: Failed", error=str(e), exc_info=True)
             return {"error": str(e), "type": "calculation_data"}
+
+    async def _agent_4_generator(
+        self,
+        namespace: str,
+        doc_type: str = "DRHP",
+        custom_prompt: Optional[str] = None,
+        custom_subqueries: Optional[List[str]] = None,
+        index_name: str = None,
+        host: str = None,
+        metadata_filter: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """Agent 4: Section I & II Generator"""
+        logger.info("Agent 4: Section I & II Starting")
+        # SUBQUERIES[0] = Section I, SUBQUERIES[1] = Section II
+        queries = custom_subqueries or [SUBQUERIES[0], SUBQUERIES[1]]
+        context = await self._retrieve_context(queries, namespace, index_name, host, vector_top_k=8, metadata_filter=metadata_filter)
+        
+        response = await self.client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[
+                {"role": "system", "content": self._localize_prompt(custom_prompt or AGENT_4_SECTION_I_II_PROMPT, doc_type)},
+                {"role": "user", "content": f"Context:\n\n{context}"}
+            ],
+            temperature=0.1,
+            max_tokens=8192
+        )
+        usage = response.usage
+        logger.info("Agent 4: Completed", input_tokens=usage.prompt_tokens, output_tokens=usage.completion_tokens)
+        return response.choices[0].message.content
+
+    async def _agent_5_generator(
+        self,
+        namespace: str,
+        doc_type: str = "DRHP",
+        custom_prompt: Optional[str] = None,
+        custom_subqueries: Optional[List[str]] = None,
+        index_name: str = None,
+        host: str = None,
+        metadata_filter: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """Agent 5: Section IV & V Generator"""
+        logger.info("Agent 5: Section IV & V Starting")
+        # SUBQUERIES[2] = Section IV, SUBQUERIES[3] = Section V
+        queries = custom_subqueries or [SUBQUERIES[2], SUBQUERIES[3]]
+        context = await self._retrieve_context(queries, namespace, index_name, host, vector_top_k=15, metadata_filter=metadata_filter)
+        
+        # Add high-fidelity tables from Mongo for Industry/Management
+        job_id = metadata_filter.get("job_id") if metadata_filter else None
+        toc = await self._get_toc(namespace)
+        hi_fi_pages = []
+        for item in toc:
+            title = str(item.get("title", "")).upper()
+            if any(term in title for term in ["INDUSTRY", "MARKET ANALYSIS", "MANAGEMENT", "PROMOTERS"]):
+                hi_fi_pages.append((item.get("page_start", 1), item.get("page_end", 999)))
+        
+        # Retrieval for combined pages
+        hi_fi_tables = ""
+        for pr in hi_fi_pages:
+            tables = await self._retrieve_tables(job_id=job_id, namespace=namespace, page_range=pr, min_cells=4)
+            if tables: hi_fi_tables += f"\n{tables}"
+            
+        if hi_fi_tables:
+            context = f"### MONGODB HIGH-FIDELITY TABLES (INDUSTRY & MANAGEMENT)\n{hi_fi_tables}\n\n{context}"
+        
+        response = await self.client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[
+                {"role": "system", "content": self._localize_prompt(custom_prompt or AGENT_5_SECTION_IV_V_PROMPT, doc_type)},
+                {"role": "user", "content": f"Context:\n\n{context}"}
+            ],
+            temperature=0.1,
+            max_tokens=8192
+        )
+        usage = response.usage
+        logger.info("Agent 5: Completed", input_tokens=usage.prompt_tokens, output_tokens=usage.completion_tokens)
+        return response.choices[0].message.content
+
+    async def _agent_6_generator(
+        self,
+        namespace: str,
+        doc_type: str = "DRHP",
+        custom_prompt: Optional[str] = None,
+        custom_subqueries: Optional[List[str]] = None,
+        index_name: str = None,
+        host: str = None,
+        metadata_filter: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """Agent 6: Section VII Generator (Financials)"""
+        logger.info("Agent 6: Section VII Starting")
+        # SUBQUERIES[5] = Section VII
+        queries = custom_subqueries or [SUBQUERIES[5]]
+        context = await self._retrieve_context(queries, namespace, index_name, host, vector_top_k=12, metadata_filter=metadata_filter)
+        
+        # Add high-fidelity tables from Mongo for financials
+        job_id = metadata_filter.get("job_id") if metadata_filter else None
+        mongo_tables = await self._retrieve_tables(job_id=job_id, namespace=namespace)
+        if mongo_tables:
+            context = f"--- STRUCTURED FINANCIAL TABLES ---\n{mongo_tables}\n\n{context}"
+
+        response = await self.client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[
+                {"role": "system", "content": self._localize_prompt(custom_prompt or AGENT_6_SECTION_VII_PROMPT, doc_type)},
+                {"role": "user", "content": f"Context:\n\n{context}"}
+            ],
+            temperature=0.0,
+            max_tokens=16384
+        )
+        usage = response.usage
+        logger.info("Agent 6: Completed", input_tokens=usage.prompt_tokens, output_tokens=usage.completion_tokens)
+        return response.choices[0].message.content
+
+    async def _agent_7_generator(
+        self,
+        namespace: str,
+        doc_type: str = "DRHP",
+        custom_prompt: Optional[str] = None,
+        custom_subqueries: Optional[List[str]] = None,
+        index_name: str = None,
+        host: str = None,
+        metadata_filter: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """Agent 7: Section VIII & IX Generator"""
+        logger.info("Agent 7: Section VIII & IX Starting")
+        # SUBQUERIES[6] = VIII, SUBQUERIES[7] = IX
+        queries = custom_subqueries or [SUBQUERIES[6], SUBQUERIES[7]]
+        context = await self._retrieve_context(queries, namespace, index_name, host, vector_top_k=12, metadata_filter=metadata_filter)
+        
+        response = await self.client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[
+                {"role": "system", "content": self._localize_prompt(custom_prompt or AGENT_7_SECTION_VIII_IX_PROMPT, doc_type)},
+                {"role": "user", "content": f"Context:\n\n{context}"}
+            ],
+            temperature=0.1,
+            max_tokens=8192
+        )
+        usage = response.usage
+        logger.info("Agent 7: Completed", input_tokens=usage.prompt_tokens, output_tokens=usage.completion_tokens)
+        return response.choices[0].message.content
+
+    async def _agent_8_generator(
+        self,
+        namespace: str,
+        doc_type: str = "DRHP",
+        custom_prompt: Optional[str] = None,
+        custom_subqueries: Optional[List[str]] = None,
+        index_name: str = None,
+        host: str = None,
+        metadata_filter: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """Agent 8: Section X Generator"""
+        logger.info("Agent 8: Section X Starting")
+        # SUBQUERIES[8] = X
+        queries = custom_subqueries or [SUBQUERIES[8]]
+        context = await self._retrieve_context(queries, namespace, index_name, host, vector_top_k=10, metadata_filter=metadata_filter)
+        
+        response = await self.client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[
+                {"role": "system", "content": self._localize_prompt(custom_prompt or AGENT_8_SECTION_X_PROMPT, doc_type)},
+                {"role": "user", "content": f"Context:\n\n{context}"}
+            ],
+            temperature=0.1,
+            max_tokens=8192
+        )
+        usage = response.usage
+        logger.info("Agent 8: Completed", input_tokens=usage.prompt_tokens, output_tokens=usage.completion_tokens)
+        return response.choices[0].message.content
+
+    async def _agent_9_generator(
+        self,
+        namespace: str,
+        doc_type: str = "DRHP",
+        custom_prompt: Optional[str] = None,
+        custom_subqueries: Optional[List[str]] = None,
+        index_name: str = None,
+        host: str = None,
+        metadata_filter: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """Agent 9: Section XI & XII Generator"""
+        logger.info("Agent 9: Section XI & XII Starting")
+        # SUBQUERIES[9] = XI, SUBQUERIES[10] = XII
+        queries = custom_subqueries or [SUBQUERIES[9], SUBQUERIES[10]]
+        context = await self._retrieve_context(queries, namespace, index_name, host, vector_top_k=10, metadata_filter=metadata_filter)
+        
+        response = await self.client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[
+                {"role": "system", "content": self._localize_prompt(custom_prompt or AGENT_9_SECTION_XI_XII_PROMPT, doc_type)},
+                {"role": "user", "content": f"Context:\n\n{context}"}
+            ],
+            temperature=0.1,
+            max_tokens=16384
+        )
+        usage = response.usage
+        logger.info("Agent 9: Completed", input_tokens=usage.prompt_tokens, output_tokens=usage.completion_tokens)
+        return response.choices[0].message.content
 
     async def _agent_3_business_table_extractor(
         self,
@@ -427,9 +642,29 @@ class SummaryPipeline:
             + "\n\n".join((custom_business_subqueries if custom_business_subqueries else BUSINESS_EXTRACTION_QUERIES))
         )
 
-        # Retrieve context for all 16 business queries (topK=12 per query, matches n8n)
+        # 1. PRE-COLLECT MONGO TABLES (High-Fidelity)
+        job_id = metadata_filter.get("job_id") if metadata_filter else None
+        
+        # Try to find "Our Business" page range from TOC to focus the high-fidelity extraction
+        toc = await self._get_toc(namespace)
+        page_range = None
+        for item in toc:
+            title = str(item.get("title", "")).upper()
+            if any(term in title for term in ["OUR BUSINESS", "BUSINESS MODEL", "CAPACITY AND CAPACITY UTILIZATION"]):
+                page_start = item.get("page_start", 1)
+                page_end = item.get("page_end", 999)
+                page_range = (page_start, page_end)
+                logger.info("A-3: Focused high-fidelity extraction for Our Business / Capacity", page_range=page_range)
+                break
+        
+        mongo_tables = await self._retrieve_tables(job_id=job_id, namespace=namespace, page_range=page_range, min_cells=6)
+        
         all_context_parts = []
+        if mongo_tables:
+            all_context_parts.append(f"### MONGODB HIGH-FIDELITY TABLES (PRIMARY SOURCE)\n{mongo_tables}")
         seen = set()
+
+        # 2. COLLECT PIECONE CONTEXT (Narrative and secondary table fragments)
         for i, query in enumerate((custom_business_subqueries if custom_business_subqueries else BUSINESS_EXTRACTION_QUERIES)):
             try:
                 ctx = await self._retrieve_context(
@@ -437,24 +672,18 @@ class SummaryPipeline:
                     namespace,
                     index_name,
                     host,
-                    vector_top_k=6,
-                    rerank_top_n=6,
+                    vector_top_k=12,
+                    rerank_top_n=12,
                     metadata_filter=metadata_filter,
                 )
                 
-                # Pull high-fidelity tables for the business chapter
-                job_id = metadata_filter.get("job_id") if metadata_filter else None
-                mongo_tables = await self._retrieve_tables(job_id=job_id, namespace=namespace)
-                if mongo_tables and i == 0: # Only add once
-                    all_context_parts.append(f"--- HIGH-FIDELITY TABLES ---\n{mongo_tables}")
-
                 if ctx:
                     for chunk in ctx.split("\n---\n"):
                         c = chunk.strip()
                         if c and c not in seen:
                             all_context_parts.append(c)
                             seen.add(c)
-                logger.debug(f"A-3: Query {i+1}/7 retrieved", chars=len(ctx) if ctx else 0)
+                logger.debug(f"A-3: Query {i+1}/16 retrieved", chars=len(ctx) if ctx else 0)
             except Exception as qe:
                 logger.warning(f"A-3: Query {i+1} failed", error=str(qe))
 
@@ -557,132 +786,6 @@ class SummaryPipeline:
             section3_chars=len(cleaned_section3),
         )
         return merged
-    
-    async def _agent_3_summary_generator(
-        self,
-        namespace: str,
-        doc_type: str = "DRHP",
-        custom_sop: Optional[str] = None,
-        custom_subqueries: Optional[List[str]] = None,
-        index_name: str = None,
-        host: str = None,
-        metadata_filter: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
-        """
-        Agent 3: DRHP Summary Generator (n8n-style: Collect-then-Generate)
-        Node: A-3:-DRHP Summary Generator Agent1
-        
-        Flow (matching n8n workflow):
-          Phase 1: Loop through ALL subqueries → retrieve chunks for each → collect ALL chunks
-          Phase 2: ONE single LLM call with ALL collected context → generate full summary
-        """
-        logger.info("Agent 3: Summary Generator - Starting (n8n-style Collect-then-Generate)", namespace=namespace)
-        
-        # Resolve subqueries: use custom if provided, else fall back to defaults
-        active_subqueries = custom_subqueries if custom_subqueries else SUBQUERIES
-        logger.info(f"Agent 3: Using {len(active_subqueries)} subqueries (custom={bool(custom_subqueries)})")
-        
-        # ── PHASE 1: Collect ALL chunks from ALL subqueries ──
-        logger.info("Agent 3 Phase 1: Retrieving chunks for all subqueries...")
-        all_chunks = []
-        seen_chunks = set()
-        
-        for i, query in enumerate(active_subqueries):
-            try:
-                context = await self._retrieve_context(
-                    [query],
-                    namespace,
-                    index_name,
-                    host,
-                    vector_top_k=12,
-                    rerank_top_n=12,
-                    metadata_filter=metadata_filter
-                )
-                
-                if not context:
-                    logger.warning(f"Agent 3: No context found for subquery {i+1}/{len(active_subqueries)}", query=query[:80])
-                    continue
-                
-                # Split retrieved context into individual chunks and deduplicate
-                chunks = context.split("\n---\n")
-                new_chunks = 0
-                for chunk in chunks:
-                    chunk_stripped = chunk.strip()
-                    if chunk_stripped and chunk_stripped not in seen_chunks:
-                        all_chunks.append(chunk_stripped)
-                        seen_chunks.add(chunk_stripped)
-                        new_chunks += 1
-                
-                logger.debug(f"Agent 3: Subquery {i+1}/{len(active_subqueries)} retrieved {new_chunks} new chunks (total: {len(all_chunks)})")
-                
-            except Exception as e:
-                logger.error(f"Agent 3: Failed to retrieve for subquery {i+1}", error=str(e))
-                continue
-        
-        if not all_chunks:
-            return {"markdown": f"# Error\n\nNo {doc_type} data found for summary generation.", "usage": {"input": 0, "output": 0}}
-        
-        logger.info(f"Agent 3 Phase 1 Complete: Collected {len(all_chunks)} unique chunks from {len(active_subqueries)} subqueries")
-        
-        # ── PHASE 2: Single LLM call with ALL collected context ──
-        logger.info("Agent 3 Phase 2: Generating full summary from collected context...")
-        
-        # Pull high-fidelity tables from Mongo for sections III-XII
-        job_id = metadata_filter.get("job_id") if metadata_filter else None
-        mongo_tables = await self._retrieve_tables(job_id=job_id, namespace=namespace)
-        
-        table_context = ""
-        if mongo_tables:
-            table_context = f"\n\n--- HIGH-FIDELITY TABLES (PRIORITIZE THESE FOR ALL SECTIONS EXCEPT I & II) ---\n{mongo_tables}\n\n"
-
-        # Combine all chunks into one context block
-        full_context = table_context + "\n\n--- TEXT CHUNKS ---\n\n" + "\n\n---\n\n".join(all_chunks)
-        
-        # Build the subqueries reference for the user message
-        subqueries_list = "\n".join([f"{i+1}. {sq}" for i, sq in enumerate(active_subqueries)])
-        
-        # Use the domain SOP as the system prompt
-        system_prompt = custom_sop if custom_sop and custom_sop.strip() else MAIN_SUMMARY_SYSTEM_PROMPT
-        
-        try:
-            response = await self.client.chat.completions.create(
-                model="gpt-4.1-mini",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": (
-                        f"Generate a complete, comprehensive {doc_type} summary for the company. "
-                        f"The TOP HEADING of the summary MUST be '# {doc_type} Summary: [Company Name]'.\n\n"
-                        f"AREAS TO COVER:\n{subqueries_list}\n\n"
-                        f"{doc_type} CONTEXT DATA:\n{full_context}"
-                    )}
-                ],
-                temperature=0.1,
-                max_tokens=24576
-            )
-            
-            usage = response.usage
-            full_summary = response.choices[0].message.content
-            
-            logger.info("Agent 3: Completed Full Summary Generation", 
-                        context_chunks=len(all_chunks),
-                        input_tokens=usage.prompt_tokens,
-                        output_tokens=usage.completion_tokens)
-            
-            return {
-                "markdown": full_summary,
-                "usage": {
-                    "input": usage.prompt_tokens,
-                    "output": usage.completion_tokens
-                }
-            }
-            
-        except Exception as e:
-            logger.error("Agent 3: Summary generation failed", error=str(e), exc_info=True)
-            return {
-                "markdown": f"# Error\n\nSummary generation failed: {str(e)}",
-                "usage": {"input": 0, "output": 0}
-            }
-    
 
     async def generate_summary(
         self,
@@ -696,10 +799,10 @@ class SummaryPipeline:
     ) -> Dict[str, Any]:
         """
         Main summary generation method.
-        Orchestrates 4-agent pipeline with conditional merging.
+        Orchestrates 9-agent pipeline with sequential assembly.
         """
         start_time = time.time()
-        logger.info("Starting 4-Agent Summary Pipeline", namespace=namespace, domain=domain_id)
+        logger.info("Starting 9-Agent Pipeline", namespace=namespace, domain=domain_id)
         
         # Build Metadata Filter for Tenant Isolation
         metadata_filter = {}
@@ -724,153 +827,173 @@ class SummaryPipeline:
         valuation_enabled = tenant_config.get("valuation_matching", True)
         adverse_enabled = tenant_config.get("adverse_finding", True)
         
-        logger.info(
-            "Feature toggles resolved",
-            investor_match=investor_match_enabled,
-            valuation=valuation_enabled,
-            adverse=adverse_enabled,
-            tenant_keys=list(tenant_config.keys()) if tenant_config else []
-        )
-        
-        # Agent 3 (Business)
-        a3_prompt = tenant_config.get("agent3_prompt") or BUSINESS_TABLE_EXTRACTOR_SYSTEM_PROMPT
-        a3_subqueries = tenant_config.get("agent3_subqueries", []) or []
-
-        # Agent 4 (Summary)
-        a4_prompt = tenant_config.get("agent4_prompt") or MAIN_SUMMARY_SYSTEM_PROMPT
-        a4_subqueries = tenant_config.get("agent4_subqueries", []) or []
-        if a4_subqueries:
-            a4_subqueries = [self._localize_prompt(sq, doc_type) for sq in a4_subqueries if isinstance(sq, str)]
-        else:
-            a4_subqueries = None
-
-        # Localize prompts for RHP
+        # Agent 3 (Business) Prompts
+        a3_prompt = BUSINESS_TABLE_EXTRACTOR_SYSTEM_PROMPT
+        a3_subqueries = [] # Force fallback to BUSINESS_EXTRACTION_QUERIES from prompts.py
         if doc_type == "RHP":
             a3_prompt = self._localize_prompt(a3_prompt, "RHP")
-            a4_prompt = self._localize_prompt(a4_prompt, "RHP")
 
         try:
-            # PHASE 1: Parallel Data Extraction
-            logger.info("Phase 1: Parallel Extraction (A-1, A-2, A-3, A-4)")
+            # PHASE 1: Parallel Data Extraction and Specialized Generation
+            logger.info("Phase 1: Multi-Agent Parallel Processing (A1 - A9)")
 
-            agent_1_task = self._agent_1_investor_extractor(namespace, index_name, host, metadata_filter)
-            agent_2_task = self._agent_2_capital_history_extractor(namespace, index_name, host, metadata_filter)
-            agent_3b_task = self._agent_3_business_table_extractor(namespace, a3_prompt, a3_subqueries, index_name, host, metadata_filter)
-            agent_4_task = self._agent_3_summary_generator(namespace, doc_type, a4_prompt, a4_subqueries, index_name, host, metadata_filter)
+            investor_task = self._agent_1_investor_extractor(
+                namespace, 
+                tenant_config.get("agent1_prompt"), 
+                tenant_config.get("agent1_subqueries"), 
+                index_name, host, metadata_filter
+            )
+            capital_task = self._agent_2_capital_history_extractor(
+                namespace, 
+                tenant_config.get("agent2_prompt"), 
+                tenant_config.get("agent2_subqueries"), 
+                index_name, host, metadata_filter
+            )
+            sec3_task = self._agent_3_business_table_extractor(
+                namespace, 
+                tenant_config.get("agent3_prompt", a3_prompt), 
+                tenant_config.get("agent3_subqueries", []), 
+                index_name, host, metadata_filter
+            )
+            sec1_2_task = self._agent_4_generator(
+                namespace, doc_type, 
+                tenant_config.get("agent4_prompt"), 
+                tenant_config.get("agent4_subqueries"), 
+                index_name, host, metadata_filter
+            )
+            sec4_5_task = self._agent_5_generator(
+                namespace, doc_type, 
+                tenant_config.get("agent5_prompt"), 
+                tenant_config.get("agent5_subqueries"), 
+                index_name, host, metadata_filter
+            )
+            sec7_task = self._agent_6_generator(
+                namespace, doc_type, 
+                tenant_config.get("agent6_prompt"), 
+                tenant_config.get("agent6_subqueries"), 
+                index_name, host, metadata_filter
+            )
+            sec8_9_task = self._agent_7_generator(
+                namespace, doc_type, 
+                tenant_config.get("agent7_prompt"), 
+                tenant_config.get("agent7_subqueries"), 
+                index_name, host, metadata_filter
+            )
+            sec10_task = self._agent_8_generator(
+                namespace, doc_type, 
+                tenant_config.get("agent8_prompt"), 
+                tenant_config.get("agent8_subqueries"), 
+                index_name, host, metadata_filter
+            )
+            sec11_12_task = self._agent_9_generator(
+                namespace, doc_type, 
+                tenant_config.get("agent9_prompt"), 
+                tenant_config.get("agent9_subqueries"), 
+                index_name, host, metadata_filter
+            )
 
-            investor_json, capital_json, section3_content, draft_summary_result = await asyncio.gather(
-                agent_1_task, agent_2_task, agent_3b_task, agent_4_task, return_exceptions=True
+            (
+                investor_json, 
+                capital_json, 
+                section3_md, 
+                section1_2_md,
+                section4_5_md,
+                section7_md,
+                section8_9_md,
+                section10_md,
+                section11_12_md
+            ) = await asyncio.gather(
+                investor_task, 
+                capital_task, 
+                sec3_task, 
+                sec1_2_task,
+                sec4_5_task,
+                sec7_task,
+                sec8_9_task,
+                sec10_task,
+                sec11_12_task,
+                return_exceptions=True
             )
             
-            total_usage = {"input": 0, "output": 0}
+            # Handle possible exceptions
+            results = [section1_2_md, section4_5_md, section7_md, section8_9_md, section10_md, section11_12_md, section3_md]
+            for i, res in enumerate(results):
+                if isinstance(res, Exception):
+                    logger.error(f"Agent task failed at index {i}", error=str(res))
+                    results[i] = f"\n\n> Error generating this section: {str(res)}\n\n"
 
-            # Extract output and usage
+            # Re-assign cleaned results
+            section1_2_md, section4_5_md, section7_md, section8_9_md, section10_md, section11_12_md, section3_md = results
+
+            # Extract Section VI from Agent 2
+            section6_md = ""
+            total_usage = {"input": 0, "output": 0}
+            if isinstance(capital_json, dict):
+                section6_md = capital_json.get("_markdown_summary", "")
+                u = capital_json.get("_usage", {"input": 0, "output": 0})
+                total_usage["input"] += u["input"]; total_usage["output"] += u["output"]
+            
             if isinstance(investor_json, dict):
                 u = investor_json.get("_usage", {"input": 0, "output": 0})
                 total_usage["input"] += u["input"]; total_usage["output"] += u["output"]
-            else: investor_json = {"error": str(investor_json)}
 
-            if isinstance(capital_json, dict):
-                u = capital_json.get("_usage", {"input": 0, "output": 0})
-                total_usage["input"] += u["input"]; total_usage["output"] += u["output"]
-            else: capital_json = {"error": str(capital_json)}
-
-            if isinstance(section3_content, Exception): section3_content = ""
+            # =====================================================================
+            # PHASE 2: Final Sequential Assembly
+            # =====================================================================
+            logger.info("Phase 2: Final Assembly & Sequencing via MarkdownConverter")
             
-            # =====================================================================
-            # FIRST: Set draft_markdown from Agent 4 (Summary Generator) result
-            # This MUST happen before any injection/modification!
-            # =====================================================================
-            if isinstance(draft_summary_result, dict):
-                draft_markdown = draft_summary_result.get("markdown", "")
-                u = draft_summary_result.get("usage", {"input": 0, "output": 0})
-                total_usage["input"] += u["input"]; total_usage["output"] += u["output"]
-            else: draft_markdown = f"# Error\n\nSummary generation failed: {str(draft_summary_result)}"
-
-            # =====================================================================
-            # PHASE 2: Assembly & Merging (on the fully populated draft_markdown)
-            # =====================================================================
-            logger.info("Phase 2: Final Assembly & Merging")
+            # Inject Agent 1 & 2 extra data if enabled
+            if investor_match_enabled and isinstance(investor_json, dict) and "error" not in investor_json:
+                investor_md = self.md_converter.convert_investor_json_to_markdown(investor_json, doc_type=doc_type)
+                section6_md = f"{section6_md}\n\n{investor_md}"
             
-            # --- Step 1: Insert Section III (Our Business) between SECTION II and SECTION IV ---
-            if section3_content and isinstance(section3_content, str) and section3_content.strip():
-                logger.info(f"Inserting Section III content ({len(section3_content)} chars)")
-                draft_markdown = self._insert_section3_into_summary(draft_markdown, section3_content)
-            else:
-                logger.warning("Section III content is empty, skipping insertion")
+            if valuation_enabled and isinstance(capital_json, dict) and "error" not in capital_json:
+                valuation_md = self.md_converter.convert_capital_json_to_markdown(capital_json)
+                section7_md = f"{valuation_md}\n\n{section7_md}"
 
-            # (Direct MongoDB table injection removed: Agent 3 & 4 now incorporate these via context)
-
-            # --- Step 3: Convert and Merge Agent 1 & 2 data into SECTION VI ---
-            investor_md = ""
-            if isinstance(investor_json, dict) and not investor_json.get("error"):
-                investor_md = self.md_converter.convert_investor_json_to_markdown(
-                    investor_json, 
-                    target_investors=tenant_config.get("target_investors"),
-                    investor_match_only=investor_match_enabled,
-                    doc_type=doc_type
-                )
-                logger.info(f"Agent 1: Investor markdown generated ({len(investor_md)} chars)")
-            else:
-                logger.warning(f"Agent 1: Investor data not available: {investor_json.get('error', 'unknown') if isinstance(investor_json, dict) else str(investor_json)}")
+            # Map company name early for research
+            company_name = namespace.replace('.pdf', '').replace('_', ' ')
             
-            capital_md = ""
-            if isinstance(capital_json, dict) and not capital_json.get("error"):
-                capital_md = self.md_converter.convert_capital_json_to_markdown(
-                    capital_json, include_valuation_analysis=valuation_enabled
-                )
-                logger.info(f"Agent 2: Capital markdown generated ({len(capital_md)} chars)")
-            else:
-                logger.warning(f"Agent 2: Capital data not available: {capital_json.get('error', 'unknown') if isinstance(capital_json, dict) else str(capital_json)}")
-
-            # Merge Agent 1 & 2: Insert between SECTION VI and SECTION VII
-            combined_capital_investor = ""
-            if investor_md:
-                combined_capital_investor += investor_md + "\n\n"
-            if capital_md:
-                combined_capital_investor += capital_md
-
-            if combined_capital_investor.strip():
-                logger.info(f"Merging Agent 1 & 2 data ({len(combined_capital_investor)} chars) before SECTION VII")
-                draft_markdown = self.md_converter.insert_markdown_before_section(
-                    draft_markdown,
-                    combined_capital_investor,
-                    section_header="SECTION VII",
-                    section_label="Matched Investors & Capital Structure Analysis"
-                )
-            else:
-                logger.warning("Agent 1 & 2: No capital/investor data to merge")
-
-            # --- Step 4: Handle Adverse Findings Research (A-5) ---
-
-            research_markdown = ""
             if adverse_enabled:
-                logger.info("Phase 3: Adverse Findings Research")
-                company_name = investor_json.get("company_name") or namespace
-                research_json = await research_service.research_company(company_name=company_name)
-                research_markdown = self.md_converter.convert_research_json_to_markdown(research_json)
-                u = research_json.get("_usage", {"input": 0, "output": 0})
-                total_usage["input"] += u["input"]; total_usage["output"] += u["output"]
+                research_res = await research_service.research_company(company_name)
+                if research_res and "error" not in research_res:
+                    adverse_md = self.md_converter.convert_research_json_to_markdown(research_res)
+                    # Use MarkdownConverter utility or manual insertion to place before Section XII
+                    if "## SECTION XII:" in section11_12_md:
+                        xi_part, xii_part = section11_12_md.split("## SECTION XII:", 1)
+                        section11_12_md = f"{xi_part.strip()}\n\n{adverse_md.strip()}\n\n---\n\n## SECTION XII:{xii_part}"
+                    else:
+                        section11_12_md = f"{section11_12_md}\n\n{adverse_md}"
 
-            if research_markdown:
-                # Insert before XII = end of XI
-                draft_markdown = self.md_converter.insert_markdown_before_section(
-                    draft_markdown,
-                    research_markdown,
-                    section_header="SECTION XII",
-                    section_label="ADVERSE FINDINGS & COMPLIANCE RESEARCH"
-                )
-
-            # Final Cleanup
-            final_markdown = self._post_process_final_markdown(draft_markdown, doc_type)
+            # Organize sections for final assembly
+            sections_dict = {
+                'sec1_2': section1_2_md,
+                'sec3': section3_md,
+                'sec4_5': section4_5_md,
+                'sec6': section6_md,
+                'sec7': section7_md,
+                'sec8_9': section8_9_md,
+                'sec10': section10_md,
+                'sec11_12': section11_12_md
+            }
+            
+            # Sequential Assembly via MarkdownConverter
+            combined_summary = self.md_converter.assemble_final_summary(
+                sections=sections_dict,
+                doc_type=doc_type,
+                company_name=company_name
+            )
+            
+            # Final Post-processing
+            final_markdown = self._post_process_final_markdown(combined_summary, doc_type)
             
             # Wrap with Timestamp
             dateTime = datetime.now().strftime("%d/%m/%Y, %I:%M:%S %p")
             header_metadata = f"---\nGenerated: {dateTime}\n---\n\n"
             final_markdown = header_metadata + final_markdown
-
+            
             duration = time.time() - start_time
-            logger.info("Pipeline Complete", duration=duration)
+            logger.info("Pipeline completed successfully", duration=f"{duration:.2f}s")
             
             return {
                 "status": "success",
@@ -879,13 +1002,15 @@ class SummaryPipeline:
                 "duration": duration,
                 "usage": total_usage
             }
-            
+
         except Exception as e:
-            logger.error("Summary pipeline failed", error=str(e), exc_info=True)
+            logger.error("Global Pipeline Failure", error=str(e), exc_info=True)
             return {
                 "status": "error",
                 "message": f"Summary generation failed: {str(e)}",
-                "duration": time.time() - start_time
+                "duration": time.time() - start_time,
+                "markdown": f"# Global Pipeline Error\n\n{str(e)}",
+                "usage": {"input": 0, "output": 0}
             }
 
 

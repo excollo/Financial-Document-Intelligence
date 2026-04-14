@@ -1,123 +1,85 @@
 """
-S3/R2 Service for Python backend using aioboto3 for async operations.
+Azure Blob Storage Service for Python backend.
+Replaces the old S3/R2 implementation.
 """
-import aioboto3
+import os
+from azure.storage.blob import BlobServiceClient, generate_blob_sas, BlobSasPermissions
+from datetime import datetime, timedelta
 from typing import Optional
 from app.core.config import settings
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
-
-class S3Service:
-    """Async S3-compatible service for downloading/uploading files to R2."""
+class AzureStorageService:
+    """Service for downloading/uploading files to Azure Blob Storage."""
 
     def __init__(self):
-        self.session = aioboto3.Session()
-        self.endpoint_url = settings.CLOUDFLARE_URI
-        self.bucket = settings.R2_BUCKET_NAME
-        self.access_key = settings.R2_ACCESS_KEY_ID
-        self.secret_key = settings.R2_SECRET_ACCESS_KEY
-        self.region = settings.S3_REGION
+        self.connection_string = os.getenv("AZURE_BLOB_STORAGE_CONNECTION_STRING")
+        self.account_name = os.getenv("AZURE_BLOB_ACCOUNT_NAME")
+        self.account_key = os.getenv("AZURE_BLOB_ACCOUNT_KEY")
+        self.container_name = os.getenv("AZURE_BLOB_CONTAINER_NAME", "drhp-files")
         
-        # Debugging: Ensure credentials are loaded
-        if not self.access_key or len(self.access_key) < 10:
-            logger.error(f"Cloudflare S3 Access Key is MISSING or too short in S3Service! keylen={len(self.access_key) if self.access_key else 0}")
+        if not self.connection_string:
+            logger.error("AZURE_BLOB_STORAGE_CONNECTION_STRING is missing in AzureStorageService!")
         else:
-            logger.info(f"S3Service initialized with credentials key_prefix={self.access_key[:4]}... endpoint={self.endpoint_url}")
+            try:
+                self.blob_service_client = BlobServiceClient.from_connection_string(self.connection_string)
+                logger.info(f"AzureStorageService initialized for container: {self.container_name}")
+            except Exception as e:
+                logger.error(f"Failed to initialize AzureStorageService: {str(e)}")
+                self.blob_service_client = None
 
     async def download_file(self, key: str) -> Optional[bytes]:
-        """Download file content from S3."""
+        """Download file content from Azure Blob Storage."""
         try:
-            async with self.session.client(
-                "s3",
-                endpoint_url=self.endpoint_url,
-                aws_access_key_id=self.access_key,
-                aws_secret_access_key=self.secret_key,
-                region_name=self.region,
-            ) as s3:
-                response = await s3.get_object(Bucket=self.bucket, Key=key)
-                async with response["Body"] as stream:
-                    return await stream.read()
+            if not self.blob_service_client:
+                return None
+            
+            blob_client = self.blob_service_client.get_blob_client(container=self.container_name, blob=key)
+            download_stream = blob_client.download_blob()
+            return download_stream.readall()
         except Exception as e:
-            logger.error(f"S3 download failed key={key}", error=str(e))
+            logger.error(f"Azure download failed key={key}", error=str(e))
             return None
 
     async def upload_file(self, content: bytes, key: str, content_type: str = "application/octet-stream") -> bool:
-        """Upload file content to S3."""
+        """Upload file content to Azure Blob Storage."""
         try:
-            async with self.session.client(
-                "s3",
-                endpoint_url=self.endpoint_url,
-                aws_access_key_id=self.access_key,
-                aws_secret_access_key=self.secret_key,
-                region_name=self.region,
-            ) as s3:
-                await s3.put_object(
-                    Bucket=self.bucket, 
-                    Key=key, 
-                    Body=content, 
-                    ContentType=content_type
-                )
-                return True
+            if not self.blob_service_client:
+                return False
+            
+            blob_client = self.blob_service_client.get_blob_client(container=self.container_name, blob=key)
+            blob_client.upload_blob(content, overwrite=True, content_settings={"content_type": content_type})
+            return True
         except Exception as e:
-            logger.error(f"S3 upload failed key={key}", error=str(e))
+            logger.error(f"Azure upload failed key={key}", error=str(e))
             return False
 
     async def get_presigned_url(self, key: str, expires_in: int = 3600) -> Optional[str]:
-        """Generate a presigned URL for downloading."""
+        """Generate a SAS token URL for downloading."""
         try:
-            async with self.session.client(
-                "s3",
-                endpoint_url=self.endpoint_url,
-                aws_access_key_id=self.access_key,
-                aws_secret_access_key=self.secret_key,
-                region_name=self.region,
-            ) as s3:
-                return await s3.generate_presigned_url(
-                    "get_object",
-                    Params={"Bucket": self.bucket, "Key": key},
-                    ExpiresIn=expires_in,
-                )
+            if not self.account_name or not self.account_key:
+                return None
+                
+            sas_token = generate_blob_sas(
+                account_name=self.account_name,
+                container_name=self.container_name,
+                blob_name=key,
+                account_key=self.account_key,
+                permission=BlobSasPermissions(read=True),
+                expiry=datetime.utcnow() + timedelta(seconds=expires_in)
+            )
+            
+            return f"https://{self.account_name}.blob.core.windows.net/{self.container_name}/{key}?{sas_token}"
         except Exception as e:
-            logger.error(f"S3 presigned URL generation failed key={key}", error=str(e))
+            logger.error(f"Azure SAS URL generation failed key={key}", error=str(e))
             return None
 
-    async def delete_prefix(self, prefix: str) -> bool:
-        """Delete all objects with a given prefix (folder cleanup)."""
-        try:
-            async with self.session.client(
-                "s3",
-                endpoint_url=self.endpoint_url,
-                aws_access_key_id=self.access_key,
-                aws_secret_access_key=self.secret_key,
-                region_name=self.region,
-            ) as s3:
-                # 1. List all objects with prefix
-                response = await s3.list_objects_v2(Bucket=self.bucket, Prefix=prefix)
-                objects = response.get("Contents", [])
-                
-                if not objects:
-                    logger.info(f"No objects found with prefix {prefix} to delete")
-                    return True
-                
-                # 2. Delete them
-                delete_keys = [{"Key": obj["Key"]} for obj in objects]
-                await s3.delete_objects(
-                    Bucket=self.bucket,
-                    Delete={"Objects": delete_keys}
-                )
-                logger.info(f"Deleted {len(delete_keys)} objects with prefix {prefix}")
-                return True
-        except Exception as e:
-            logger.error(f"S3 prefix deletion failed prefix={prefix}", error=str(e))
-            return False
-
     def get_public_url(self, key: str) -> str:
-        """Construct the public URL for a file (assuming bucket is public or proxied)."""
-        base = self.endpoint_url.rstrip("/")
-        return f"{base}/{self.bucket}/{key}"
+        """Construct the URL (without SAS token)."""
+        return f"https://{self.account_name}.blob.core.windows.net/{self.container_name}/{key}"
 
 
-# Global instance
-s3_service = S3Service()
+# Global instance - Aliased to s3_service to maintain backward compatibility with imports
+s3_service = AzureStorageService()

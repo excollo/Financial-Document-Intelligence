@@ -43,15 +43,36 @@ const domainSchema = new mongoose.Schema({
   // ── SOP Storage (populated by Onboarding Agent) ──
   sop_text: { type: String, default: "" },
 
-  // ── Onboarding Agent Outputs ──
-  subquery_analysis: { type: mongoose.Schema.Types.Mixed, default: {} },
-  subquery_changes_log: { type: [String], default: [] },
-
+  // ── Onboarding Agent Outputs (Prompts & Subqueries per SOP) ──
+  agent1_prompt: { type: String, default: "" },
+  agent1_subqueries: { type: [String], default: [] },
+  
+  agent2_prompt: { type: String, default: "" },
+  agent2_subqueries: { type: [String], default: [] },
+  
   agent3_prompt: { type: String, default: "" },
   agent3_subqueries: { type: [String], default: [] },
+  
   agent4_prompt: { type: String, default: "" },
   agent4_subqueries: { type: [String], default: [] },
+  
   agent5_prompt: { type: String, default: "" },
+  agent5_subqueries: { type: [String], default: [] },
+  
+  agent6_prompt: { type: String, default: "" },
+  agent6_subqueries: { type: [String], default: [] },
+  
+  agent7_prompt: { type: String, default: "" },
+  agent7_subqueries: { type: [String], default: [] },
+  
+  agent8_prompt: { type: String, default: "" },
+  agent8_subqueries: { type: [String], default: [] },
+  
+  agent9_prompt: { type: String, default: "" },
+  agent9_subqueries: { type: [String], default: [] },
+
+  subquery_analysis: { type: mongoose.Schema.Types.Mixed, default: {} },
+  subquery_changes_log: { type: [String], default: [] },
 
   matched_investors: { type: mongoose.Schema.Types.Mixed, default: [] },
 

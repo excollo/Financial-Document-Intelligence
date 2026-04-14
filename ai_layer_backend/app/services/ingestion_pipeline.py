@@ -166,9 +166,47 @@ class IngestionPipeline:
 
         try:
             # 1. Download document
-            resp = requests.get(file_url, timeout=60)
-            resp.raise_for_status()
-            file_content = resp.content
+            # Strategy: Try presigned URL first. If it expired (403), download
+            # directly from R2 using the Python backend's own credentials.
+            # This handles the case where the Celery queue delay exceeds the
+            # 1-hour presigned URL expiry.
+            t_download = time.time()
+            file_content = None
+            download_method = "presigned_url"
+
+            try:
+                resp = requests.get(file_url, timeout=60)
+                resp.raise_for_status()
+                file_content = resp.content
+            except requests.exceptions.HTTPError as download_err:
+                status_code = download_err.response.status_code if download_err.response is not None else 0
+                if status_code == 403:
+                    # Presigned URL expired — download directly from R2
+                    file_key = metadata.get("fileKey")
+                    if file_key:
+                        logger.warning(
+                            "Presigned URL expired (403). Downloading directly from R2.",
+                            job_id=job_id,
+                            file_key=file_key
+                        )
+                        from app.services.s3 import s3_service
+                        file_content = await s3_service.download_file(file_key)
+                        download_method = "r2_direct"
+                        if not file_content:
+                            raise RuntimeError(f"R2 direct download also failed for key: {file_key}")
+                    else:
+                        logger.error("Presigned URL expired and no fileKey in metadata for R2 fallback", job_id=job_id)
+                        raise
+                else:
+                    raise
+
+            logger.info(
+                "[TIMING] Step 1: Document downloaded",
+                seconds=round(time.time() - t_download, 2),
+                size_mb=round(len(file_content) / 1_048_576, 2),
+                method=download_method,
+                job_id=job_id
+            )
 
             # Define early storage callback for streaming tables to Mongo
             async def stream_tables_to_mongo(batch_tables):
@@ -192,7 +230,14 @@ class IngestionPipeline:
                     logger.warning(f"Streaming to Mongo failed for job {job_id}: {str(ex_mongo)}")
 
             # 2. Extract TOC First (Robust 1st check)
+            t_toc = time.time()
             toc_map = await self.extraction.get_toc(file_content)
+            logger.info(
+                "[TIMING] Step 2: TOC extracted",
+                seconds=round(time.time() - t_toc, 2),
+                entries=len(toc_map),
+                job_id=job_id
+            )
             
             # --- Store TOC Metadata for Summary Pipeline ---
             try:
@@ -217,6 +262,7 @@ class IngestionPipeline:
                 logger.warning("Failed to store TOC metadata", error=str(me))
 
             # 3. Extract section-wise with real-time table streaming (using provided TOC)
+            t_extract = time.time()
             extraction_result = await self.extraction.extract_sections_from_pdf(
                 file_content, 
                 job_id=job_id,
@@ -225,6 +271,13 @@ class IngestionPipeline:
             )
             sections = extraction_result.get("sections", [])
             tables = extraction_result.get("tables", [])
+            logger.info(
+                "[TIMING] Step 3: PDF extraction complete",
+                seconds=round(time.time() - t_extract, 2),
+                sections=len(sections),
+                tables=len(tables),
+                job_id=job_id
+            )
 
             if not sections:
                 logger.warning("No sections extracted from document", job_id=job_id)
@@ -266,20 +319,55 @@ class IngestionPipeline:
             index_name = settings.PINECONE_INDEX
             host = settings.PINECONE_INDEX_HOST
 
-            # 5. Chunk → embed → upsert each section
+            # 5. Chunk → embed → upsert each section — PARALLELIZED
+            # Each section's pipeline (chunk→embed→upsert) is fully independent,
+            # so we can run them concurrently with asyncio.gather().
+            # We batch in groups of 5 to avoid overwhelming OpenAI rate limits.
             total_upserted = 0
-            chunk_offset = 0
+            PARALLEL_BATCH = 5  # sections processed concurrently
+
+            # Pre-compute chunk offsets so vector IDs don't collide across sections
+            # Estimate: each section produces ~(len(text)/3600) chunks on average
+            chunk_estimates = []
+            running_offset = 0
             for section in sections:
-                n = await self._process_section(
+                chunk_estimates.append(running_offset)
+                # Rough estimate of output chunks (4800 char size, 800 overlap)
+                approx_chunks = max(1, len(section.get("text", "")) // 3600)
+                running_offset += approx_chunks + 5  # +5 safety buffer
+
+            async def process_section_with_offset(section, offset):
+                return await self._process_section(
                     section=section,
                     base_metadata=base_metadata,
                     index_name=index_name,
                     host=host,
                     namespace=filename,
-                    section_offset=chunk_offset,
+                    section_offset=offset,
                 )
-                total_upserted += n
-                chunk_offset += n  # keep chunk_index globally unique
+
+            for batch_start in range(0, len(sections), PARALLEL_BATCH):
+                batch = sections[batch_start: batch_start + PARALLEL_BATCH]
+                offsets = chunk_estimates[batch_start: batch_start + PARALLEL_BATCH]
+
+                logger.info(
+                    "Processing section batch",
+                    batch_start=batch_start,
+                    batch_size=len(batch),
+                    sections_total=len(sections)
+                )
+
+                results = await asyncio.gather(
+                    *[process_section_with_offset(sec, off) for sec, off in zip(batch, offsets)],
+                    return_exceptions=True
+                )
+
+                for r in results:
+                    if isinstance(r, Exception):
+                        logger.error("Section processing error", error=str(r))
+                    else:
+                        total_upserted += r
+
 
             # 6. MongoDB record
             try:
