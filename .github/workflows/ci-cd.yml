@@ -94,19 +94,19 @@ jobs:
     needs: [test-node, test-ai]
     runs-on: ubuntu-latest
     permissions:
+      id-token: write
       contents: read
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # Login to Azure using Service Principal (Client Secret)
+      # Login to Azure using OIDC
       - name: Azure Login
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_B953055700A1448D828BDD500A13D066 }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_038C3B5AD8C34641A8B618343B76608F }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_0B47EF5A196D4AA59065B1555D1BE5ED }}
 
       # Login to ACR natively using Admin Credentials
       - name: Login to ACR
@@ -137,19 +137,19 @@ jobs:
     needs: build-and-push
     runs-on: ubuntu-latest
     permissions:
+      id-token: write
       contents: read
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # Login to Azure using Service Principal (Client Secret)
+      # Login to Azure using OIDC
       - name: Azure Login
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_B953055700A1448D828BDD500A13D066 }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_038C3B5AD8C34641A8B618343B76608F }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_0B47EF5A196D4AA59065B1555D1BE5ED }}
 
       # 🚀 Deploy Node Backend
       - name: 'Deploy Node Backend to App Service'
