@@ -1,6 +1,6 @@
 import pytest
 import uuid
-from unittest.mock import MagicMock, patch
+import time
 from fastapi.testclient import TestClient
 from app.main import app
 from app.api.jobs import require_internal_secret
@@ -24,8 +24,10 @@ def client():
 def test_full_job_lifecycle_mocked(client, monkeypatch):
     """
     Test the job lifecycle (submit -> poll).
-    We mock the celery send_task and AsyncResult to avoid any real Redis/broker calls.
+    We mock the celery part to return a predictable response.
     """
+    job_id = str(uuid.uuid4())
+    
     # 1. Submit Summary Job
     payload = {
         "namespace": "test-namespace",
@@ -34,20 +36,25 @@ def test_full_job_lifecycle_mocked(client, monkeypatch):
         "domainId": "test-domain-id",
         "metadata": {"test": "data"}
     }
-
-    # Mock celery send_task to avoid reaching actual Redis
+    
+    # Mock celery.send_task to avoid reaching actual Redis
     from celery import Celery
-    monkeypatch.setattr(Celery, "send_task", lambda *a, **k: None)
-
+    def mock_send_task(self, name, args=None, kwargs=None, task_id=None, **options):
+        return None
+    
+    monkeypatch.setattr(Celery, "send_task", mock_send_task)
+    
     response = client.post("/jobs/summary", json=payload)
     assert response.status_code == 202
     data = response.json()
     assert "job_id" in data
     submitted_job_id = data["job_id"]
 
-    # 2. Check Job Status — patch celery_app.AsyncResult directly on the module
-    class MockAsyncResult:
-        def __init__(self, id, *args, **kwargs):
+    # 2. Check Job Status (Initial state will be PENDING because it's mocked/not processed)
+    # Mock Celery AsyncResult to return a SUCCESS state
+    from celery.result import AsyncResult
+    class MockResult:
+        def __init__(self, id):
             self.id = id
             self.state = "SUCCESS"
             self.result = {"summary": "This is a test summary output"}
@@ -55,9 +62,7 @@ def test_full_job_lifecycle_mocked(client, monkeypatch):
         def successful(self): return True
         def failed(self): return False
 
-    # Patch directly on the celery_app instance used by the jobs router
-    from app.workers.celery_app import celery_app as _celery_app
-    monkeypatch.setattr(_celery_app, "AsyncResult", MockAsyncResult)
+    monkeypatch.setattr("celery.result.AsyncResult", lambda id, **k: MockResult(id))
 
     status_response = client.get(f"/jobs/{submitted_job_id}")
     assert status_response.status_code == 200
@@ -68,18 +73,18 @@ def test_full_job_lifecycle_mocked(client, monkeypatch):
 def test_pipeline_job_submission(client, monkeypatch):
     """Verify high-fidelity pipeline job submission."""
     job_id = "test-job-" + str(uuid.uuid4())[:8]
-
+    
     payload = {
         "job_id": job_id,
         "tenant_id": "test-tenant",
         "document_name": "test_extraction.pdf",
         "s3_input_key": "raw/test_extraction.pdf"
     }
-
+    
     # Mock celery
     from celery import Celery
     monkeypatch.setattr(Celery, "send_task", lambda *a, **k: None)
-
+    
     response = client.post("/jobs/pipeline", json=payload)
     assert response.status_code == 202
     assert response.json()["job_id"] == job_id

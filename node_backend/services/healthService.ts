@@ -29,6 +29,7 @@ export interface SystemHealthReport {
             openai: ServiceStatus;
             pinecone: ServiceStatus;
             cohere: ServiceStatus;
+            perplexity?: ServiceStatus;
         };
     };
 }
@@ -184,6 +185,7 @@ export class HealthService {
                     openai: externalAiServices.openai || { status: "not_configured", message: "Not checked" },
                     pinecone: externalAiServices.pinecone || { status: "not_configured", message: "Not checked" },
                     cohere: externalAiServices.cohere || { status: "not_configured", message: "Not checked" },
+                    perplexity: externalAiServices.perplexity || { status: "not_configured", message: "Not checked" },
                 }
             },
         };

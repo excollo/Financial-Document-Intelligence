@@ -113,12 +113,14 @@ export const SystemHealth: React.FC = () => {
                 />
                 <ServiceCard title="Database (Mongo)" status={report?.services?.mongodb} loading={loading} />
                 <ServiceCard title="Email (Brevo)" status={report?.services?.brevo} loading={loading} />
+                <ServiceCard title="Cloudflare R2" status={report?.services?.cloudflare_r2} loading={loading} />
                 <ServiceCard title="Azure Storage" status={report?.services?.azure_storage} loading={loading} />
 
                 {/* External AI APIs */}
                 <ServiceCard title="OpenAI API" status={report?.services?.external_ai?.openai} loading={loading} />
                 <ServiceCard title="Pinecone DB" status={report?.services?.external_ai?.pinecone} loading={loading} />
                 <ServiceCard title="Cohere API" status={report?.services?.external_ai?.cohere} loading={loading} />
+                <ServiceCard title="Perplexity API" status={report?.services?.external_ai?.perplexity} loading={loading} />
             </div>
 
             <Card className="bg-[#1A1A1A] border-none shadow-2xl">

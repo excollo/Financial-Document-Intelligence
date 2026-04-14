@@ -5,9 +5,9 @@ Driven by the SopConfig's section definition.
 import json
 import asyncio
 from typing import Dict, Any, List, Optional
+from openai import AsyncOpenAI
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.core.openai_client import get_async_openai_client, DEPLOYMENT_MODEL
 from app.workers.job_context import JobContext
 
 logger = get_logger(__name__)
@@ -23,7 +23,7 @@ class SectionExtractor:
 
     def __init__(self, context: JobContext):
         self.ctx = context
-        self.client = get_async_openai_client()
+        self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
     async def process(self, section_id: str, segment_text: str) -> Dict[str, Any]:
         """Process extraction for a specific section and segment."""
@@ -44,7 +44,7 @@ class SectionExtractor:
         try:
             # 2. Call OpenAI (temperature=0, response_format=json_object)
             response = await self.client.chat.completions.create(
-                model=DEPLOYMENT_MODEL,
+                model=settings.GPT_MODEL, # e.g. gpt-4o-mini
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}

@@ -7,7 +7,6 @@ from typing import Dict, Any, List, Optional
 import openai
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.core.openai_client import get_async_openai_client, DEPLOYMENT_MODEL
 from app.services.vector_store import vector_store_service
 from app.services.embedding import EmbeddingService
 from app.services.rerank import rerank_service
@@ -18,7 +17,7 @@ logger = get_logger(__name__)
 class ChatService:
     def __init__(self):
         self.embedding = EmbeddingService()
-        self.client = get_async_openai_client()
+        self.client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
     async def _retrieve_context(
         self, 
@@ -148,7 +147,7 @@ class ChatService:
         # 3. Request LLM
         try:
             response = await self.client.chat.completions.create(
-                model=DEPLOYMENT_MODEL,
+                model=settings.SUMMARY_MODEL, # or hardcode "gpt-4o-mini"
                 messages=messages,
                 temperature=0.7,
                 stream=False

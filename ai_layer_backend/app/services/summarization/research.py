@@ -13,7 +13,6 @@ from typing import Dict, Any, Optional
 import openai
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.core.openai_client import get_async_openai_client, DEPLOYMENT_MODEL
 from app.services.summarization.prompts import RESEARCH_SYSTEM_PROMPT
 
 logger = get_logger(__name__)
@@ -26,8 +25,9 @@ class ResearchService:
     """
 
     def __init__(self):
-        self.client = get_async_openai_client()
-        self.model = DEPLOYMENT_MODEL
+        self.client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+        # Model name matches n8n request exactly
+        self.model = "gpt-5-mini"
 
     async def research_company(
         self, company_name: str, promoters: str = "", custom_sop: Optional[str] = None
