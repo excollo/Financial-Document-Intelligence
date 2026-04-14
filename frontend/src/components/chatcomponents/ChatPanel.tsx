@@ -603,9 +603,9 @@ export function ChatPanel({
       // style={{ background: customStyles.containerBg || undefined }}
       >
         <div className="p-4 space-y-4">
-          {messages.map((message) => (
+          {messages.map((message, index) => (
             <div
-              key={message.id}
+              key={`${message.id}-${index}`}
               className={cn(
                 "flex items-start gap-3",
                 message.isUser ? "justify-end" : "justify-start"
