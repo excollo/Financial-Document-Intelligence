@@ -1,7 +1,9 @@
 import axios from "axios";
 import { getCurrentWorkspace } from "./workspaceContext";
 
-const API_URL = import.meta.env.VITE_API_URL;
+const API_URL = import.meta.env.DEV
+  ? "/api"
+  : import.meta.env.VITE_API_URL;
 // Attach shared link token to every request if present
 const getSharedLinkToken = (): string | null => {
   try {
@@ -420,6 +422,7 @@ export const directoryService = {
       sort?: string;
       order?: "asc" | "desc";
       includeDeleted?: boolean;
+      directoriesOnly?: boolean;
     }
   ) {
     const token = localStorage.getItem("accessToken");
@@ -431,6 +434,7 @@ export const directoryService = {
     if (opts?.sort) params.set("sort", opts.sort);
     if (opts?.order) params.set("order", opts.order);
     if (opts?.includeDeleted) params.set("includeDeleted", "1");
+    if (opts?.directoriesOnly) params.set("directoriesOnly", "1");
     const url = `${API_URL}/directories/${id}/children?${params.toString()}`;
     const res = await axios.get(url, {
       headers: {

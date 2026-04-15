@@ -187,7 +187,9 @@ export const directoryController = {
           pageSize?: string;
           sort?: string;
           order?: string;
+          directoriesOnly?: string;
         };
+      const directoriesOnly = req.query?.directoriesOnly === "1";
       // Get current workspace from request
       // Workspace is required
       const currentWorkspace = req.currentWorkspace;
@@ -867,20 +869,22 @@ export const directoryController = {
       const sortKey = sort === "uploadedAt" ? "uploadedAt" : "name";
       const sortDir = (order || "asc").toLowerCase() === "desc" ? -1 : 1;
 
-      const allDocs = await Document.find(docFilter).sort({ [sortKey]: sortDir });
+      let docs: any[] = [];
+      if (!directoriesOnly) {
+        const allDocs = await Document.find(docFilter).sort({ [sortKey]: sortDir });
 
-      console.log(`[listChildren] Found ${allDocs.length} documents for directory ${parentId}${isViewingSharedDirectory ? ` (shared, original: ${originalDirectoryId})` : ''}`);
+        console.log(`[listChildren] Found ${allDocs.length} documents for directory ${parentId}${isViewingSharedDirectory ? ` (shared, original: ${originalDirectoryId})` : ''}`);
 
-      // Filter documents based on directory access permissions
-      // Only show documents from directories the user has access to
-      // Cross-domain users should only see documents in directories they have access to
-      let docs = allDocs;
+        // Filter documents based on directory access permissions
+        // Only show documents from directories the user has access to
+        // Cross-domain users should only see documents in directories they have access to
+        docs = allDocs;
 
-      // Only filter if user is NOT a same-domain admin
-      if (!isSameDomainAdmin) {
-        // Check access for each document's directory
-        const accessibleDocs = await Promise.all(
-          allDocs.map(async (doc) => {
+        // Only filter if user is NOT a same-domain admin
+        if (!isSameDomainAdmin) {
+          // Check access for each document's directory
+          const accessibleDocs = await Promise.all(
+            allDocs.map(async (doc) => {
             const docDirId = doc.directoryId || null;
 
             // For cross-domain users, root directory documents should be restricted
@@ -996,10 +1000,11 @@ export const directoryController = {
 
             // No access
             return null;
-          })
-        );
+            })
+          );
 
-        docs = accessibleDocs.filter((d): d is typeof allDocs[0] => d !== null);
+          docs = accessibleDocs.filter((d): d is typeof allDocs[0] => d !== null);
+        }
       }
 
       // Merge and paginate
