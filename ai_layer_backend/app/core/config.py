@@ -5,6 +5,7 @@ Supports sandbox, dev, and prod environments.
 import os
 from typing import Literal, Optional
 from functools import lru_cache
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, AliasChoices
 
@@ -118,6 +119,39 @@ class Settings(BaseSettings):
     def SUMMARY_STATUS_UPDATE_URL(self) -> str:
         return f"{self.NODE_BACKEND_URL}/api/summaries/summary-status/update"
 
+    @staticmethod
+    def _normalize_redis_url(url: str) -> str:
+        """
+        Normalize Redis URL query parameters for compatibility across clients.
+        In particular, redis-py expects ssl_cert_reqs values like:
+        'required' | 'optional' | 'none' (not CERT_REQUIRED).
+        """
+        if not url:
+            return url
+
+        parts = urlsplit(url)
+        if not parts.scheme:
+            return url
+
+        query_items = dict(parse_qsl(parts.query, keep_blank_values=True))
+        if parts.scheme.lower() == "rediss":
+            raw_ssl_value = query_items.get("ssl_cert_reqs", "").strip()
+            normalized_ssl = {
+                "CERT_REQUIRED": "required",
+                "REQUIRED": "required",
+                "required": "required",
+                "CERT_OPTIONAL": "optional",
+                "OPTIONAL": "optional",
+                "optional": "optional",
+                "CERT_NONE": "none",
+                "NONE": "none",
+                "none": "none",
+            }.get(raw_ssl_value, "required")
+            query_items["ssl_cert_reqs"] = normalized_ssl
+
+        normalized_query = urlencode(query_items)
+        return urlunsplit((parts.scheme, parts.netloc, parts.path, normalized_query, parts.fragment))
+
 
 
     def __init__(self, **kwargs):
@@ -138,6 +172,12 @@ class Settings(BaseSettings):
             self.CELERY_BROKER_URL = base_redis_url
         if not self.CELERY_RESULT_BACKEND:
             self.CELERY_RESULT_BACKEND = base_redis_url
+
+        # Normalize all Redis-related URLs to avoid runtime SSL parsing warnings.
+        if self.REDIS_URL:
+            self.REDIS_URL = self._normalize_redis_url(self.REDIS_URL)
+        self.CELERY_BROKER_URL = self._normalize_redis_url(self.CELERY_BROKER_URL)
+        self.CELERY_RESULT_BACKEND = self._normalize_redis_url(self.CELERY_RESULT_BACKEND)
     
     @property
     def is_production(self) -> bool:
