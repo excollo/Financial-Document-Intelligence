@@ -324,7 +324,7 @@ async function recoverStaleDocuments() {
     for (const doc of staleDocs) {
       try {
         // Try to query the Python API Celery job status for this document
-        const pythonApiUrl = process.env.PYTHON_API_URL || "http://localhost:8001";
+        const pythonApiUrl = process.env.PYTHON_API_URL || "http://localhost:8000";
         const axios = (await import("axios")).default;
 
         let resolved = false;

@@ -20,7 +20,7 @@ export const chatController = {
         return res.status(400).json({ error: "Missing required fields (message, namespace, documentType)" });
       }
 
-      const pythonApiUrl = process.env.PYTHON_API_URL || "http://localhost:8001";
+      const pythonApiUrl = process.env.PYTHON_API_URL || "http://localhost:8000";
       const INTERNAL_SECRET = process.env.INTERNAL_SECRET || "";
 
       console.log(`Forwarding chat query to Python: ${namespace}`);

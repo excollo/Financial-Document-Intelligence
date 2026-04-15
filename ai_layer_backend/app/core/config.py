@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     
     # API Settings
     API_HOST: str = "0.0.0.0"
-    API_PORT: int = 8001
+    API_PORT: int = 8000
     API_WORKERS: int = 4
     
     # Redis Configuration

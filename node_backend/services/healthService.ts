@@ -115,7 +115,7 @@ export class HealthService {
 
     static async checkAIPlatform(): Promise<ServiceStatus> {
         const start = Date.now();
-        const pythonUrl = process.env.PYTHON_API_URL || "http://localhost:8001";
+        const pythonUrl = process.env.PYTHON_API_URL || "http://localhost:8000";
         const INTERNAL_SECRET = process.env.INTERNAL_SECRET || "";
         try {
             const response = await axios.get(`${pythonUrl}/health/detailed`, { 

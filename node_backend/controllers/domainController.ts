@@ -4,7 +4,7 @@ import { Domain } from "../models/Domain";
 import axios from "axios";
 import FormData from "form-data";
 
-const PYTHON_API_URL = process.env.PYTHON_API_URL || "http://localhost:8001";
+const PYTHON_API_URL = process.env.PYTHON_API_URL || "http://localhost:8000";
 const INTERNAL_SECRET = process.env.INTERNAL_SECRET || "";
 
 export const domainController = {
