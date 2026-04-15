@@ -180,10 +180,45 @@ jobs:
       - name: 'Deploy AI Worker to Azure Container Apps'
         run: |
           az extension add --name containerapp --upgrade --yes
+          az containerapp show \
+            --name ${{ env.CELERY_WORKER_CONTAINER_APP }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            -o yaml > worker-update.yaml
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("worker-update.yaml")
+          text = p.read_text()
+          image = "${{ env.ACR_NAME }}.azurecr.io/ai-backend:${{ github.ref_name }}"
+          app_env = "${{ github.ref_name == 'main' && 'prod' || 'dev' }}"
+          import re
+
+          # Replace worker image with latest branch build tag.
+          text = re.sub(
+              r"(?m)^      image: .*$",
+              f"      image: {image}",
+              text,
+              count=1,
+          )
+
+          # Ensure args are expressed as two distinct elements: ['-c', '<command>']
+          text = re.sub(
+              r"(?ms)      args:\n(?:      - .*\n)+      command:\n",
+              "      args:\n"
+              "      - -c\n"
+              "      - celery -A app.workers.celery_app worker --loglevel=info --pool=solo --concurrency=1\n"
+              "      command:\n",
+              text,
+          )
+
+          # Keep APP_ENV synced to branch deployment target
+          text = re.sub(
+              r"(?m)^      - name: APP_ENV\n        value: .*$",
+              f"      - name: APP_ENV\n        value: {app_env}",
+              text,
+          )
+          p.write_text(text)
+          PY
           az containerapp update \
             --name ${{ env.CELERY_WORKER_CONTAINER_APP }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --image ${{ env.ACR_NAME }}.azurecr.io/ai-backend:${{ github.ref_name }} \
-            --set-env-vars APP_ENV=${{ github.ref_name == 'main' && 'prod' || 'dev' }} \
-            --command "celery" \
-            --args "-A app.workers.celery_app worker --loglevel=info --pool=solo --concurrency=1"
+            --yaml worker-update.yaml

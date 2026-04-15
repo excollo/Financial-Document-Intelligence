@@ -27,6 +27,7 @@ import concurrent.futures
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 import multiprocessing
 from app.core.logging import get_logger
+from app.core.config import settings
 from app.services.s3 import s3_service
 
 logger = get_logger(__name__)
@@ -426,14 +427,33 @@ class ExtractionService:
             logger.info("Starting Parallel Global Table Scan", job_id=job_id, pages=total_pages, priority_pages=len(priority_pages))
             
             all_tables_storage = []
-            max_workers = min(4, multiprocessing.cpu_count())
+            cpu_bound_cap = max(1, multiprocessing.cpu_count())
+            max_workers = max(1, min(settings.EXTRACTION_MAX_WORKERS, cpu_bound_cap))
 
-            # Celery prefork workers are daemon processes and cannot spawn child processes.
-            # In that environment, ProcessPoolExecutor raises:
-            # "daemonic processes are not allowed to have children".
+            # Process pool strategy:
+            # - "auto" defaults to threads on Linux containers to avoid spawn import failures
+            #   (ModuleNotFoundError: No module named 'app').
+            # - "process" can be explicitly enabled where child-import path is guaranteed.
+            # - "thread" disables process spawning entirely.
+            run_mode = settings.EXTRACTION_EXECUTOR_MODE.lower()
             can_spawn_processes = not multiprocessing.current_process().daemon
+            use_process_pool = False
 
-            if can_spawn_processes:
+            if run_mode == "process":
+                use_process_pool = can_spawn_processes
+                if not can_spawn_processes:
+                    logger.warning(
+                        "EXTRACTION_EXECUTOR_MODE=process requested, but current process "
+                        "cannot spawn child processes. Falling back to thread pool.",
+                        job_id=job_id,
+                    )
+            elif run_mode == "thread":
+                use_process_pool = False
+            else:
+                # Auto mode: on Linux, prefer threads for predictable container behavior.
+                use_process_pool = can_spawn_processes and sys.platform == "darwin"
+
+            if use_process_pool:
                 # --- MULTIPROCESSING CONTEXT ---
                 # On macOS, 'spawn' often fails to find the 'app' package in child processes.
                 # 'fork' is used here to ensure the child inherits the parent's sys.path and environment.
@@ -452,10 +472,11 @@ class ExtractionService:
                     initargs=(_root,)
                 )
             else:
-                logger.warning(
-                    "Running inside daemon worker process; using ThreadPoolExecutor "
-                    "for table extraction to avoid nested multiprocessing crash",
+                logger.info(
+                    "Using ThreadPoolExecutor for table extraction",
                     job_id=job_id,
+                    mode=run_mode,
+                    platform=sys.platform,
                     max_workers=max_workers,
                 )
                 executor = ThreadPoolExecutor(max_workers=max_workers)

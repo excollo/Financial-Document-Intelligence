@@ -65,6 +65,8 @@ class Settings(BaseSettings):
     CHUNK_OVERLAP: int = 800
     EMBEDDING_DIMENSION: int = 3072  # text-embedding-3-large
     EMBEDDING_MODEL: str = "text-embedding-3-large"
+    EXTRACTION_EXECUTOR_MODE: Literal["auto", "thread", "process"] = "auto"
+    EXTRACTION_MAX_WORKERS: int = 2
     
     # OpenAI
     OPENAI_API_KEY: str = ""
