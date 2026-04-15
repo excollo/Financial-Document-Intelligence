@@ -165,15 +165,15 @@ jobs:
           az webapp config container set \
             --name ${{ github.ref_name == 'main' && 'fdi-ai-api-prod' || 'fdi-ai-api-dev' }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --docker-custom-image-name ${{ env.ACR_NAME }}.azurecr.io/ai-backend:${{ github.ref_name }}
+            --container-image-name ${{ env.ACR_NAME }}.azurecr.io/ai-backend:${{ github.ref_name }}
           az webapp config appsettings set \
             --name ${{ github.ref_name == 'main' && 'fdi-ai-api-prod' || 'fdi-ai-api-dev' }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --settings WEBSITES_PORT=8000 PORT=8000
-          az webapp health-check set \
+          az webapp config set \
             --name ${{ github.ref_name == 'main' && 'fdi-ai-api-prod' || 'fdi-ai-api-dev' }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --health-check-path /health
+            --generic-configurations "{\"healthCheckPath\":\"/health\"}"
           az webapp restart --name ${{ github.ref_name == 'main' && 'fdi-ai-api-prod' || 'fdi-ai-api-dev' }} --resource-group ${{ env.RESOURCE_GROUP }}
 
       # 🚀 Deploy AI Worker to Azure Container Apps
