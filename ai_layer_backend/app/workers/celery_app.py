@@ -102,10 +102,14 @@ def task_prerun_handler(sender=None, task_id=None, task=None, **kwargs):
 
 
 @task_postrun.connect
-def task_postrun_handler(sender=None, task_id=None, task=None, **kwargs):
-    logger.info(
-        f"✅ Task completed: {task.name} | ID: {task_id}"
-    )
+def task_postrun_handler(sender=None, task_id=None, task=None, state=None, **kwargs):
+    # task_postrun fires for SUCCESS/RETRY/FAILURE; log status explicitly to avoid false positives.
+    if state == "SUCCESS":
+        logger.info(f"✅ Task completed: {task.name} | ID: {task_id}")
+    elif state == "RETRY":
+        logger.warning(f"🔁 Task retry scheduled: {task.name} | ID: {task_id}")
+    else:
+        logger.warning(f"ℹ️ Task finished with state={state}: {task.name} | ID: {task_id}")
 
 
 @task_failure.connect

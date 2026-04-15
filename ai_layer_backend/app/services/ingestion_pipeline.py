@@ -417,15 +417,27 @@ class IngestionPipeline:
             logger.error("Ingestion pipeline failed", error=str(e), job_id=job_id)
             filename = metadata.get("filename", "document.pdf")
             document_id = metadata.get("documentId")
-            
-            # 1. First notify backend of failure (while document still exists)
-            backend_notifier.notify_status(
-                job_id=job_id,
-                status="failed",
-                namespace=filename,
-                document_id=document_id,
-                error={"message": str(e)},
-            )
+
+            current_retry = int(metadata.get("_celery_current_retry", 0))
+            max_retries = int(metadata.get("_celery_max_retries", 0))
+            is_terminal_attempt = current_retry >= max_retries
+
+            # Avoid sending a terminal failed callback during retriable attempts.
+            if is_terminal_attempt:
+                backend_notifier.notify_status(
+                    job_id=job_id,
+                    status="failed",
+                    namespace=filename,
+                    document_id=document_id,
+                    error={"message": str(e)},
+                )
+            else:
+                logger.warning(
+                    "Ingestion failed on retryable attempt; deferring failed callback until terminal attempt",
+                    job_id=job_id,
+                    current_retry=current_retry,
+                    max_retries=max_retries,
+                )
             
             # NOTE: We no longer delete the document automatically on failure
             # so the user can see the error message in their document list.
