@@ -542,7 +542,19 @@ export const directoryService = {
         ...(currentWorkspace && { "x-workspace": currentWorkspace }),
       },
     });
-    return res.data;
+    const data = res.data;
+    if (Array.isArray(data)) return data;
+    if (data && typeof data === "object") {
+      const wrapped = data as {
+        directories?: unknown;
+        results?: unknown;
+        data?: unknown;
+      };
+      if (Array.isArray(wrapped.directories)) return wrapped.directories;
+      if (Array.isArray(wrapped.results)) return wrapped.results;
+      if (Array.isArray(wrapped.data)) return wrapped.data;
+    }
+    return [];
   },
 
   // NEW: Check for duplicate/similar directories

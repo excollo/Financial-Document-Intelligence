@@ -39,7 +39,7 @@ export const summaryController = {
         domainId = user?.domainId;
       }
 
-      console.log(`Triggering Python Summary for: ${namespace} (${docType})`);
+      console.log(`Triggering Python Summary for: ${namespace} (${docType}) at ${pythonApiUrl}/jobs/summary`);
 
       const payload = {
         namespace,
@@ -54,9 +54,13 @@ export const summaryController = {
         }
       };
 
+      console.log(`[DEBUG] About to call Python API: ${pythonApiUrl}/jobs/summary`);
+      console.log(`[DEBUG] Internal Secret Present: ${!!process.env.INTERNAL_SECRET}`);
+      
       const pythonResponse = await axios.post(`${pythonApiUrl}/jobs/summary`, payload, {
         headers: {
-          "X-Internal-Secret": INTERNAL_SECRET
+          "X-Internal-Secret": process.env.INTERNAL_SECRET,
+          "Content-Type": "application/json"
         },
         timeout: 30000
       });

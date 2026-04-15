@@ -6,6 +6,7 @@ import os
 from typing import Literal, Optional
 from functools import lru_cache
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, AliasChoices
 
 
 class Settings(BaseSettings):
@@ -50,7 +51,8 @@ class Settings(BaseSettings):
     APPLICATIONINSIGHTS_CONNECTION_STRING: str = ""
     
     # MongoDB Configuration
-    MONGODB_URI: str = ""
+    # Accept both MONGODB_URI (preferred) and legacy MONGO_URI.
+    MONGODB_URI: str = Field(default="", validation_alias=AliasChoices("MONGODB_URI", "MONGO_URI"))
     MONGO_DB_NAME: str = "pdf-summarizer"
     
     # Logging

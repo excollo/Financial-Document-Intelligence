@@ -272,6 +272,7 @@ async def submit_summary_job(request: SummaryJobRequest) -> JobResponse:
             "domainId": final_domain_id
         })
         
+        print(f"DEBUG: Entering submit_summary_job for {request.namespace}")
         logger.info(
             "Summary job submitted",
             job_id=job_id,
@@ -279,11 +280,13 @@ async def submit_summary_job(request: SummaryJobRequest) -> JobResponse:
             doc_type=request.doc_type
         )
         
+        print("DEBUG: Sending task to Celery...")
         celery_app.send_task(
             "generate_summary",
             args=[request.namespace, request.doc_type, job_id, task_metadata],
             task_id=job_id
         )
+        print("DEBUG: Celery task sent successfully!")
         
         return JobResponse(
             job_id=job_id,

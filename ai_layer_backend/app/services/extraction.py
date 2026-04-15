@@ -24,7 +24,7 @@ os.environ["PYTHONPATH"] = _root + os.pathsep + os.environ.get("PYTHONPATH", "")
 
 import pdfplumber
 import concurrent.futures
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 import multiprocessing
 from app.core.logging import get_logger
 from app.services.s3 import s3_service
@@ -426,25 +426,41 @@ class ExtractionService:
             logger.info("Starting Parallel Global Table Scan", job_id=job_id, pages=total_pages, priority_pages=len(priority_pages))
             
             all_tables_storage = []
-            max_workers = min(4, multiprocessing.cpu_count()) 
-            
-            # --- MULTIPROCESSING CONTEXT ---
-            # On macOS, 'spawn' often fails to find the 'app' package in child processes.
-            # 'fork' is used here to ensure the child inherits the parent's sys.path and environment.
-            import multiprocessing as mp
-            try:
-                # Use fork on macOS for path inheritance; spawn on others for safety
-                method = "fork" if sys.platform == "darwin" else "spawn"
-                ctx = mp.get_context(method)
-            except Exception:
-                ctx = mp.get_context("spawn")
-            
-            with ProcessPoolExecutor(
-                max_workers=max_workers, 
-                mp_context=ctx,
-                initializer=_worker_init,
-                initargs=(_root,)
-            ) as executor:
+            max_workers = min(4, multiprocessing.cpu_count())
+
+            # Celery prefork workers are daemon processes and cannot spawn child processes.
+            # In that environment, ProcessPoolExecutor raises:
+            # "daemonic processes are not allowed to have children".
+            can_spawn_processes = not multiprocessing.current_process().daemon
+
+            if can_spawn_processes:
+                # --- MULTIPROCESSING CONTEXT ---
+                # On macOS, 'spawn' often fails to find the 'app' package in child processes.
+                # 'fork' is used here to ensure the child inherits the parent's sys.path and environment.
+                import multiprocessing as mp
+                try:
+                    # Use fork on macOS for path inheritance; spawn on others for safety
+                    method = "fork" if sys.platform == "darwin" else "spawn"
+                    ctx = mp.get_context(method)
+                except Exception:
+                    ctx = mp.get_context("spawn")
+
+                executor: concurrent.futures.Executor = ProcessPoolExecutor(
+                    max_workers=max_workers,
+                    mp_context=ctx,
+                    initializer=_worker_init,
+                    initargs=(_root,)
+                )
+            else:
+                logger.warning(
+                    "Running inside daemon worker process; using ThreadPoolExecutor "
+                    "for table extraction to avoid nested multiprocessing crash",
+                    job_id=job_id,
+                    max_workers=max_workers,
+                )
+                executor = ThreadPoolExecutor(max_workers=max_workers)
+
+            with executor:
                 loop = asyncio.get_event_loop()
                 futures = []
                 
