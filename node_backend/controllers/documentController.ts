@@ -20,6 +20,13 @@ interface AuthRequest extends Request {
   currentWorkspace?: string;
 }
 
+/** Object key in blob storage: multer-azure-blob-storage sets `blobName`; S3-style engines set `key`. */
+function multerUploadedBlobKey(file: Express.Multer.File): string | undefined {
+  const f = file as Express.Multer.File & { blobName?: string; key?: string };
+  const name = f.blobName ?? f.key;
+  return typeof name === "string" && name.length > 0 ? name : undefined;
+}
+
 export const documentController = {
   // Helper to normalize namespace consistently (trim, preserve .pdf extension)
   // Keep case as-is; rely on Mongo collation for case-insensitive uniqueness
@@ -958,7 +965,12 @@ export const documentController = {
         return res.status(400).json({ error: "No file uploaded" });
       }
       const originalname = req.file.originalname;
-      const fileKey = (req.file as any).key;
+      const fileKey = multerUploadedBlobKey(req.file);
+      if (!fileKey) {
+        return res.status(500).json({
+          error: "Upload succeeded but no blob key was returned. Check server storage configuration.",
+        });
+      }
       const user = (req as any).user;
       // Use original filename for namespace to preserve .pdf extension
       // Workspace is required for document upload
@@ -1511,7 +1523,12 @@ export const documentController = {
       const drhp = await Document.findById(drhpId);
       if (!drhp) return res.status(404).json({ error: "DRHP not found" });
 
-      const fileKey = (req.file as any).key;
+      const fileKey = multerUploadedBlobKey(req.file);
+      if (!fileKey) {
+        return res.status(500).json({
+          error: "Upload succeeded but no blob key was returned. Check server storage configuration.",
+        });
+      }
       const user = (req as any).user;
 
       // Workspace is required for document upload
