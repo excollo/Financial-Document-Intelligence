@@ -117,18 +117,45 @@ export class HealthService {
         const start = Date.now();
         const pythonUrl = process.env.PYTHON_API_URL || "http://localhost:8000";
         const INTERNAL_SECRET = process.env.INTERNAL_SECRET || "";
+        const normalizedBase = pythonUrl.replace(/\/+$/, "").replace(/\/api$/i, "");
+        const localAltBase = normalizedBase.includes("localhost:8000")
+            ? normalizedBase.replace("localhost:8000", "localhost:8001")
+            : normalizedBase.includes("127.0.0.1:8000")
+                ? normalizedBase.replace("127.0.0.1:8000", "127.0.0.1:8001")
+                : null;
+        const candidateUrls = [
+            `${normalizedBase}/health/detailed`,
+            `${pythonUrl.replace(/\/+$/, "")}/health/detailed`,
+            `${pythonUrl.replace(/\/+$/, "")}/api/health/detailed`,
+            ...(localAltBase ? [`${localAltBase}/health/detailed`] : []),
+        ];
+
+        let lastError: any = null;
         try {
-            const response = await axios.get(`${pythonUrl}/health/detailed`, { 
-                headers: {
-                    "X-Internal-Secret": INTERNAL_SECRET
-                },
-                timeout: 10000 
-            });
+            for (const url of candidateUrls) {
+                try {
+                    const response = await axios.get(url, {
+                        headers: {
+                            "X-Internal-Secret": INTERNAL_SECRET
+                        },
+                        timeout: 30000
+                    });
+
+                    return {
+                        status: "operational",
+                        message: "Successfully connected to AI Python Platform",
+                        latency: Date.now() - start,
+                        details: response.data,
+                    };
+                } catch (error: any) {
+                    lastError = error;
+                }
+            }
+
             return {
-                status: "operational",
-                message: "Successfully connected to AI Python Platform",
-                latency: Date.now() - start,
-                details: response.data,
+                status: "error",
+                message: `Failed to connect to AI Python Platform: ${lastError?.message || "Unknown error"}`,
+                error_code: "AI_PLATFORM_UNREACHABLE",
             };
         } catch (error: any) {
             return {
@@ -166,7 +193,7 @@ export class HealthService {
                 overall = "degraded";
             }
 
-        const externalAiServices = ai_platform.details?.services || {};
+        const externalAiServices = ai_platform.details?.services || ai_platform.details?.ai_services || {};
 
         const report: SystemHealthReport = {
             overall_status: overall,

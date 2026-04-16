@@ -40,11 +40,24 @@ export const domainController = {
 
                 // SOP & Prompts data
                 sop_text: domain.sop_text || "",
+                agent1_prompt: domain.agent1_prompt || "",
+                agent1_subqueries: domain.agent1_subqueries || [],
+                agent2_prompt: domain.agent2_prompt || "",
+                agent2_subqueries: domain.agent2_subqueries || [],
                 agent3_prompt: domain.agent3_prompt || "",
                 agent3_subqueries: domain.agent3_subqueries || [],
-                agent4_subqueries: domain.agent4_subqueries || [],
                 agent4_prompt: domain.agent4_prompt || "",
+                agent4_subqueries: domain.agent4_subqueries || [],
                 agent5_prompt: domain.agent5_prompt || "",
+                agent5_subqueries: domain.agent5_subqueries || [],
+                agent6_prompt: domain.agent6_prompt || "",
+                agent6_subqueries: domain.agent6_subqueries || [],
+                agent7_prompt: domain.agent7_prompt || "",
+                agent7_subqueries: domain.agent7_subqueries || [],
+                agent8_prompt: domain.agent8_prompt || "",
+                agent8_subqueries: domain.agent8_subqueries || [],
+                agent9_prompt: domain.agent9_prompt || "",
+                agent9_subqueries: domain.agent9_subqueries || [],
                 // Onboarding status
                 onboarding_status: domain.onboarding_status || "pending",
                 last_onboarded: domain.last_onboarded,
@@ -105,10 +118,23 @@ export const domainController = {
                 triggerAIUpdate = true;
             }
             if (updates.agent3_prompt !== undefined) domain.agent3_prompt = updates.agent3_prompt;
+            if (updates.agent1_prompt !== undefined) domain.agent1_prompt = updates.agent1_prompt;
+            if (updates.agent2_prompt !== undefined) domain.agent2_prompt = updates.agent2_prompt;
             if (updates.agent4_prompt !== undefined) domain.agent4_prompt = updates.agent4_prompt;
             if (updates.agent5_prompt !== undefined) domain.agent5_prompt = updates.agent5_prompt;
+            if (updates.agent6_prompt !== undefined) domain.agent6_prompt = updates.agent6_prompt;
+            if (updates.agent7_prompt !== undefined) domain.agent7_prompt = updates.agent7_prompt;
+            if (updates.agent8_prompt !== undefined) domain.agent8_prompt = updates.agent8_prompt;
+            if (updates.agent9_prompt !== undefined) domain.agent9_prompt = updates.agent9_prompt;
+            if (Array.isArray(updates.agent1_subqueries)) domain.agent1_subqueries = updates.agent1_subqueries;
+            if (Array.isArray(updates.agent2_subqueries)) domain.agent2_subqueries = updates.agent2_subqueries;
             if (Array.isArray(updates.agent3_subqueries)) domain.agent3_subqueries = updates.agent3_subqueries;
             if (Array.isArray(updates.agent4_subqueries)) domain.agent4_subqueries = updates.agent4_subqueries;
+            if (Array.isArray(updates.agent5_subqueries)) domain.agent5_subqueries = updates.agent5_subqueries;
+            if (Array.isArray(updates.agent6_subqueries)) domain.agent6_subqueries = updates.agent6_subqueries;
+            if (Array.isArray(updates.agent7_subqueries)) domain.agent7_subqueries = updates.agent7_subqueries;
+            if (Array.isArray(updates.agent8_subqueries)) domain.agent8_subqueries = updates.agent8_subqueries;
+            if (Array.isArray(updates.agent9_subqueries)) domain.agent9_subqueries = updates.agent9_subqueries;
 
             // Update lists if provided (replace entire list)
             if (updates.target_investors !== undefined) {
@@ -181,10 +207,24 @@ export const domainController = {
                     target_investors: domain.target_investors,
 
                     sop_text: domain.sop_text,
+                    agent1_prompt: domain.agent1_prompt,
+                    agent1_subqueries: domain.agent1_subqueries,
+                    agent2_prompt: domain.agent2_prompt,
+                    agent2_subqueries: domain.agent2_subqueries,
                     agent3_prompt: domain.agent3_prompt,
-                    agent4_subqueries: domain.agent4_subqueries,
                     agent3_subqueries: domain.agent3_subqueries,
                     agent4_prompt: domain.agent4_prompt,
+                    agent4_subqueries: domain.agent4_subqueries,
+                    agent5_prompt: domain.agent5_prompt,
+                    agent5_subqueries: domain.agent5_subqueries,
+                    agent6_prompt: domain.agent6_prompt,
+                    agent6_subqueries: domain.agent6_subqueries,
+                    agent7_prompt: domain.agent7_prompt,
+                    agent7_subqueries: domain.agent7_subqueries,
+                    agent8_prompt: domain.agent8_prompt,
+                    agent8_subqueries: domain.agent8_subqueries,
+                    agent9_prompt: domain.agent9_prompt,
+                    agent9_subqueries: domain.agent9_subqueries,
 
                     onboarding_status: domain.onboarding_status
                 }

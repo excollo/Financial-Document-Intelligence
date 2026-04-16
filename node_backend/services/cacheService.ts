@@ -6,6 +6,10 @@ let isConnected = false;
 
 // Create and configure the Redis client
 export const getRedisClient = (): Redis | null => {
+  if (process.env.NODE_ENV === "test") {
+    return null;
+  }
+
   if (!redisClient && process.env.REDIS_URL) {
     try {
       console.log(`[Cache] Initializing Redis connection...`);
@@ -37,7 +41,9 @@ export const getRedisClient = (): Redis | null => {
 };
 
 // Start connection gracefully
-getRedisClient();
+if (process.env.NODE_ENV !== "test") {
+  getRedisClient();
+}
 
 /**
  * Cache wrapper for database queries

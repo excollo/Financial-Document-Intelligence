@@ -20,6 +20,13 @@ router.get("/", chatController.getAll);
 // Admin: Get all chats
 router.get("/admin", authorize(["admin"]), chatController.getAllAdmin);
 
+// Admin: Get chat detail
+router.get(
+  "/admin/:id/detail",
+  authorize(["admin"]),
+  chatController.getAdminChatDetail
+);
+
 // Admin: Chat stats and monitoring
 router.get("/admin/stats", authorize(["admin"]), chatController.getStats);
 

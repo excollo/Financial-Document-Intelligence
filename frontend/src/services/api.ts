@@ -182,6 +182,19 @@ export const documentService = {
     }
   },
 
+  async download(id: string): Promise<Blob> {
+    const token = localStorage.getItem("accessToken");
+    const currentWorkspace = getCurrentWorkspace();
+    const response = await axios.get(`${API_URL}/documents/download/${id}`, {
+      responseType: "blob",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(currentWorkspace && { "x-workspace": currentWorkspace }),
+      },
+    });
+    return response.data;
+  },
+
   async create(document: {
     id: string;
     name: string;
@@ -754,6 +767,19 @@ export const chatService = {
     const token = localStorage.getItem("accessToken");
     const response = await axios.get(`${API_URL}/chats/admin`, {
       headers: { Authorization: `Bearer ${token}` },
+    });
+    return response.data;
+  },
+
+  // Admin: get chat detail
+  getAdminDetail: async (id: string) => {
+    const token = localStorage.getItem("accessToken");
+    const currentWorkspace = getCurrentWorkspace();
+    const response = await axios.get(`${API_URL}/chats/admin/${id}/detail`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(currentWorkspace && { "x-workspace": currentWorkspace }),
+      },
     });
     return response.data;
   },

@@ -7,13 +7,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/contexts/AuthContext";
 import { Navbar } from "@/components/sharedcomponents/Navbar";
-import { Search, MoreVertical } from "lucide-react";
+import { Search, Trash2 } from "lucide-react";
+import { toast } from "sonner";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 export default function ChatHistoryPage() {
   const { user } = useAuth();
@@ -22,6 +25,9 @@ export default function ChatHistoryPage() {
   const [showAll, setShowAll] = useState(false);
   const [chats, setChats] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [selectedChatDetail, setSelectedChatDetail] = useState<any | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
 
   const fetchChats = async () => {
     setLoading(true);
@@ -63,6 +69,51 @@ export default function ChatHistoryPage() {
     });
   }, [chatsLast30Days, searchTerm]);
 
+  const handleOpenDetail = async (chatId: string) => {
+    if (!isAdmin) {
+      toast.error("Only admins can view chat details");
+      return;
+    }
+    try {
+      setDetailLoading(true);
+      setDetailOpen(true);
+      const detail = await chatService.getAdminDetail(chatId);
+      setSelectedChatDetail(detail);
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error || "Failed to load chat detail");
+      setDetailOpen(false);
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  const handleDeleteChat = async (chatId: string) => {
+    try {
+      await chatService.deleteAnyAdmin(chatId);
+      toast.success("Chat deleted successfully");
+      setChats((prev) =>
+        prev.filter((c) => (c.id || c._id) !== chatId)
+      );
+      if (selectedChatDetail?.chat?.id === chatId) {
+        setDetailOpen(false);
+        setSelectedChatDetail(null);
+      }
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error || "Failed to delete chat");
+    }
+  };
+
+  if (!isAdmin) {
+    return (
+      <div className="min-h-screen bg-white">
+        <Navbar title="Chat History" showSearch={false} searchValue="" onSearchChange={() => {}} />
+        <div className="w-[90vw] mx-auto py-12">
+          <div className="text-center text-gray-600">Only admins can access chat history.</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-white">
       <Navbar
@@ -78,18 +129,11 @@ export default function ChatHistoryPage() {
           <h1 className="text-2xl font-bold text-gray-900">
             Chat History (Last 30 Days)
           </h1>
-          {isAdmin && (
-            <div className="text-sm text-gray-500">
-              {isAdmin && (
-                <Button
-                  size="sm"
-                  onClick={() => setShowAll((v) => !v)}
-                >
-                  {showAll ? "Showing: All Users" : "Showing: My Chats"}
-                </Button>
-              )}
-            </div>
-          )}
+          <div className="text-sm text-gray-500">
+            <Button size="sm" onClick={() => setShowAll((v) => !v)}>
+              {showAll ? "Showing: All Users" : "Showing: My Chats"}
+            </Button>
+          </div>
         </div>
 
         {/* Search Bar */}
@@ -119,7 +163,8 @@ export default function ChatHistoryPage() {
             filteredChats.map((chat) => (
               <Card
                 key={chat.id || chat._id}
-                className="bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition-shadow"
+                className="bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+                onClick={() => handleOpenDetail(chat.id || chat._id)}
               >
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between">
@@ -139,17 +184,24 @@ export default function ChatHistoryPage() {
                         </p>
                       </div>
                     </div>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="sm">
-                          <MoreVertical className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem>View Chat</DropdownMenuItem>
-                        <DropdownMenuItem>Delete Chat</DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="ml-4 text-gray-500 hover:text-red-600 hover:bg-transparent"
+                      title="Delete chat"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const chatId = chat.id || chat._id;
+                        if (!chatId) return;
+                        if (
+                          window.confirm("Are you sure you want to delete this chat?")
+                        ) {
+                          handleDeleteChat(chatId);
+                        }
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
@@ -157,19 +209,95 @@ export default function ChatHistoryPage() {
           )}
         </div>
 
-        {/* Admin Toggle Button */}
-        {isAdmin && (
-          <div className="mt-6 flex justify-center">
-            <Button
-              variant="outline"
-              onClick={() => setShowAll((v) => !v)}
-              className="px-6"
-            >
-              {showAll ? "Show My Chats Only" : "Show All Users' Chats"}
-            </Button>
-          </div>
-        )}
+        <div className="mt-6 flex justify-center">
+          <Button
+            variant="outline"
+            onClick={() => setShowAll((v) => !v)}
+            className="px-6"
+          >
+            {showAll ? "Show My Chats Only" : "Show All Users' Chats"}
+          </Button>
+        </div>
       </div>
+
+      <Dialog
+        open={detailOpen}
+        onOpenChange={(open) => {
+          setDetailOpen(open);
+          if (!open) setSelectedChatDetail(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-3xl max-h-[85vh] overflow-y-auto bg-white">
+          <DialogHeader>
+            <DialogTitle>Chat Details (Admin)</DialogTitle>
+          </DialogHeader>
+
+          {detailLoading ? (
+            <div className="text-sm text-gray-500">Loading chat details...</div>
+          ) : !selectedChatDetail ? (
+            <div className="text-sm text-gray-500">No chat detail found.</div>
+          ) : (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                <div>
+                  <div className="text-gray-500">Document Name</div>
+                  <div className="font-medium">
+                    {selectedChatDetail.document?.name ||
+                      selectedChatDetail.chat?.documentId ||
+                      "-"}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-gray-500">User Name</div>
+                  <div className="font-medium">
+                    {selectedChatDetail.user?.name ||
+                      selectedChatDetail.user?.email ||
+                      selectedChatDetail.chat?.microsoftId ||
+                      selectedChatDetail.chat?.userId ||
+                      "-"}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="text-sm font-semibold text-gray-900">Chat & Response</div>
+                {Array.isArray(selectedChatDetail.chat?.messages) &&
+                selectedChatDetail.chat.messages.length > 0 ? (
+                  <div className="space-y-2">
+                    {selectedChatDetail.chat.messages.map((m: any) => (
+                      <div
+                        key={m.id}
+                        className={`rounded-lg p-3 text-sm ${
+                          m.isUser
+                            ? "bg-blue-50 border border-blue-100"
+                            : "bg-gray-50 border border-gray-200"
+                        }`}
+                      >
+                        <div className="text-xs text-gray-500 mb-1">
+                          {m.isUser ? "User" : "Assistant"}
+                        </div>
+                        {m.isUser ? (
+                          <div className="whitespace-pre-wrap text-gray-900">
+                            {m.content}
+                          </div>
+                        ) : (
+                          <div className="text-gray-900 prose prose-sm max-w-none">
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                              {m.content || ""}
+                            </ReactMarkdown>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-sm text-gray-500">No messages found.</div>
+                )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

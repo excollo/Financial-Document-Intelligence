@@ -23,6 +23,18 @@ import { cleanSummaryContent } from "@/lib/utils/markdownConverter";
 import { summaryN8nService } from "@/lib/api/summaryN8nService";
 import { io as socketIOClient } from "socket.io-client";
 
+const buildDocxFileName = (
+  rawName: string | undefined,
+  fallback: string
+): string => {
+  const normalized = (rawName || fallback)
+    .trim()
+    .replace(/\.(pdf|docx)$/i, "")
+    .replace(/[\\/:*?"<>|]+/g, "_");
+
+  return `${normalized || fallback}.docx`;
+};
+
 
 
 
@@ -521,7 +533,7 @@ export function SummaryPanel({
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `${currentDocument?.name || "summary"}.docx`;
+      link.download = buildDocxFileName(currentDocument?.name, "summary");
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);

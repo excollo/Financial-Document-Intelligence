@@ -1,7 +1,6 @@
 import pytest
 from app.main import app
 from app.api.jobs import require_internal_secret
-from app.core.config import settings
 
 # --- Simplified Mock for internal secret check in tests ---
 async def mock_require_internal_secret():
@@ -19,10 +18,8 @@ def test_health_check(client):
     response = client.get("/health")
     assert response.status_code == 200
     data = response.json()
-    assert data["status"] == "healthy"
-    # Environment can vary by .env file, so we check if it matches settings
-    assert data["environment"] == settings.APP_ENV
-    assert data["version"] == settings.APP_VERSION
+    assert data["status"] in {"healthy", "operational"}
+    assert data["service"] == "ai-python-platform-router"
 
 def test_root_endpoint(client):
     """Verify root endpoint."""

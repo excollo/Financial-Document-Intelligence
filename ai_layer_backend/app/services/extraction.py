@@ -350,6 +350,17 @@ class ExtractionService:
         return ""
 
     @staticmethod
+    def clean_text(text: str) -> str:
+        """
+        Legacy cleaner kept for compatibility with older tests/scripts.
+        Produces a plain single-line cleaned text output.
+        """
+        cleaned = _clean_text_preserving_tables(text)
+        cleaned = re.sub(r"[-_]{3,}", " ", cleaned)
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        return cleaned
+
+    @staticmethod
     def _find_toc_entry_for_page(p_num: int, toc_map: List[Dict[str, Any]]) -> Tuple[Optional[str], Optional[str], Optional[str]]:
         """Find the matching Section and Subsection for a given page number."""
         best_section = None

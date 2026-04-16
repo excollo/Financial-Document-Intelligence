@@ -29,6 +29,7 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { testSmtpConnection } from "./services/emailService";
 import { HealthService } from "./services/healthService";
+import { checkPandocAvailable } from "./services/docxService";
 
 dotenv.config();
 
@@ -298,6 +299,17 @@ process.on('SIGPIPE', () => {
 if (process.env.NODE_ENV !== 'test') {
   server.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
+    checkPandocAvailable()
+      .then((ok) => {
+        if (ok) {
+          console.log("✅ Pandoc detected. DOCX export will use Pandoc.");
+        } else {
+          console.warn("⚠️ Pandoc not found. DOCX export will use HTML fallback.");
+        }
+      })
+      .catch((err) => {
+        console.warn("⚠️ Pandoc startup check failed:", err?.message || err);
+      });
   });
 }
 

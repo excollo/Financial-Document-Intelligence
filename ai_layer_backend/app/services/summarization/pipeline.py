@@ -87,6 +87,38 @@ class SummaryPipeline:
         
         return localized
 
+    @staticmethod
+    def _normalize_prompt(value: Any) -> Optional[str]:
+        """Normalize prompt value from domain config."""
+        if not isinstance(value, str):
+            return None
+        cleaned = value.strip()
+        return cleaned if cleaned else None
+
+    @staticmethod
+    def _normalize_subqueries(value: Any) -> Optional[List[str]]:
+        """Normalize subqueries value from domain config."""
+        queries: List[str] = []
+        if isinstance(value, list):
+            queries = [str(v).strip() for v in value if str(v).strip()]
+        elif isinstance(value, str):
+            normalized = value.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\r", "\n")
+            queries = [line.strip() for line in normalized.split("\n") if line.strip()]
+        return queries if queries else None
+
+    def _resolve_agent_config(
+        self,
+        tenant_config: Dict[str, Any],
+        agent_id: int
+    ) -> tuple[Optional[str], Optional[List[str]]]:
+        """
+        Resolve agent prompt/subqueries from tenant config.
+        Empty values return None so the agent fallback prompt/subqueries are used.
+        """
+        prompt = self._normalize_prompt(tenant_config.get(f"agent{agent_id}_prompt"))
+        subqueries = self._normalize_subqueries(tenant_config.get(f"agent{agent_id}_subqueries"))
+        return prompt, subqueries
+
     def _post_process_final_markdown(self, markdown: str, doc_type: str) -> str:
         """
         Final cleanup before returning to user. 
@@ -148,7 +180,7 @@ class SummaryPipeline:
             }
 
             cursor = collection.find(query).sort("page", 1)
-            tables = await cursor.to_list(length=200)
+            tables = await cursor.to_list(length=1000)
             
             if not tables: return ""
                 
@@ -158,8 +190,8 @@ class SummaryPipeline:
                 pg = t.get("page", "?")
                 md = t.get("markdown", "")
                 
-                # Double-check: ensure it's not a generic glossary entry
-                if len(md.split("|")) < min_cells:
+                # Ensure it's a meaningful markdown table, not a tiny glossary fragment.
+                if len(md.split("|")) < min_cells or md.count("\n") < 2:
                     continue
                     
                 table_md_blocks.append(f"### Table from {sec} (Page {pg})\n{md}")
@@ -298,7 +330,7 @@ class SummaryPipeline:
         
         # Pull high-fidelity tables from Mongo
         job_id = metadata_filter.get("job_id") if metadata_filter else None
-        mongo_tables = await self._retrieve_tables(job_id=job_id, namespace=namespace)
+        mongo_tables = await self._retrieve_tables(job_id=job_id, namespace=namespace, min_cells=4)
         if mongo_tables:
             context = f"--- STRUCTURED TABLES FROM EXTRACTION ---\n{mongo_tables}\n\n--- TEXT CONTEXT ---\n{context}"
         
@@ -355,19 +387,22 @@ class SummaryPipeline:
         
         # Retrieve context
         capital_query = custom_subqueries or ["Extract complete equity share capital history table and premium rounds from DRHP"]
+        capital_query = capital_query + [
+            "Extract COMPLETE share capital history table across all pages with every row and every column, including bonus/subdivision/allotment rounds and valuation fields."
+        ]
         context = await self._retrieve_context(
             capital_query,
             namespace,
             index_name,
             host,
-            vector_top_k=12,
-            rerank_top_n=12,
+            vector_top_k=20,
+            rerank_top_n=20,
             metadata_filter=metadata_filter
         )
         
         # Pull high-fidelity tables from Mongo
         job_id = metadata_filter.get("job_id") if metadata_filter else None
-        mongo_tables = await self._retrieve_tables(job_id=job_id, namespace=namespace)
+        mongo_tables = await self._retrieve_tables(job_id=job_id, namespace=namespace, min_cells=4)
         if mongo_tables:
             context = f"--- STRUCTURED TABLES FROM EXTRACTION ---\n{mongo_tables}\n\n--- TEXT CONTEXT ---\n{context}"
         
@@ -380,10 +415,10 @@ class SummaryPipeline:
                 model="gpt-4.1-mini",
                 messages=[
                     {"role": "system", "content": custom_prompt or CAPITAL_HISTORY_EXTRACTOR_SYSTEM_PROMPT},
-                    {"role": "user", "content": f"Extract and summarize share capital from this DRHP context:\n\n{context}"}
+                    {"role": "user", "content": f"Extract and summarize share capital from this DRHP context. Do not drop any row or any column from share capital history tables; preserve complete tabular coverage across all pages. Ensure chronology is complete from earliest to latest event.\n\n{context}"}
                 ],
                 temperature=0.0,
-                max_tokens=8192,
+                max_tokens=16384,
                 response_format={"type": "json_object"}
             )
             
@@ -837,58 +872,68 @@ class SummaryPipeline:
             # PHASE 1: Parallel Data Extraction and Specialized Generation
             logger.info("Phase 1: Multi-Agent Parallel Processing (A1 - A9)")
 
+            agent1_prompt, agent1_subqueries = self._resolve_agent_config(tenant_config, 1)
+            agent2_prompt, agent2_subqueries = self._resolve_agent_config(tenant_config, 2)
+            agent3_prompt_cfg, agent3_subqueries_cfg = self._resolve_agent_config(tenant_config, 3)
+            agent4_prompt, agent4_subqueries = self._resolve_agent_config(tenant_config, 4)
+            agent5_prompt, agent5_subqueries = self._resolve_agent_config(tenant_config, 5)
+            agent6_prompt, agent6_subqueries = self._resolve_agent_config(tenant_config, 6)
+            agent7_prompt, agent7_subqueries = self._resolve_agent_config(tenant_config, 7)
+            agent8_prompt, agent8_subqueries = self._resolve_agent_config(tenant_config, 8)
+            agent9_prompt, agent9_subqueries = self._resolve_agent_config(tenant_config, 9)
+
             investor_task = self._agent_1_investor_extractor(
-                namespace, 
-                tenant_config.get("agent1_prompt"), 
-                tenant_config.get("agent1_subqueries"), 
+                namespace,
+                agent1_prompt,
+                agent1_subqueries,
                 index_name, host, metadata_filter
             )
             capital_task = self._agent_2_capital_history_extractor(
-                namespace, 
-                tenant_config.get("agent2_prompt"), 
-                tenant_config.get("agent2_subqueries"), 
+                namespace,
+                agent2_prompt,
+                agent2_subqueries,
                 index_name, host, metadata_filter
             )
             sec3_task = self._agent_3_business_table_extractor(
-                namespace, 
-                tenant_config.get("agent3_prompt", a3_prompt), 
-                tenant_config.get("agent3_subqueries", []), 
+                namespace,
+                agent3_prompt_cfg or a3_prompt,
+                agent3_subqueries_cfg or a3_subqueries,
                 index_name, host, metadata_filter
             )
             sec1_2_task = self._agent_4_generator(
-                namespace, doc_type, 
-                tenant_config.get("agent4_prompt"), 
-                tenant_config.get("agent4_subqueries"), 
+                namespace, doc_type,
+                agent4_prompt,
+                agent4_subqueries,
                 index_name, host, metadata_filter
             )
             sec4_5_task = self._agent_5_generator(
-                namespace, doc_type, 
-                tenant_config.get("agent5_prompt"), 
-                tenant_config.get("agent5_subqueries"), 
+                namespace, doc_type,
+                agent5_prompt,
+                agent5_subqueries,
                 index_name, host, metadata_filter
             )
             sec7_task = self._agent_6_generator(
-                namespace, doc_type, 
-                tenant_config.get("agent6_prompt"), 
-                tenant_config.get("agent6_subqueries"), 
+                namespace, doc_type,
+                agent6_prompt,
+                agent6_subqueries,
                 index_name, host, metadata_filter
             )
             sec8_9_task = self._agent_7_generator(
-                namespace, doc_type, 
-                tenant_config.get("agent7_prompt"), 
-                tenant_config.get("agent7_subqueries"), 
+                namespace, doc_type,
+                agent7_prompt,
+                agent7_subqueries,
                 index_name, host, metadata_filter
             )
             sec10_task = self._agent_8_generator(
-                namespace, doc_type, 
-                tenant_config.get("agent8_prompt"), 
-                tenant_config.get("agent8_subqueries"), 
+                namespace, doc_type,
+                agent8_prompt,
+                agent8_subqueries,
                 index_name, host, metadata_filter
             )
             sec11_12_task = self._agent_9_generator(
-                namespace, doc_type, 
-                tenant_config.get("agent9_prompt"), 
-                tenant_config.get("agent9_subqueries"), 
+                namespace, doc_type,
+                agent9_prompt,
+                agent9_subqueries,
                 index_name, host, metadata_filter
             )
 

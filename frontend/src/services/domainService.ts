@@ -14,11 +14,24 @@ export interface DomainConfig {
     target_investors: string[];
     // SOP & Prompts
     sop_text: string;
+    agent1_prompt: string;
+    agent1_subqueries: string[];
+    agent2_prompt: string;
+    agent2_subqueries: string[];
     agent3_prompt: string;
     agent3_subqueries: string[];
     agent4_prompt: string;
     agent4_subqueries: string[];
     agent5_prompt: string;
+    agent5_subqueries: string[];
+    agent6_prompt: string;
+    agent6_subqueries: string[];
+    agent7_prompt: string;
+    agent7_subqueries: string[];
+    agent8_prompt: string;
+    agent8_subqueries: string[];
+    agent9_prompt: string;
+    agent9_subqueries: string[];
     // Onboarding status
     onboarding_status: "pending" | "processing" | "completed" | "completed_no_sop" | "failed";
     last_onboarded: string | null;

@@ -2,16 +2,9 @@ import { Request, Response } from "express";
 import { Report } from "../models/Report";
 import { User } from "../models/User";
 import axios from "axios";
-import { writeFile, unlink } from "fs/promises";
-import { exec } from "child_process";
-import { promisify } from "util";
-import path from "path";
-import os from "os";
 import { io } from "../index";
 import { publishEvent } from "../lib/events";
-
-
-const execAsync = promisify(exec);
+import { generateDocxBuffer } from "../services/docxService";
 
 interface AuthRequest extends Request {
   user?: any;
@@ -454,14 +447,15 @@ export const reportController = {
         return res.status(404).json({ error: "Report not found" });
       }
 
-      // Write HTML to a temp file
-      const tmpDir = os.tmpdir();
-      const htmlPath = path.join(tmpDir, `report_${id}.html`);
-      const docxPath = path.join(tmpDir, `report_${id}.docx`);
-      await writeFile(htmlPath, report.content, "utf8");
-
-      // Convert HTML to DOCX using Pandoc
-      await execAsync(`pandoc "${htmlPath}" -o "${docxPath}"`);
+      const normalizedTitle = (report.title || "report")
+        .replace(/\.pdf$/i, "")
+        .replace(/\.docx$/i, "")
+        .replace(/[^a-z0-9._-]/gi, "_");
+      const { buffer: docxBuffer, engine } = await generateDocxBuffer(
+        report.content,
+        "html"
+      );
+      console.log(`Report DOCX generated with engine: ${engine}`);
 
       // Send DOCX file
       res.setHeader(
@@ -470,22 +464,11 @@ export const reportController = {
       );
       res.setHeader(
         "Content-Disposition",
-        `attachment; filename="${(report.title || "report").replace(/[^a-z0-9]/gi, "_")}.docx"`
+        `attachment; filename="${normalizedTitle}.docx"`
       );
-      res.sendFile(docxPath, async (err) => {
-        // Clean up temp files
-        if (err) {
-          console.error("Error sending file:", err);
-        }
-        try {
-          await unlink(htmlPath);
-          await unlink(docxPath);
-        } catch (cleanupError) {
-          console.error("Error cleaning up temp files:", cleanupError);
-        }
-      });
+      res.send(docxBuffer);
     } catch (error) {
-      console.error("Error generating DOCX with Pandoc:", error);
+      console.error("Error generating DOCX:", error);
       res.status(500).json({ error: "Failed to generate DOCX" });
     }
   },
