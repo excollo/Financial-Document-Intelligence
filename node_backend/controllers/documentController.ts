@@ -1828,9 +1828,23 @@ export const documentController = {
         return res.status(404).json({ error: "One or both documents not found" });
       }
 
-      // Check if documents are already linked
+      // Make linking idempotent: if these documents are already linked,
+      // return success so the frontend can continue to the compare view.
       if (drhpDoc.relatedRhpId === rhpId || rhpDoc.relatedDrhpId === drhpId) {
-        return res.status(400).json({ error: "Documents are already linked" });
+        return res.json({
+          message: "Documents are already linked for comparison",
+          alreadyLinked: true,
+          drhpDocument: {
+            id: drhpDoc.id,
+            name: drhpDoc.name,
+            type: drhpDoc.type
+          },
+          rhpDocument: {
+            id: rhpDoc.id,
+            name: rhpDoc.name,
+            type: rhpDoc.type
+          }
+        });
       }
 
       // Link the documents

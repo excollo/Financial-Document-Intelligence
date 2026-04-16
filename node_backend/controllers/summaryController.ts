@@ -183,55 +183,18 @@ export const summaryController = {
             }
           }
 
-          // Combine with user's own summaries or all summaries for admins
-          if (req.user && req.user.role !== "admin") {
-            // Regular users: show their own summaries + summaries for shared documents
-            if (sharedDocumentIds.length > 0) {
-              // Remove domain/workspaceId from base query since we're using $or
-              delete query.domain;
-              delete query.workspaceId;
-              query.$or = [
-                {
-                  userId: req.user._id.toString(),
-                  domain: domain,
-                  workspaceId: currentWorkspace,
-                },
-                { documentId: { $in: sharedDocumentIds } },
-              ];
-              if (req.user.microsoftId) {
-                query.$or.push({
-                  microsoftId: req.user.microsoftId,
-                  domain: domain,
-                  workspaceId: currentWorkspace,
-                });
-              }
-            } else {
-              // No shared documents, show only user's own summaries
-              if (req.user.microsoftId) {
-                query.microsoftId = req.user.microsoftId;
-              } else if (req.user._id) {
-                query.userId = req.user._id.toString();
-              }
-            }
-          } else {
-            // Admins: show all summaries in domain + summaries for shared documents
-            if (sharedDocumentIds.length > 0) {
-              // Remove domain/workspaceId from base query since we're using $or
-              delete query.domain;
-              delete query.workspaceId;
-              query.$or = [
-                { domain: domain, workspaceId: currentWorkspace },
-                { documentId: { $in: sharedDocumentIds } },
-              ];
-            }
-            // Otherwise, query already has domain and workspaceId, so it will show all
-          }
-        } else if (req.user && req.user.role !== "admin") {
-          // No shared directories, show only user's own summaries
-          if (req.user.microsoftId) {
-            query.microsoftId = req.user.microsoftId;
-          } else if (req.user._id) {
-            query.userId = req.user._id.toString();
+          // Non-user-specific summaries:
+          // 1) Always include all summaries within the current domain/workspace.
+          // 2) If the user has access to shared documents, also include summaries
+          //    whose `documentId` belongs to those shared documents.
+          if (sharedDocumentIds.length > 0) {
+            // Remove domain/workspaceId from base query since we're using $or
+            delete query.domain;
+            delete query.workspaceId;
+            query.$or = [
+              { domain: domain, workspaceId: currentWorkspace },
+              { documentId: { $in: sharedDocumentIds } },
+            ];
           }
         }
       }
