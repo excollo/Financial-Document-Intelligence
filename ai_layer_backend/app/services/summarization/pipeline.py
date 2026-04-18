@@ -15,6 +15,7 @@ Post-processing (all n8n-mapped):
   Date metadata wrapper
 """
 import asyncio
+import os
 import re
 import time
 from typing import Dict, Any, List, Optional
@@ -44,6 +45,14 @@ import openai
 import json
 
 logger = get_logger(__name__)
+
+# Context soft caps (chars ≈ 4 chars/token rough upper bound). Truncation uses chunk/table boundaries only.
+SUMMARY_AGENT_CONTEXT_MAX_CHARS = int(os.environ.get("SUMMARY_AGENT_CONTEXT_MAX_CHARS", "380000"))
+SUMMARY_AGENT_A3_CONTEXT_MAX_CHARS = int(os.environ.get("SUMMARY_AGENT_A3_CONTEXT_MAX_CHARS", "520000"))
+SUMMARY_MONGO_AGENT3_MAX_TABLES = int(os.environ.get("SUMMARY_MONGO_AGENT3_MAX_TABLES", "400"))
+SUMMARY_MONGO_AGENT3_MAX_CHARS = int(os.environ.get("SUMMARY_MONGO_AGENT3_MAX_CHARS", "320000"))
+SUMMARY_MONGO_AGENT6_MAX_TABLES = int(os.environ.get("SUMMARY_MONGO_AGENT6_MAX_TABLES", "280"))
+SUMMARY_MONGO_AGENT6_MAX_CHARS = int(os.environ.get("SUMMARY_MONGO_AGENT6_MAX_CHARS", "400000"))
 
 
 class SummaryPipeline:
@@ -151,8 +160,44 @@ class SummaryPipeline:
             markdown = markdown.replace("OUR BUSINESS ANALYSIS", "SECTION III: OUR BUSINESS")
 
         return markdown
+
+    @staticmethod
+    def _toc_page_span(item: Dict[str, Any]) -> tuple[int, int]:
+        """TOC from ingestion uses start_page/end_page; legacy may use page_start/page_end."""
+        s = item.get("start_page", item.get("page_start"))
+        e = item.get("end_page", item.get("page_end"))
+        try:
+            start = int(s) if s is not None else 1
+        except (TypeError, ValueError):
+            start = 1
+        try:
+            end = int(e) if e is not None else start
+        except (TypeError, ValueError):
+            end = start
+        return start, max(start, end)
+
+    @staticmethod
+    def _clip_chunk_context(context: str, max_chars: int, note: str) -> str:
+        """Trim retrieved context at chunk boundaries (---), never mid-cell."""
+        if not context or len(context) <= max_chars:
+            return context
+        head = context[:max_chars]
+        cut = -1
+        for sep in ("\n\n---\n\n", "\n---\n"):
+            cut = head.rfind(sep)
+            if cut > max_chars // 4:
+                return f"{head[:cut].rstrip()}\n\n> {note}\n"
+        return f"{head.rstrip()}\n\n> {note}\n"
         
-    async def _retrieve_tables(self, job_id: str = None, namespace: str = None, page_range: Optional[tuple] = None, min_cells: int = 15) -> str:
+    async def _retrieve_tables(
+        self,
+        job_id: str = None,
+        namespace: str = None,
+        page_range: Optional[tuple] = None,
+        min_cells: int = 15,
+        max_tables: Optional[int] = None,
+        max_chars: Optional[int] = None,
+    ) -> str:
         """
         Retrieve structured tables from MongoDB extraction_results.
         Supports page_range=(start, end).
@@ -179,10 +224,12 @@ class SummaryPipeline:
                 }
             }
 
+            fetch_limit = min(1000, max_tables) if max_tables else 1000
             cursor = collection.find(query).sort("page", 1)
-            tables = await cursor.to_list(length=1000)
+            tables = await cursor.to_list(length=fetch_limit)
             
-            if not tables: return ""
+            if not tables:
+                return ""
                 
             table_md_blocks = []
             for t in tables:
@@ -203,7 +250,34 @@ class SummaryPipeline:
                     context_title_parts.append(f"Heading: {heading}")
                 context_title = " | ".join(context_title_parts)
                 table_md_blocks.append(f"### {context_title} (Page {pg})\n{md}")
-                
+
+            if not table_md_blocks:
+                return ""
+
+            if max_chars:
+                while len(table_md_blocks) > 1 and len("\n\n".join(table_md_blocks)) > max_chars:
+                    table_md_blocks.pop()
+                result = "\n\n".join(table_md_blocks)
+                if len(result) > max_chars:
+                    # One (or few) very large tables: trim the last block at row boundaries only.
+                    last = table_md_blocks[-1]
+                    budget = max_chars - len("\n\n".join(table_md_blocks[:-1])) - 2 - 80
+                    if budget > 2000 and "\n" in last:
+                        lines = last.split("\n")
+                        kept: List[str] = []
+                        used = 0
+                        for line in lines:
+                            if used + len(line) + 1 > budget:
+                                break
+                            kept.append(line)
+                            used += len(line) + 1
+                        last = "\n".join(kept) + "\n\n> [Remaining rows omitted for length.]\n"
+                        table_md_blocks[-1] = last
+                    result = "\n\n".join(table_md_blocks)
+                    if len(result) > max_chars:
+                        result = result[: max_chars - 120].rsplit("\n", 1)[0] + "\n\n> [Tables truncated for length.]\n"
+                return result
+
             return "\n\n".join(table_md_blocks)
         except Exception as e:
             logger.warning(f"Failed to retrieve tables: {str(e)}")
@@ -335,13 +409,12 @@ class SummaryPipeline:
             rerank_top_n=10,
             metadata_filter=metadata_filter
         )
-        
-        # Pull high-fidelity tables from Mongo
-        job_id = metadata_filter.get("job_id") if metadata_filter else None
-        mongo_tables = await self._retrieve_tables(job_id=job_id, namespace=namespace, min_cells=4)
-        if mongo_tables:
-            context = f"--- STRUCTURED TABLES FROM EXTRACTION ---\n{mongo_tables}\n\n--- TEXT CONTEXT ---\n{context}"
-        
+        context = self._clip_chunk_context(
+            context,
+            SUMMARY_AGENT_CONTEXT_MAX_CHARS,
+            "[Additional retrieved chunks omitted for length.]",
+        )
+
         if not context:
             logger.warning("Agent 1: No context found")
             return {"error": "No investor data found", "extraction_status": "failed"}
@@ -407,13 +480,12 @@ class SummaryPipeline:
             rerank_top_n=20,
             metadata_filter=metadata_filter
         )
-        
-        # Pull high-fidelity tables from Mongo
-        job_id = metadata_filter.get("job_id") if metadata_filter else None
-        mongo_tables = await self._retrieve_tables(job_id=job_id, namespace=namespace, min_cells=4)
-        if mongo_tables:
-            context = f"--- STRUCTURED TABLES FROM EXTRACTION ---\n{mongo_tables}\n\n--- TEXT CONTEXT ---\n{context}"
-        
+        context = self._clip_chunk_context(
+            context,
+            SUMMARY_AGENT_CONTEXT_MAX_CHARS,
+            "[Additional retrieved chunks omitted for length.]",
+        )
+
         if not context:
             logger.warning("Agent 2: No context found")
             return {"error": "No capital history data found", "type": "calculation_data"}
@@ -469,7 +541,12 @@ class SummaryPipeline:
         # SUBQUERIES[0] = Section I, SUBQUERIES[1] = Section II
         queries = custom_subqueries or [SUBQUERIES[0], SUBQUERIES[1]]
         context = await self._retrieve_context(queries, namespace, index_name, host, vector_top_k=8, metadata_filter=metadata_filter)
-        
+        context = self._clip_chunk_context(
+            context,
+            SUMMARY_AGENT_CONTEXT_MAX_CHARS,
+            "[Additional retrieved chunks omitted for length.]",
+        )
+
         response = await self.client.chat.completions.create(
             model="gpt-4.1-mini",
             messages=[
@@ -498,25 +575,12 @@ class SummaryPipeline:
         # SUBQUERIES[2] = Section IV, SUBQUERIES[3] = Section V
         queries = custom_subqueries or [SUBQUERIES[2], SUBQUERIES[3]]
         context = await self._retrieve_context(queries, namespace, index_name, host, vector_top_k=15, metadata_filter=metadata_filter)
-        
-        # Add high-fidelity tables from Mongo for Industry/Management
-        job_id = metadata_filter.get("job_id") if metadata_filter else None
-        toc = await self._get_toc(namespace)
-        hi_fi_pages = []
-        for item in toc:
-            title = str(item.get("title", "")).upper()
-            if any(term in title for term in ["INDUSTRY", "MARKET ANALYSIS", "MANAGEMENT", "PROMOTERS"]):
-                hi_fi_pages.append((item.get("page_start", 1), item.get("page_end", 999)))
-        
-        # Retrieval for combined pages
-        hi_fi_tables = ""
-        for pr in hi_fi_pages:
-            tables = await self._retrieve_tables(job_id=job_id, namespace=namespace, page_range=pr, min_cells=4)
-            if tables: hi_fi_tables += f"\n{tables}"
-            
-        if hi_fi_tables:
-            context = f"### MONGODB HIGH-FIDELITY TABLES (INDUSTRY & MANAGEMENT)\n{hi_fi_tables}\n\n{context}"
-        
+        context = self._clip_chunk_context(
+            context,
+            SUMMARY_AGENT_CONTEXT_MAX_CHARS,
+            "[Additional retrieved chunks omitted for length.]",
+        )
+
         response = await self.client.chat.completions.create(
             model="gpt-4.1-mini",
             messages=[
@@ -545,12 +609,28 @@ class SummaryPipeline:
         # SUBQUERIES[5] = Section VII
         queries = custom_subqueries or [SUBQUERIES[5]]
         context = await self._retrieve_context(queries, namespace, index_name, host, vector_top_k=12, metadata_filter=metadata_filter)
-        
-        # Add high-fidelity tables from Mongo for financials
+        context = self._clip_chunk_context(
+            context,
+            SUMMARY_AGENT_CONTEXT_MAX_CHARS,
+            "[Additional retrieved chunks omitted for length.]",
+        )
+
+        # Mongo extraction tables: Agent 6 only (Section VII financials)
         job_id = metadata_filter.get("job_id") if metadata_filter else None
-        mongo_tables = await self._retrieve_tables(job_id=job_id, namespace=namespace)
+        mongo_tables = await self._retrieve_tables(
+            job_id=job_id,
+            namespace=namespace,
+            min_cells=4,
+            max_tables=SUMMARY_MONGO_AGENT6_MAX_TABLES,
+            max_chars=SUMMARY_MONGO_AGENT6_MAX_CHARS,
+        )
         if mongo_tables:
             context = f"--- STRUCTURED FINANCIAL TABLES ---\n{mongo_tables}\n\n{context}"
+        context = self._clip_chunk_context(
+            context,
+            SUMMARY_AGENT_CONTEXT_MAX_CHARS,
+            "[Additional context after financial tables omitted for length.]",
+        )
 
         response = await self.client.chat.completions.create(
             model="gpt-4.1-mini",
@@ -580,7 +660,12 @@ class SummaryPipeline:
         # SUBQUERIES[6] = VIII, SUBQUERIES[7] = IX
         queries = custom_subqueries or [SUBQUERIES[6], SUBQUERIES[7]]
         context = await self._retrieve_context(queries, namespace, index_name, host, vector_top_k=12, metadata_filter=metadata_filter)
-        
+        context = self._clip_chunk_context(
+            context,
+            SUMMARY_AGENT_CONTEXT_MAX_CHARS,
+            "[Additional retrieved chunks omitted for length.]",
+        )
+
         response = await self.client.chat.completions.create(
             model="gpt-4.1-mini",
             messages=[
@@ -609,7 +694,12 @@ class SummaryPipeline:
         # SUBQUERIES[8] = X
         queries = custom_subqueries or [SUBQUERIES[8]]
         context = await self._retrieve_context(queries, namespace, index_name, host, vector_top_k=10, metadata_filter=metadata_filter)
-        
+        context = self._clip_chunk_context(
+            context,
+            SUMMARY_AGENT_CONTEXT_MAX_CHARS,
+            "[Additional retrieved chunks omitted for length.]",
+        )
+
         response = await self.client.chat.completions.create(
             model="gpt-4.1-mini",
             messages=[
@@ -638,7 +728,12 @@ class SummaryPipeline:
         # SUBQUERIES[9] = XI, SUBQUERIES[10] = XII
         queries = custom_subqueries or [SUBQUERIES[9], SUBQUERIES[10]]
         context = await self._retrieve_context(queries, namespace, index_name, host, vector_top_k=10, metadata_filter=metadata_filter)
-        
+        context = self._clip_chunk_context(
+            context,
+            SUMMARY_AGENT_CONTEXT_MAX_CHARS,
+            "[Additional retrieved chunks omitted for length.]",
+        )
+
         response = await self.client.chat.completions.create(
             model="gpt-4.1-mini",
             messages=[
@@ -718,16 +813,22 @@ class SummaryPipeline:
         for item in toc:
             title = str(item.get("title", "")).upper()
             if any(term in title for term in business_toc_terms):
-                page_start = item.get("page_start", 1)
-                page_end = item.get("page_end", 999)
-                matched_ranges.append((page_start, page_end))
+                ps, pe = self._toc_page_span(item)
+                matched_ranges.append((ps, pe))
 
         page_range = None
         if matched_ranges:
             page_range = (min(r[0] for r in matched_ranges), max(r[1] for r in matched_ranges))
             logger.info("A-3: Focused high-fidelity extraction for Our Business / Capacity", page_range=page_range)
         
-        mongo_tables = await self._retrieve_tables(job_id=job_id, namespace=namespace, page_range=page_range, min_cells=3)
+        mongo_tables = await self._retrieve_tables(
+            job_id=job_id,
+            namespace=namespace,
+            page_range=page_range,
+            min_cells=3,
+            max_tables=SUMMARY_MONGO_AGENT3_MAX_TABLES,
+            max_chars=SUMMARY_MONGO_AGENT3_MAX_CHARS,
+        )
         
         all_context_parts = []
         if mongo_tables:
@@ -742,8 +843,8 @@ class SummaryPipeline:
                     namespace,
                     index_name,
                     host,
-                    vector_top_k=24,
-                    rerank_top_n=24,
+                    vector_top_k=12,
+                    rerank_top_n=12,
                     metadata_filter=metadata_filter,
                 )
                 
@@ -762,6 +863,11 @@ class SummaryPipeline:
             return ""
 
         full_context = "\n\n---\n\n".join(all_context_parts)
+        full_context = self._clip_chunk_context(
+            full_context,
+            SUMMARY_AGENT_A3_CONTEXT_MAX_CHARS,
+            "[Additional business-chapter context omitted for length.]",
+        )
         logger.info("A-3: Context collected", chunks=len(all_context_parts), chars=len(full_context))
 
         try:
