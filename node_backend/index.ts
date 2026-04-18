@@ -208,7 +208,7 @@ app.use(writeLimiter);
 // MongoDB Connection
 const MONGODB_URI = process.env.MONGODB_URI;
 if (!MONGODB_URI) {
-  throw new Error("MONGODB_URI is not set");
+  throw new Error("MONGODB_URI (or COSMOSDB_URI) is not set");
 }
 
 if (process.env.NODE_ENV !== 'test') {
@@ -320,6 +320,11 @@ if (process.env.NODE_ENV !== 'test') {
 // ============================================================================
 async function recoverStaleDocuments() {
   try {
+    // If DB isn't connected, skip to avoid buffered timeouts.
+    if (mongoose.connection.readyState !== 1) {
+      console.warn("⚠️ [StaleWatcher] MongoDB not connected yet. Skipping this cycle.");
+      return;
+    }
     const { Document } = await import("./models/Document");
     const STALE_THRESHOLD_MS = 20 * 60 * 1000; // 20 minutes
     const cutoff = new Date(Date.now() - STALE_THRESHOLD_MS);

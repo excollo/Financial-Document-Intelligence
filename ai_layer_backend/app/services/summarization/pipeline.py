@@ -187,6 +187,8 @@ class SummaryPipeline:
             table_md_blocks = []
             for t in tables:
                 sec = t.get("section", t.get("chapter", "General"))
+                sub = t.get("subsection", "")
+                heading = t.get("table_heading", "")
                 pg = t.get("page", "?")
                 md = t.get("markdown", "")
                 
@@ -194,7 +196,13 @@ class SummaryPipeline:
                 if len(md.split("|")) < min_cells or md.count("\n") < 2:
                     continue
                     
-                table_md_blocks.append(f"### Table from {sec} (Page {pg})\n{md}")
+                context_title_parts = [f"Table from {sec}"]
+                if sub:
+                    context_title_parts.append(f"Subsection: {sub}")
+                if heading:
+                    context_title_parts.append(f"Heading: {heading}")
+                context_title = " | ".join(context_title_parts)
+                table_md_blocks.append(f"### {context_title} (Page {pg})\n{md}")
                 
             return "\n\n".join(table_md_blocks)
         except Exception as e:
@@ -664,9 +672,18 @@ class SummaryPipeline:
         """
         logger.info("A-3 Business Table Extractor: Starting", namespace=namespace)
 
+        # Always enforce full 16-query coverage for Agent 3.
+        # If tenant config overrides only a subset, fill missing slots from defaults.
+        extraction_queries = BUSINESS_EXTRACTION_QUERIES.copy()
+        if custom_business_subqueries:
+            for idx, query in enumerate(custom_business_subqueries[:len(extraction_queries)]):
+                if isinstance(query, str) and query.strip():
+                    extraction_queries[idx] = query.strip()
+        total_queries = len(extraction_queries)
+
         # Matches n8n "Extraction Queries - All Tables" → joined with \n\n as prompt
         user_prompt = (
-            "You will receive 16 sequential extraction queries, each focusing on a specific "
+            f"You will receive {total_queries} sequential extraction queries, each focusing on a specific "
             "category of tables from the \"Our Business\" chapter.\n\n"
             "For EACH query:\n"
             "1. Search the vector store comprehensively\n"
@@ -674,7 +691,7 @@ class SummaryPipeline:
             "3. Return tables in perfect Markdown format\n"
             "4. Preserve all data exactly as shown\n\n"
             "Queries to process:\n"
-            + "\n\n".join((custom_business_subqueries if custom_business_subqueries else BUSINESS_EXTRACTION_QUERIES))
+            + "\n\n".join(extraction_queries)
         )
 
         # 1. PRE-COLLECT MONGO TABLES (High-Fidelity)
@@ -682,17 +699,35 @@ class SummaryPipeline:
         
         # Try to find "Our Business" page range from TOC to focus the high-fidelity extraction
         toc = await self._get_toc(namespace)
-        page_range = None
+        matched_ranges = []
+        business_toc_terms = [
+            "OUR BUSINESS",
+            "BUSINESS MODEL",
+            "CAPACITY AND CAPACITY UTILIZATION",
+            "INFRASTRUCTURE",
+            "PLANT",
+            "MACHINERY",
+            "PERFORMANCE INDICATORS",
+            "INTELLECTUAL PROPERTY",
+            "TRADEMARK",
+            "SWOT",
+            "PROPERTIES",
+            "FACILITIES",
+            "HOSPITAL",
+        ]
         for item in toc:
             title = str(item.get("title", "")).upper()
-            if any(term in title for term in ["OUR BUSINESS", "BUSINESS MODEL", "CAPACITY AND CAPACITY UTILIZATION"]):
+            if any(term in title for term in business_toc_terms):
                 page_start = item.get("page_start", 1)
                 page_end = item.get("page_end", 999)
-                page_range = (page_start, page_end)
-                logger.info("A-3: Focused high-fidelity extraction for Our Business / Capacity", page_range=page_range)
-                break
+                matched_ranges.append((page_start, page_end))
+
+        page_range = None
+        if matched_ranges:
+            page_range = (min(r[0] for r in matched_ranges), max(r[1] for r in matched_ranges))
+            logger.info("A-3: Focused high-fidelity extraction for Our Business / Capacity", page_range=page_range)
         
-        mongo_tables = await self._retrieve_tables(job_id=job_id, namespace=namespace, page_range=page_range, min_cells=6)
+        mongo_tables = await self._retrieve_tables(job_id=job_id, namespace=namespace, page_range=page_range, min_cells=3)
         
         all_context_parts = []
         if mongo_tables:
@@ -700,15 +735,15 @@ class SummaryPipeline:
         seen = set()
 
         # 2. COLLECT PIECONE CONTEXT (Narrative and secondary table fragments)
-        for i, query in enumerate((custom_business_subqueries if custom_business_subqueries else BUSINESS_EXTRACTION_QUERIES)):
+        for i, query in enumerate(extraction_queries):
             try:
                 ctx = await self._retrieve_context(
                     [query],
                     namespace,
                     index_name,
                     host,
-                    vector_top_k=12,
-                    rerank_top_n=12,
+                    vector_top_k=24,
+                    rerank_top_n=24,
                     metadata_filter=metadata_filter,
                 )
                 
@@ -718,9 +753,9 @@ class SummaryPipeline:
                         if c and c not in seen:
                             all_context_parts.append(c)
                             seen.add(c)
-                logger.debug(f"A-3: Query {i+1}/16 retrieved", chars=len(ctx) if ctx else 0)
+                logger.debug(f"A-3: Query {i+1}/{total_queries} retrieved", chars=len(ctx) if ctx else 0)
             except Exception as qe:
-                logger.warning(f"A-3: Query {i+1} failed", error=str(qe))
+                logger.warning(f"A-3: Query {i+1}/{total_queries} failed", error=str(qe))
 
         if not all_context_parts:
             logger.warning("A-3: No business chapter context found")

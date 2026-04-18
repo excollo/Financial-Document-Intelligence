@@ -122,14 +122,18 @@ async def submit_document_job(request: DocumentJobRequest):
     Asynchronous Document Ingestion.
     Returns 202 Accepted immediately and offloads work to Celery.
     """
-    job_id = str(uuid.uuid4())
+    request_metadata = request.metadata or {}
+    incoming_document_id = str(request_metadata.get("documentId") or "").strip()
+    # Prefer documentId as Celery job id so backend callbacks can always resolve
+    # the target document even if metadata is partially missing later.
+    job_id = incoming_document_id or str(uuid.uuid4())
     
     try:
         logger.info("Enqueuing document ingestion job", job_id=job_id, file_url=request.file_url)
         
         celery_app.send_task(
             "process_document",
-            args=[request.file_url, request.file_type, job_id, request.metadata],
+            args=[request.file_url, request.file_type, job_id, request_metadata],
             task_id=job_id
         )
         

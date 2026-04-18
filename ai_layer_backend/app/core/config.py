@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     # MongoDB Configuration
     # Accept both MONGODB_URI (preferred) and legacy MONGO_URI.
     MONGODB_URI: str = Field(default="", validation_alias=AliasChoices("MONGODB_URI", "MONGO_URI"))
+    COSMOSDB_URI: Optional[str] = None
     MONGO_DB_NAME: str = "pdf-summarizer"
     
     # Logging
@@ -158,6 +159,15 @@ class Settings(BaseSettings):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        # Cosmos DB (Mongo API): prefer non-SRV URI when MONGODB_URI is cosmos +srv.
+        if (
+            self.MONGODB_URI
+            and "mongocluster.cosmos.azure.com" in self.MONGODB_URI
+            and self.MONGODB_URI.startswith("mongodb+srv://")
+            and self.COSMOSDB_URI
+        ):
+            self.MONGODB_URI = self.COSMOSDB_URI
+
         # Ensure NODE_BACKEND_URL doesn't have a trailing slash
         if self.NODE_BACKEND_URL.endswith("/"):
             self.NODE_BACKEND_URL = self.NODE_BACKEND_URL[:-1]

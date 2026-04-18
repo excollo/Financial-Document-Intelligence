@@ -1473,6 +1473,38 @@ export const healthService = {
     });
     return response.data;
   },
+  async getAlertRecipients(): Promise<{ recipients: string[] }> {
+    const token = localStorage.getItem("accessToken");
+    const response = await axios.get(`${API_URL}/health/admin/alert-recipients`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return response.data;
+  },
+  async updateAlertRecipients(recipients: string[]): Promise<{ recipients: string[]; message: string }> {
+    const token = localStorage.getItem("accessToken");
+    const response = await axios.put(
+      `${API_URL}/health/admin/alert-recipients`,
+      { recipients },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    return response.data;
+  },
+  async getHealthCheckToggles(): Promise<{ toggles: any }> {
+    const token = localStorage.getItem("accessToken");
+    const response = await axios.get(`${API_URL}/health/admin/check-toggles`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return response.data;
+  },
+  async updateHealthCheckToggles(toggles: any): Promise<{ toggles: any; message: string }> {
+    const token = localStorage.getItem("accessToken");
+    const response = await axios.put(
+      `${API_URL}/health/admin/check-toggles`,
+      { toggles },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    return response.data;
+  },
   async getBasicStatus() {
     const response = await axios.get(`${API_URL}/health/basic`);
     return response.data;

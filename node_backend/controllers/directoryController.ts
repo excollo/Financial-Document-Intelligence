@@ -27,7 +27,6 @@ export const directoryController = {
 
       const dir = await Directory.findOne({
         id: req.params.id,
-        domain: req.userDomain,
         workspaceId: currentWorkspace,
       });
       if (!dir) {
@@ -165,7 +164,6 @@ export const directoryController = {
 
       const dir = await Directory.findOne({
         id: req.params.id,
-        domain: req.userDomain,
         workspaceId: currentWorkspace,
       });
       if (!dir) {
@@ -178,6 +176,7 @@ export const directoryController = {
   },
 
   async listChildren(req: AuthRequest, res: Response) {
+    const requestStartedAt = Date.now();
     try {
       const parentId = req.params.id === "root" ? null : req.params.id;
       const { includeDeleted, page, pageSize, sort, order } = (req.query ||
@@ -235,7 +234,7 @@ export const directoryController = {
 
       const filter: any = filterConditions.length > 1 ? { $or: filterConditions } : filterConditions[0];
 
-      const allDirs = await Directory.find(filter).sort({ name: 1 });
+      const allDirs = await Directory.find(filter).sort({ name: 1 }).lean();
 
       console.log(`[listChildren] Found ${allDirs.length} directories (including shared) for workspace ${currentWorkspace}, parentId: ${parentId}, userId: ${userId}`);
       if (userId) {
@@ -252,8 +251,8 @@ export const directoryController = {
       const isCrossDomainUser = userDomain && userDomain !== workspaceDomain;
       const isSameDomainAdmin = req.user?.role === "admin" && userDomain === workspaceDomain;
 
-      // Debug: Check all SharePermissions for this user to see what exists
-      if (userId && isCrossDomainUser) {
+      // Debug-only deep share inspection (disabled by default for latency)
+      if (process.env.DEBUG_PERMISSIONS === "true" && userId && isCrossDomainUser) {
         const allUserShares = await SharePermission.find({
           scope: "user",
           principalId: userId,
@@ -277,124 +276,78 @@ export const directoryController = {
         console.log(`[listChildren DEBUG] Total directories to check: ${allDirs.length}, Total SharePermissions: ${allUserShares.length}`);
       }
 
-      const visibleDirs = await Promise.all(
-        allDirs.map(async (dir) => {
-          // GLOBAL ACCESS WITHIN WORKSPACE:
-          // If the directory belongs to the current workspace, everyone in the workspace can see it.
-          // This implements the "global use" requirement.
-          if (dir.workspaceId === currentWorkspace) {
-            return dir;
-          }
-
-          // For shared directories (from other workspaces/domains):
-          // Shared directories are always visible to the user they're shared with
-          if (dir.isShared && dir.sharedWithUserId === userId) return dir;
-
-          // For cross-domain users (both admin and regular), they can ONLY see directories with SharePermission
-          // Cross-domain users won't own directories in other domains, so skip owner check for them
-          if (isCrossDomainUser) {
-            // Cross-domain users can only see directories with explicit SharePermission
-            // Look up SharePermission by directory ID and user ID or email - don't restrict by domain
-            // SharePermissions are created with inviter.domain during invitation acceptance
-            const userEmail = req.user?.email?.toLowerCase();
-
-            if (userId || userEmail) {
-              // Try multiple lookup strategies to find SharePermission
-
-              // Strategy 1: Find by domain, resourceId and principalId (most reliable)
-              // Use workspaceDomain since SharePermissions are created with inviter's domain (workspace domain)
-              let userShare = userId ? await SharePermission.findOne({
-                domain: workspaceDomain,
-                resourceType: "directory",
-                resourceId: dir.id,
-                scope: "user",
-                principalId: userId,
-              }) : null;
-
-              // Strategy 2: If still not found and we have email, try by email
-              if (!userShare && userEmail) {
-                userShare = await SharePermission.findOne({
-                  domain: workspaceDomain,
-                  resourceType: "directory",
-                  resourceId: dir.id,
-                  scope: "user",
-                  invitedEmail: userEmail,
-                });
-              }
-
-              // Strategy 3: If still not found, try with directory's domain (fallback)
-              if (!userShare && dir.domain) {
-                if (userId) {
-                  userShare = await SharePermission.findOne({
-                    domain: dir.domain,
-                    resourceType: "directory",
-                    resourceId: dir.id,
-                    scope: "user",
-                    principalId: userId,
-                  });
-                }
-                if (!userShare && userEmail) {
-                  userShare = await SharePermission.findOne({
-                    domain: dir.domain,
-                    resourceType: "directory",
-                    resourceId: dir.id,
-                    scope: "user",
-                    invitedEmail: userEmail,
-                  });
-                }
-              }
-
-              if (userShare) {
-                console.log(`[listChildren] ✓ Found SharePermission for directory: ${dir.name} (${dir.id}) - SharePermission domain: ${userShare.domain}, Directory domain: ${dir.domain}, Workspace domain: ${workspaceDomain}`);
-                return dir;
-              } else {
-                // Debug: Check if any SharePermission exists for this user
-                const anyShareForUser = userId ? await SharePermission.findOne({
-                  scope: "user",
-                  principalId: userId,
-                  resourceType: "directory",
-                }) : null;
-                const anyShareForEmail = userEmail ? await SharePermission.findOne({
-                  scope: "user",
-                  invitedEmail: userEmail,
-                  resourceType: "directory",
-                }) : null;
-                if (anyShareForUser || anyShareForEmail) {
-                  console.log(`[listChildren] ✗ SharePermission exists for user but NOT for directory ${dir.name} (${dir.id}). User has SharePermission for: ${anyShareForUser?.resourceId || anyShareForEmail?.resourceId}`);
-                } else {
-                  console.log(`[listChildren] ✗ NO SharePermission found for directory: ${dir.name} (${dir.id}) - userId: ${userId}, email: ${userEmail}`);
-                }
-              }
-            }
-
-            // Check workspace-scoped share permission
-            const wsShare = await SharePermission.findOne({
-              domain: workspaceDomain, // Include domain in query
-              resourceType: "directory",
-              resourceId: dir.id,
-              scope: "workspace",
-              principalId: currentWorkspace,
-            });
-            if (wsShare) {
-              console.log(`[listChildren] ✓ Found workspace SharePermission for directory: ${dir.name} (${dir.id})`);
-              return dir;
-            }
-
-            // No permission - don't show this directory
-            return null;
-          }
-
-          // Default fallback (should be covered by the first check for workspaceId)
-          return dir;
-        })
+      const userEmail = req.user?.email?.toLowerCase();
+      const allDirIds = allDirs.map((d) => d.id);
+      const shareDomains = Array.from(
+        new Set([workspaceDomain, ...allDirs.map((d) => d.domain).filter(Boolean)])
       );
+      const shareQueryOr: any[] = [
+        {
+          scope: "workspace",
+          domain: workspaceDomain,
+          principalId: currentWorkspace,
+        },
+      ];
+      if (userId) {
+        shareQueryOr.push({
+          scope: "user",
+          domain: { $in: shareDomains },
+          principalId: userId,
+        });
+      }
+      if (userEmail) {
+        shareQueryOr.push({
+          scope: "user",
+          domain: { $in: shareDomains },
+          invitedEmail: userEmail,
+        });
+      }
+      const sharePermissions =
+        allDirIds.length > 0
+          ? await SharePermission.find({
+              resourceType: "directory",
+              resourceId: { $in: allDirIds },
+              $or: shareQueryOr,
+            })
+              .select("resourceId scope principalId invitedEmail")
+              .lean()
+          : [];
+      const userSharedDirIds = new Set(
+        sharePermissions
+          .filter((s: any) => s.scope === "user")
+          .map((s: any) => s.resourceId)
+      );
+      const workspaceSharedDirIds = new Set(
+        sharePermissions
+          .filter(
+            (s: any) =>
+              s.scope === "workspace" && s.principalId === currentWorkspace
+          )
+          .map((s: any) => s.resourceId)
+      );
+
+      const visibleDirs = allDirs.filter((dir) => {
+        // Global access for directories in the current workspace.
+        if (dir.workspaceId === currentWorkspace) return true;
+        // Shared copy belongs to this user.
+        if (dir.isShared && dir.sharedWithUserId === userId) return true;
+
+        if (isCrossDomainUser) {
+          // Cross-domain users require an explicit share.
+          return (
+            userSharedDirIds.has(dir.id) || workspaceSharedDirIds.has(dir.id)
+          );
+        }
+
+        return true;
+      });
 
       // Filter out null values (directories without permission)
       let dirs = visibleDirs.filter((d): d is typeof allDirs[0] => d !== null);
 
-      // Check for SharePermissions that should have directories created but don't exist yet
-      // This handles the case where a directory was shared but the directory wasn't created in recipient's workspace
-      if (userId && parentId === null) { // Only for root level
+      // Self-heal shared-directory materialization only when needed.
+      // Running this on every root request creates unnecessary query load.
+      if (isCrossDomainUser && userId && parentId === null && dirs.length === 0) { // Only for root level fallback
         try {
           const pendingShares = await SharePermission.find({
             scope: "user",
@@ -867,7 +820,9 @@ export const directoryController = {
       const sortKey = sort === "uploadedAt" ? "uploadedAt" : "name";
       const sortDir = (order || "asc").toLowerCase() === "desc" ? -1 : 1;
 
-      const allDocs = await Document.find(docFilter).sort({ [sortKey]: sortDir });
+      const allDocs = await Document.find(docFilter)
+        .sort({ [sortKey]: sortDir })
+        .lean();
 
       console.log(`[listChildren] Found ${allDocs.length} documents for directory ${parentId}${isViewingSharedDirectory ? ` (shared, original: ${originalDirectoryId})` : ''}`);
 
@@ -878,128 +833,74 @@ export const directoryController = {
 
       // Only filter if user is NOT a same-domain admin
       if (!isSameDomainAdmin) {
-        // Check access for each document's directory
-        const accessibleDocs = await Promise.all(
-          allDocs.map(async (doc) => {
-            const docDirId = doc.directoryId || null;
-
-            // For cross-domain users, root directory documents should be restricted
-            // They should only see documents in directories they have explicit access to
-            if (isCrossDomainUser && !docDirId) {
-              // Cross-domain users don't have access to root documents
-              return null;
-            }
-
-            // For same-domain users, root directory documents are accessible
-            if (!isCrossDomainUser && !docDirId) return doc;
-
-            // Check if directory is in the visible directories list (already filtered)
-            // This is the most reliable check - if directory is visible, documents in it are accessible
-            const hasDirAccess = dirs.some((d) => d.id === docDirId);
-            if (hasDirAccess) return doc;
-
-            // Also check if this document is in a shared directory's original directory
-            // If viewing a shared directory, documents from the original directory should be accessible
-            if (isViewingSharedDirectory && originalDirectoryId && docDirId === originalDirectoryId) {
-              // Check if user has SharePermission for the original directory
-              const userEmail = req.user?.email?.toLowerCase();
-              if (userId) {
-                const originalDir = await Directory.findOne({ id: originalDirectoryId });
-                if (originalDir) {
-                  // Check SharePermission in the original directory's domain
-                  const userShare = await SharePermission.findOne({
-                    domain: originalDir.domain,
-                    resourceType: "directory",
-                    resourceId: originalDirectoryId,
-                    scope: "user",
-                    principalId: userId,
-                  });
-                  if (userShare) {
-                    console.log(`[listChildren] ✓ Document accessible via SharePermission for original directory ${originalDirectoryId}`);
-                    return doc;
-                  }
-                }
-              }
-              // Also check by email
-              if (userEmail) {
-                const originalDir = await Directory.findOne({ id: originalDirectoryId });
-                if (originalDir) {
-                  const emailShare = await SharePermission.findOne({
-                    domain: originalDir.domain,
-                    resourceType: "directory",
-                    resourceId: originalDirectoryId,
-                    scope: "user",
-                    invitedEmail: userEmail,
-                  });
-                  if (emailShare) {
-                    console.log(`[listChildren] ✓ Document accessible via email SharePermission for original directory ${originalDirectoryId}`);
-                    return doc;
-                  }
-                }
-              }
-            }
-
-            // For same-domain non-admin users, check if they own the directory
-            if (!isCrossDomainUser && userId) {
-              const directory = await Directory.findOne({
-                id: docDirId,
-                domain: workspaceDomain,
-              });
-              if (directory?.ownerUserId === userId) return doc;
-            }
-
-            // Use workspace domain when checking SharePermission (not user domain)
-            const actualDomain = workspaceDomain;
-            const userEmail = req.user?.email?.toLowerCase();
-
-            // Check SharePermission by user ID
-            if (userId) {
-              const userShare = await SharePermission.findOne({
-                domain: actualDomain,
-                resourceType: "directory",
-                resourceId: docDirId,
-                scope: "user",
-                principalId: userId,
-              });
-              if (userShare) {
-                console.log(`[listChildren] ✓ Document accessible via SharePermission (userId) for directory ${docDirId}`);
-                return doc;
-              }
-            }
-
-            // Also check SharePermission by email (for cross-domain sharing)
-            if (userEmail) {
-              const emailShare = await SharePermission.findOne({
-                domain: actualDomain,
-                resourceType: "directory",
-                resourceId: docDirId,
-                scope: "user",
-                invitedEmail: userEmail,
-              });
-              if (emailShare) {
-                console.log(`[listChildren] ✓ Document accessible via SharePermission (email) for directory ${docDirId}`);
-                return doc;
-              }
-            }
-
-            const wsShare = await SharePermission.findOne({
-              domain: actualDomain,
-              resourceType: "directory",
-              resourceId: docDirId,
-              scope: "workspace",
-              principalId: currentWorkspace,
-            });
-            if (wsShare) {
-              console.log(`[listChildren] ✓ Document accessible via workspace SharePermission for directory ${docDirId}`);
-              return doc;
-            }
-
-            // No access
-            return null;
-          })
+        const visibleDirIds = new Set(dirs.map((d) => d.id));
+        const docDirectoryIds = Array.from(
+          new Set(
+            allDocs
+              .map((doc) => doc.directoryId)
+              .filter((id): id is string => Boolean(id))
+          )
         );
 
-        docs = accessibleDocs.filter((d): d is typeof allDocs[0] => d !== null);
+        const docShareQueryOr: any[] = [
+          {
+            scope: "workspace",
+            domain: workspaceDomain,
+            principalId: currentWorkspace,
+          },
+        ];
+        if (userId) {
+          docShareQueryOr.push({
+            scope: "user",
+            domain: { $in: [workspaceDomain] },
+            principalId: userId,
+          });
+        }
+        if (userEmail) {
+          docShareQueryOr.push({
+            scope: "user",
+            domain: { $in: [workspaceDomain] },
+            invitedEmail: userEmail,
+          });
+        }
+
+        const docSharePermissions =
+          docDirectoryIds.length > 0
+            ? await SharePermission.find({
+                resourceType: "directory",
+                resourceId: { $in: docDirectoryIds },
+                $or: docShareQueryOr,
+              })
+                .select("resourceId")
+                .lean()
+            : [];
+        const docSharedDirIds = new Set(
+          docSharePermissions.map((share: any) => share.resourceId)
+        );
+
+        docs = allDocs.filter((doc) => {
+          const docDirId = doc.directoryId || null;
+
+          // Cross-domain users cannot access root docs by default.
+          if (isCrossDomainUser && !docDirId) return false;
+          if (!isCrossDomainUser && !docDirId) return true;
+          if (!docDirId) return false;
+
+          // Directory already visible in current result set.
+          if (visibleDirIds.has(docDirId)) return true;
+
+          // Documents from original directory should be visible when viewing a shared dir.
+          if (
+            isViewingSharedDirectory &&
+            originalDirectoryId &&
+            docDirId === originalDirectoryId
+          ) {
+            return true;
+          }
+
+          // Fallback: explicit share exists for this directory.
+          return docSharedDirIds.has(docDirId);
+        });
       }
 
       // Merge and paginate
@@ -1012,6 +913,10 @@ export const directoryController = {
       const start = (p - 1) * ps;
       const paged = merged.slice(start, start + ps);
 
+      const totalMs = Date.now() - requestStartedAt;
+      console.log(
+        `[perf] directories.listChildren completed in ${totalMs}ms (workspace=${currentWorkspace}, parent=${parentId ?? "root"}, items=${paged.length}, total=${merged.length})`
+      );
       res.json({
         total: merged.length,
         page: p,
@@ -1019,6 +924,8 @@ export const directoryController = {
         items: paged,
       });
     } catch (err) {
+      const totalMs = Date.now() - requestStartedAt;
+      console.log(`[perf] directories.listChildren failed after ${totalMs}ms`);
       res.status(500).json({ error: "Failed to list children" });
     }
   },
@@ -1035,7 +942,6 @@ export const directoryController = {
 
       const dir = await Directory.findOne({
         id: req.params.id,
-        domain: req.userDomain,
         workspaceId: currentWorkspace,
       });
       if (!dir) {
@@ -1084,7 +990,6 @@ export const directoryController = {
 
       const dir = await Directory.findOne({
         id: req.params.id,
-        domain: req.userDomain,
         workspaceId: currentWorkspace,
       });
       if (!dir) {
@@ -1103,7 +1008,6 @@ export const directoryController = {
         dirsToDelete.push(current);
 
         const children = await Directory.find({
-          domain: req.userDomain,
           workspaceId: currentWorkspace,
           parentId: current,
         });
@@ -1114,14 +1018,12 @@ export const directoryController = {
 
       // Delete all documents in all directories
       await Document.deleteMany({
-        domain: req.userDomain,
         workspaceId: currentWorkspace,
         directoryId: { $in: dirsToDelete },
       });
 
       // Delete all directories
       await Directory.deleteMany({
-        domain: req.userDomain,
         workspaceId: currentWorkspace,
         id: { $in: dirsToDelete },
       });
@@ -1153,13 +1055,25 @@ export const directoryController = {
       }
 
       if (!query || String(query).trim() === "") {
-        // Return recent/popular directories if no query
-        const directories = await Directory.find({
+        // Return recent/popular directories if no query.
+        // Cosmos DB may reject multi-field order-by without a composite index,
+        // so fetch and sort in-memory for compatibility.
+        const rawDirectories = await Directory.find({
           workspaceId: currentWorkspace,
           parentId: null, // Only top-level company directories
         })
-          .sort({ documentCount: -1, lastDocumentUpload: -1 })
-          .limit(Number(limit));
+          .limit(Math.max(Number(limit) * 5, 50))
+          .lean();
+
+        const directories = rawDirectories
+          .sort((a: any, b: any) => {
+            const docCountDiff = (Number(b.documentCount) || 0) - (Number(a.documentCount) || 0);
+            if (docCountDiff !== 0) return docCountDiff;
+            const timeA = a.lastDocumentUpload ? new Date(a.lastDocumentUpload).getTime() : 0;
+            const timeB = b.lastDocumentUpload ? new Date(b.lastDocumentUpload).getTime() : 0;
+            return timeB - timeA;
+          })
+          .slice(0, Number(limit));
 
         return res.json(directories);
       }

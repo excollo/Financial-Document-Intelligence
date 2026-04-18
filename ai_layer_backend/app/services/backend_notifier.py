@@ -29,7 +29,7 @@ class BackendNotifier:
         Matched to n8n node "Send Error to Backend3" and webhook response logic.
         """
         payload = {
-            "jobId": document_id or job_id,
+            "jobId": job_id,
             "status": status,
             "namespace": namespace,
             "documentId": document_id or job_id,
@@ -64,7 +64,17 @@ class BackendNotifier:
                 logger.info("Backend notified successfully", status_code=response.status_code)
                 return True
             except Exception as e:
-                logger.warning("Failed to notify backend", error=str(e), job_id=job_id, attempt=attempt + 1)
+                status_code = getattr(getattr(e, "response", None), "status_code", None)
+                response_text = getattr(getattr(e, "response", None), "text", None)
+                logger.warning(
+                    "Failed to notify backend",
+                    error=str(e),
+                    status_code=status_code,
+                    response_text=(response_text[:300] if isinstance(response_text, str) else None),
+                    job_id=job_id,
+                    document_id=document_id,
+                    attempt=attempt + 1
+                )
                 if attempt < max_retries - 1:
                     time.sleep(backoff)
                     backoff *= 2

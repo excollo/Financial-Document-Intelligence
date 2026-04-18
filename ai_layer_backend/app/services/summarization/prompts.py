@@ -1036,6 +1036,14 @@ BUSINESS_EXTRACTION_QUERIES = [
 
     "OUR BUSINESS: Extract healthcare operational tables if present including in-patient revenue, out-patient revenue, surgeries performed and hospital statistics.",
 
+    "OUR BUSINESS: Extract hospital performance indicator tables including Revenue from Operations, EBITDA, PAT, growth %, margins, ROAE/ROCE and period-wise KPI comparison tables.",
+
+    "OUR BUSINESS: Extract infrastructure and equipment tables including plant & machinery, medical equipment list, process descriptions and operational assets (even if table continues on next page).",
+
+    "OUR BUSINESS: Extract Intellectual Property tables including trademarks/word marks, application numbers, class, registration date, status and validity/renewal details.",
+
+    "OUR BUSINESS: Extract SWOT and strategic matrix tables (Strengths, Weaknesses, Opportunities, Threats) if presented in tabular form.",
+
     "OUR BUSINESS: Extract tables describing subsidiaries, joint ventures, holding company and group companies.",
 
     "OUR BUSINESS: Extract any additional operational performance tables, raw material tables, key performance indicators or business metrics mentioned in the Our Business section."

@@ -11,6 +11,7 @@ import uuid
 import sys
 import os
 import asyncio
+import warnings
 from typing import Dict, Any, List, Optional, Tuple, Callable
 
 # --- MULTIPROCESSING PATH FIX ---
@@ -49,6 +50,7 @@ except ImportError as _e:
 TOC_LINE_PATTERN = re.compile(r"^(.*?)(?:\s|\.){3,}\s*(\d+)$", re.MULTILINE)
 SECTION_PREFIX_PATTERN = re.compile(r"^(?:SECTION|PART)\s*[-\u2013\u2014]?\s*[IVXLCD0-9]+", re.IGNORECASE)
 SUBSECTION_PREFIX_PATTERN = re.compile(r"^[A-Z][a-z]+(?:\s[A-Z][a-z]+)*", re.UNICODE)
+TOC_DOT_LEADER_LINE_PATTERN = re.compile(r".{3,}\.{5,}\s*\d+\s*$")
 
 
 def _to_markdown_table(rows: List[List[str]]) -> str:
@@ -138,7 +140,8 @@ def _extract_toc_mapping(pdf) -> List[Dict[str, Any]]:
         text = page.extract_text() or ""
         
         # 1. Check for TOC keywords
-        if "TABLE OF CONTENTS" in text.upper() or "INDEX" in text.upper():
+        text_upper = text.upper()
+        if "TABLE OF CONTENTS" in text_upper or "CONTENTS" in text_upper or "INDEX" in text_upper:
             found_toc = True
 
         if found_toc:
@@ -270,11 +273,19 @@ def _camelot_worker(pdf_path: str, pages_str: str, flavor: str, edge_tol: int, b
         return {"batch_start": batch_start, "batch_end": batch_end, "error": f"camelot unavailable: {e}", "tables": []}
     try:
         # Each worker process gets its own Ghostscript instance via Camelot
-        tables = _camelot.read_pdf(pdf_path, pages=pages_str, flavor=flavor, edge_tol=edge_tol)
+        with warnings.catch_warnings():
+            # "No tables found in table area" is expected frequently and creates noisy logs.
+            warnings.filterwarnings("ignore", message="No tables found in table area.*", category=UserWarning)
+            tables = _camelot.read_pdf(pdf_path, pages=pages_str, flavor=flavor, edge_tol=edge_tol)
         batch_data = []
         for t in tables:
+            try:
+                raw_page = int(getattr(t, "page", 0) or 0)
+            except Exception:
+                raw_page = 0
+            local_page = raw_page - batch_start + 1 if batch_start <= raw_page <= batch_end else raw_page
             batch_data.append({
-                "local_page": t.page,
+                "local_page": local_page,
                 "df_values": t.df.values.tolist(),
                 "bbox": t._bbox
             })
@@ -297,6 +308,27 @@ class ExtractionService:
     Service for multi-engine document extraction.
     Ensures Section IV and Tables are captured correctly.
     """
+
+    @staticmethod
+    def _is_toc_like_page(page_text: str) -> bool:
+        """
+        Heuristic TOC/index detector to avoid expensive Camelot runs on pages
+        that are mostly dotted leaders and page-number listings.
+        """
+        if not page_text:
+            return False
+
+        text_upper = page_text.upper()
+        if "TABLE OF CONTENTS" in text_upper or "CONTENTS" in text_upper or "INDEX" in text_upper:
+            return True
+
+        lines = [ln.strip() for ln in page_text.splitlines() if ln.strip()]
+        if not lines:
+            return False
+
+        dot_leader_lines = sum(1 for ln in lines if TOC_DOT_LEADER_LINE_PATTERN.search(ln))
+        # If a page has many "heading .... page_no" lines, treat it as TOC-like.
+        return dot_leader_lines >= 6
 
     def _pdfplumber_fallback(self, pdf_path: str, start: int, end: int) -> List[Dict[str, Any]]:
         """Fallback table extraction using pdfplumber when Camelot fails."""
@@ -425,6 +457,11 @@ class ExtractionService:
             with pdfplumber.open(temp_path) as pdf:
                 toc_map = provided_toc or _extract_toc_mapping(pdf)
                 total_pages = len(pdf.pages)
+                toc_like_pages = set()
+                for p_idx in range(total_pages):
+                    page_text = pdf.pages[p_idx].extract_text() or ""
+                    if self._is_toc_like_page(page_text):
+                        toc_like_pages.add(p_idx + 1)
             
             # Identify Priority Pages (OUR BUSINESS, CAPITAL STRUCTURE, FINANCIAL INFORMATION)
             priority_pages = set()
@@ -496,14 +533,39 @@ class ExtractionService:
                 loop = asyncio.get_event_loop()
                 futures = []
                 
-                # Setup batches (40 pages each)
+                # Setup batches (40 pages each), excluding TOC/index-like pages.
                 step = 40
                 batches = []
-                for batch_start in range(1, total_pages + 1, step):
-                    batch_end = min(batch_start + step - 1, total_pages)
-                    batch_pages = set(range(batch_start, batch_end + 1))
-                    is_prio = not batch_pages.isdisjoint(priority_pages)
-                    batches.append((batch_start, batch_end, is_prio))
+                candidate_pages = [p for p in range(1, total_pages + 1) if p not in toc_like_pages]
+                logger.info(
+                    "Table scan page selection",
+                    job_id=job_id,
+                    total_pages=total_pages,
+                    excluded_toc_like_pages=len(toc_like_pages),
+                    candidate_pages=len(candidate_pages),
+                )
+                # Keep contiguous runs only so Camelot page ranges are precise.
+                runs: List[List[int]] = []
+                if candidate_pages:
+                    run = [candidate_pages[0]]
+                    for p in candidate_pages[1:]:
+                        if p == run[-1] + 1:
+                            run.append(p)
+                        else:
+                            runs.append(run)
+                            run = [p]
+                    runs.append(run)
+
+                for run in runs:
+                    for i in range(0, len(run), step):
+                        group = run[i:i + step]
+                        if not group:
+                            continue
+                        batch_start = group[0]
+                        batch_end = group[-1]
+                        batch_pages = set(group)
+                        is_prio = not batch_pages.isdisjoint(priority_pages)
+                        batches.append((batch_start, batch_end, is_prio))
                 
                 # Re-order: Priority batches first (Stable sort keeps chronological order within groups)
                 batches.sort(key=lambda x: x[2], reverse=True)

@@ -254,6 +254,7 @@ export const documentController = {
     }
   },
   async getAll(req: AuthRequest, res: Response) {
+    const requestStartedAt = Date.now();
     try {
       const { type, directoryId, includeDeleted } = (req.query || {}) as {
         type?: string;
@@ -505,8 +506,24 @@ export const documentController = {
       }
 
       // no trash filter; return all in directory
+      const page = Math.max(parseInt(String((req.query as any)?.page || "1"), 10), 1);
+      const pageSizeRaw = parseInt(String((req.query as any)?.pageSize || "0"), 10);
+      const pageSize = Number.isFinite(pageSizeRaw)
+        ? Math.min(Math.max(pageSizeRaw, 0), 200)
+        : 0;
 
-      const allDocuments = await Document.find(query).sort({ uploadedAt: -1 });
+      // Keep backwards compatibility: if pageSize is not provided, return full array.
+      // When page/pageSize is provided, apply DB pagination for lower latency.
+      const findQuery = Document.find(query)
+        .sort({ uploadedAt: -1 })
+        .select(
+          "id name uploadedAt directoryId namespace rhpNamespace status type relatedDrhpId relatedRhpId domain domainId workspaceId microsoftId userId fileKey error"
+        )
+        .lean();
+      if (pageSize > 0) {
+        findQuery.skip((page - 1) * pageSize).limit(pageSize);
+      }
+      const allDocuments = await findQuery;
 
       // Filter documents based on directory access permissions
       // Only show documents from directories the user has access to
@@ -525,35 +542,56 @@ export const documentController = {
         return res.json(allDocuments);
       }
 
-      // Filter documents: only include those whose parent directory user has access to
-      const accessibleDocuments = await Promise.all(
-        allDocuments.map(async (doc) => {
-          // If viewing a shared directory, allow documents from the original directory
-          if (sharedDirectoryInfo && doc.directoryId === originalDirectoryId) {
-            // User has access to the shared directory, so they can see documents from the original
-            return doc;
+      // Filter documents: only include those whose parent directory user has access to.
+      // Cache permission checks per directory to avoid N+1 DB calls.
+      const uniqueDirectoryKeys = Array.from(
+        new Set(
+          allDocuments.map((doc: any) =>
+            doc.directoryId ? `dir:${doc.directoryId}` : "dir:__root__"
+          )
+        )
+      );
+      const directoryAccessCache = new Map<string, boolean>();
+      await Promise.all(
+        uniqueDirectoryKeys.map(async (key) => {
+          const directoryId =
+            key === "dir:__root__" ? null : key.replace(/^dir:/, "");
+
+          if (sharedDirectoryInfo && directoryId === originalDirectoryId) {
+            directoryAccessCache.set(key, true);
+            return;
           }
 
-          // For documents in the shared directory itself (created in recipient's workspace)
-          if (sharedDirectoryInfo && doc.directoryId === effectiveDirectoryId) {
-            // Check access to the shared directory
-            const hasAccess = await documentController.hasDirectoryAccess(req, effectiveDirectoryId);
-            return hasAccess ? doc : null;
+          if (sharedDirectoryInfo && directoryId === effectiveDirectoryId) {
+            const hasAccess = await documentController.hasDirectoryAccess(
+              req,
+              effectiveDirectoryId as string
+            );
+            directoryAccessCache.set(key, hasAccess);
+            return;
           }
 
-          // For normal directories, check access normally
-          const hasAccess = await documentController.hasDirectoryAccess(req, doc.directoryId || null);
-          return hasAccess ? doc : null;
+          const hasAccess = await documentController.hasDirectoryAccess(
+            req,
+            directoryId
+          );
+          directoryAccessCache.set(key, hasAccess);
         })
       );
 
-      // Filter out null values (documents without directory access)
-      const filteredDocuments = accessibleDocuments.filter(
-        (d): d is typeof allDocuments[0] => d !== null
-      );
+      const filteredDocuments = allDocuments.filter((doc: any) => {
+        const key = doc.directoryId ? `dir:${doc.directoryId}` : "dir:__root__";
+        return directoryAccessCache.get(key) === true;
+      });
 
+      const totalMs = Date.now() - requestStartedAt;
+      console.log(
+        `[perf] documents.getAll completed in ${totalMs}ms (workspace=${currentWorkspace}, docs=${filteredDocuments.length})`
+      );
       res.json(filteredDocuments);
     } catch (error) {
+      const totalMs = Date.now() - requestStartedAt;
+      console.log(`[perf] documents.getAll failed after ${totalMs}ms`);
       console.error("Error in getAll documents:", error);
       console.error("Error stack:", (error as Error).stack);
       res.status(500).json({ error: "Failed to fetch documents", details: String(error) });
@@ -772,7 +810,6 @@ export const documentController = {
 
       const query: any = {
         id: req.params.id,
-        domain: req.userDomain, // Ensure user can only delete documents from their domain
         workspaceId: currentWorkspace, // Ensure user can only delete documents from their workspace
       };
       const document = await Document.findOne(query);
@@ -797,7 +834,7 @@ export const documentController = {
       // If deleting a DRHP, unlink from RHP (don't delete RHP)
       if (document.type === "DRHP" && document.relatedRhpId) {
         const linkedRhpId = document.relatedRhpId;
-        const linkedRhpDoc = await Document.findOne({ id: linkedRhpId, domain: req.userDomain, workspaceId: currentWorkspace });
+        const linkedRhpDoc = await Document.findOne({ id: linkedRhpId, workspaceId: currentWorkspace });
         if (linkedRhpDoc) {
           // Unlink RHP from DRHP
           linkedRhpDoc.relatedDrhpId = undefined as any;
@@ -807,7 +844,7 @@ export const documentController = {
       }
       // If deleting an RHP, unlink from DRHP (don't delete DRHP)
       if (document.type === "RHP") {
-        const drhpDoc = await Document.findOne({ relatedRhpId: document.id, domain: req.userDomain, workspaceId: currentWorkspace });
+        const drhpDoc = await Document.findOne({ relatedRhpId: document.id, workspaceId: currentWorkspace });
         if (drhpDoc) {
           drhpDoc.relatedRhpId = undefined as any;
           await drhpDoc.save();
@@ -817,19 +854,17 @@ export const documentController = {
 
       // Delete summaries - only for the document being deleted
       await Summary.deleteMany({
-        domain: req.userDomain,
         workspaceId: currentWorkspace,
         documentId: document.id
       });
 
       // Delete chats for the document being deleted
-      await Chat.deleteMany({ domain: req.userDomain, workspaceId: currentWorkspace, documentId: document.id });
+      await Chat.deleteMany({ workspaceId: currentWorkspace, documentId: document.id });
 
       // Delete reports based on document type
       if (document.type === "DRHP") {
         // When deleting DRHP: delete reports that reference this DRHP
         await Report.deleteMany({
-          domain: req.userDomain,
           workspaceId: currentWorkspace,
           $or: [
             { drhpId: document.id },
@@ -839,7 +874,6 @@ export const documentController = {
       } else if (document.type === "RHP") {
         // When deleting RHP: delete reports that reference this RHP
         await Report.deleteMany({
-          domain: req.userDomain,
           workspaceId: currentWorkspace,
           $or: [
             { rhpId: document.id },
@@ -849,7 +883,6 @@ export const documentController = {
       } else {
         // For other document types: delete reports that reference this document
         await Report.deleteMany({
-          domain: req.userDomain,
           workspaceId: currentWorkspace,
           $or: [
             { drhpId: document.id },
@@ -861,7 +894,7 @@ export const documentController = {
       }
 
       // Finally, delete the documents themselves
-      await Document.deleteMany({ id: { $in: docIdsToDelete }, domain: req.userDomain, workspaceId: currentWorkspace });
+      await Document.deleteMany({ id: { $in: docIdsToDelete }, workspaceId: currentWorkspace });
 
       // Update directory statistics after deletion
       if (document.directoryId) {

@@ -11,7 +11,8 @@
     "postinstall": "puppeteer install",
     "migrate:domain": "node scripts/migrateToDomainSeparation.js",
     "migrate:domain:ts": "ts-node scripts/migrateToDomainSeparation.ts",
-    "migrate:workspace": "ts-node scripts/migrateAddWorkspaceId.ts"
+    "migrate:workspace": "ts-node scripts/migrateAddWorkspaceId.ts",
+    "migrate:datasets": "ts-node scripts/migrateDatasetsToNewCluster.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.850.0",
