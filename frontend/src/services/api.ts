@@ -182,6 +182,19 @@ export const documentService = {
     }
   },
 
+  async download(id: string): Promise<Blob> {
+    const token = localStorage.getItem("accessToken");
+    const currentWorkspace = getCurrentWorkspace();
+    const response = await axios.get(`${API_URL}/documents/download/${id}`, {
+      responseType: "blob",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(currentWorkspace && { "x-workspace": currentWorkspace }),
+      },
+    });
+    return response.data;
+  },
+
   async create(document: {
     id: string;
     name: string;
@@ -542,7 +555,19 @@ export const directoryService = {
         ...(currentWorkspace && { "x-workspace": currentWorkspace }),
       },
     });
-    return res.data;
+    const data = res.data;
+    if (Array.isArray(data)) return data;
+    if (data && typeof data === "object") {
+      const wrapped = data as {
+        directories?: unknown;
+        results?: unknown;
+        data?: unknown;
+      };
+      if (Array.isArray(wrapped.directories)) return wrapped.directories;
+      if (Array.isArray(wrapped.results)) return wrapped.results;
+      if (Array.isArray(wrapped.data)) return wrapped.data;
+    }
+    return [];
   },
 
   // NEW: Check for duplicate/similar directories
@@ -742,6 +767,19 @@ export const chatService = {
     const token = localStorage.getItem("accessToken");
     const response = await axios.get(`${API_URL}/chats/admin`, {
       headers: { Authorization: `Bearer ${token}` },
+    });
+    return response.data;
+  },
+
+  // Admin: get chat detail
+  getAdminDetail: async (id: string) => {
+    const token = localStorage.getItem("accessToken");
+    const currentWorkspace = getCurrentWorkspace();
+    const response = await axios.get(`${API_URL}/chats/admin/${id}/detail`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(currentWorkspace && { "x-workspace": currentWorkspace }),
+      },
     });
     return response.data;
   },
@@ -1433,6 +1471,38 @@ export const healthService = {
     const response = await axios.get(`${API_URL}/health/admin/detailed`, {
       headers: { Authorization: `Bearer ${token}` },
     });
+    return response.data;
+  },
+  async getAlertRecipients(): Promise<{ recipients: string[] }> {
+    const token = localStorage.getItem("accessToken");
+    const response = await axios.get(`${API_URL}/health/admin/alert-recipients`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return response.data;
+  },
+  async updateAlertRecipients(recipients: string[]): Promise<{ recipients: string[]; message: string }> {
+    const token = localStorage.getItem("accessToken");
+    const response = await axios.put(
+      `${API_URL}/health/admin/alert-recipients`,
+      { recipients },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    return response.data;
+  },
+  async getHealthCheckToggles(): Promise<{ toggles: any }> {
+    const token = localStorage.getItem("accessToken");
+    const response = await axios.get(`${API_URL}/health/admin/check-toggles`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return response.data;
+  },
+  async updateHealthCheckToggles(toggles: any): Promise<{ toggles: any; message: string }> {
+    const token = localStorage.getItem("accessToken");
+    const response = await axios.put(
+      `${API_URL}/health/admin/check-toggles`,
+      { toggles },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
     return response.data;
   },
   async getBasicStatus() {

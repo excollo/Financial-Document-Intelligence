@@ -31,6 +31,7 @@ async def require_internal_secret(
     Raises HTTPException 403 if the secret is missing or invalid.
     Raises HTTPException 503 if INTERNAL_SECRET is not configured.
     """
+    print(f"DEBUG: Auth middleware hit for path: {request.url.path}")
     expected = getattr(settings, "INTERNAL_SECRET", None)
     
     if not expected:

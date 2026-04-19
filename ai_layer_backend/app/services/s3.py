@@ -15,10 +15,10 @@ class AzureStorageService:
     """Service for downloading/uploading files to Azure Blob Storage."""
 
     def __init__(self):
-        self.connection_string = os.getenv("AZURE_BLOB_STORAGE_CONNECTION_STRING")
-        self.account_name = os.getenv("AZURE_BLOB_ACCOUNT_NAME")
-        self.account_key = os.getenv("AZURE_BLOB_ACCOUNT_KEY")
-        self.container_name = os.getenv("AZURE_BLOB_CONTAINER_NAME", "drhp-files")
+        self.connection_string = settings.AZURE_BLOB_STORAGE_CONNECTION_STRING
+        self.account_name = settings.AZURE_BLOB_ACCOUNT_NAME
+        self.account_key = settings.AZURE_BLOB_ACCOUNT_KEY
+        self.container_name = settings.AZURE_BLOB_CONTAINER_NAME
         
         if not self.connection_string:
             logger.error("AZURE_BLOB_STORAGE_CONNECTION_STRING is missing in AzureStorageService!")
@@ -79,6 +79,24 @@ class AzureStorageService:
     def get_public_url(self, key: str) -> str:
         """Construct the URL (without SAS token)."""
         return f"https://{self.account_name}.blob.core.windows.net/{self.container_name}/{key}"
+
+    async def delete_prefix(self, prefix: str) -> bool:
+        """Delete all blobs with a given prefix."""
+        try:
+            if not self.blob_service_client:
+                return False
+            
+            container_client = self.blob_service_client.get_container_client(self.container_name)
+            blobs = container_client.list_blobs(name_starts_with=prefix)
+            
+            for blob in blobs:
+                container_client.delete_blob(blob.name)
+            
+            logger.info(f"Deleted blobs with prefix: {prefix}")
+            return True
+        except Exception as e:
+            logger.error(f"Azure delete prefix failed prefix={prefix}", error=str(e))
+            return False
 
 
 # Global instance - Aliased to s3_service to maintain backward compatibility with imports

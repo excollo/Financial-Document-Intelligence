@@ -23,6 +23,18 @@ interface ViewReportModalProps {
   title?: string;
 }
 
+const buildDocxFileName = (
+  rawName: string | undefined,
+  fallback: string
+): string => {
+  const normalized = (rawName || fallback)
+    .trim()
+    .replace(/\.(pdf|docx)$/i, "")
+    .replace(/[\\/:*?"<>|]+/g, "_");
+
+  return `${normalized || fallback}.docx`;
+};
+
 // Utility to strip <style> tags from HTML
 function stripStyleTags(html: string): string {
   return html.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "");
@@ -101,7 +113,7 @@ export const ViewReportModal: React.FC<ViewReportModalProps> = ({ reportId, open
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `${title || "report"}.docx`;
+      link.download = buildDocxFileName(title, "report");
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);

@@ -39,7 +39,7 @@ class NewsMonitorCrawler:
     ]
     
     def __init__(self):
-        self.client_db = MongoClient(settings.MONGO_URI)
+        self.client_db = MongoClient(settings.MONGODB_URI)
         self.db = self.client_db[settings.MONGO_DB_NAME]
         self.domains_collection = self.db["domains"]
         self.articles_collection = self.db["newsarticles"]

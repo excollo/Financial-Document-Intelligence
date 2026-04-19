@@ -11,7 +11,8 @@
     "postinstall": "puppeteer install",
     "migrate:domain": "node scripts/migrateToDomainSeparation.js",
     "migrate:domain:ts": "ts-node scripts/migrateToDomainSeparation.ts",
-    "migrate:workspace": "ts-node scripts/migrateAddWorkspaceId.ts"
+    "migrate:workspace": "ts-node scripts/migrateAddWorkspaceId.ts",
+    "migrate:datasets": "ts-node scripts/migrateDatasetsToNewCluster.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.850.0",
@@ -42,6 +43,7 @@
     "html-pdf": "^3.0.1",
     "html-pdf-chrome": "^0.8.4",
     "html-to-docx": "^1.8.0",
+    "ioredis": "^5.10.1",
     "jsonwebtoken": "^9.0.2",
     "mammoth": "^1.9.1",
     "mongoose": "^7.6.3",

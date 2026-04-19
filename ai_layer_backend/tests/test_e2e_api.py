@@ -52,7 +52,6 @@ def test_full_job_lifecycle_mocked(client, monkeypatch):
 
     # 2. Check Job Status (Initial state will be PENDING because it's mocked/not processed)
     # Mock Celery AsyncResult to return a SUCCESS state
-    from celery.result import AsyncResult
     class MockResult:
         def __init__(self, id):
             self.id = id
@@ -62,7 +61,8 @@ def test_full_job_lifecycle_mocked(client, monkeypatch):
         def successful(self): return True
         def failed(self): return False
 
-    monkeypatch.setattr("celery.result.AsyncResult", lambda id, **k: MockResult(id))
+    from app.api import jobs as jobs_api
+    monkeypatch.setattr(jobs_api.celery_app, "AsyncResult", lambda id: MockResult(id))
 
     status_response = client.get(f"/jobs/{submitted_job_id}")
     assert status_response.status_code == 200

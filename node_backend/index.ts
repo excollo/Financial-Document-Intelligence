@@ -29,6 +29,7 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { testSmtpConnection } from "./services/emailService";
 import { HealthService } from "./services/healthService";
+import { checkPandocAvailable } from "./services/docxService";
 
 dotenv.config();
 
@@ -91,6 +92,8 @@ const io = new SocketIOServer(server, {
 
       if (allowedOrigins.indexOf(origin) !== -1) {
         callback(null, true);
+      } else if (origin.endsWith('.vercel.app') || origin.endsWith('.excollo.com')) {
+        callback(null, true);
       } else if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
         callback(null, true);
       } else {
@@ -121,6 +124,8 @@ app.use(
       if (!origin) return callback(null, true);
 
       if (allowedOrigins.indexOf(origin) !== -1) {
+        callback(null, true);
+      } else if (origin.endsWith('.vercel.app') || origin.endsWith('.excollo.com')) {
         callback(null, true);
       } else {
         // For development, allow any localhost origin
@@ -203,7 +208,7 @@ app.use(writeLimiter);
 // MongoDB Connection
 const MONGODB_URI = process.env.MONGODB_URI;
 if (!MONGODB_URI) {
-  throw new Error("MONGODB_URI is not set");
+  throw new Error("MONGODB_URI (or COSMOSDB_URI) is not set");
 }
 
 if (process.env.NODE_ENV !== 'test') {
@@ -294,6 +299,17 @@ process.on('SIGPIPE', () => {
 if (process.env.NODE_ENV !== 'test') {
   server.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
+    checkPandocAvailable()
+      .then((ok) => {
+        if (ok) {
+          console.log("✅ Pandoc detected. DOCX export will use Pandoc.");
+        } else {
+          console.warn("⚠️ Pandoc not found. DOCX export will use HTML fallback.");
+        }
+      })
+      .catch((err) => {
+        console.warn("⚠️ Pandoc startup check failed:", err?.message || err);
+      });
   });
 }
 
@@ -304,6 +320,11 @@ if (process.env.NODE_ENV !== 'test') {
 // ============================================================================
 async function recoverStaleDocuments() {
   try {
+    // If DB isn't connected, skip to avoid buffered timeouts.
+    if (mongoose.connection.readyState !== 1) {
+      console.warn("⚠️ [StaleWatcher] MongoDB not connected yet. Skipping this cycle.");
+      return;
+    }
     const { Document } = await import("./models/Document");
     const STALE_THRESHOLD_MS = 20 * 60 * 1000; // 20 minutes
     const cutoff = new Date(Date.now() - STALE_THRESHOLD_MS);
@@ -320,7 +341,7 @@ async function recoverStaleDocuments() {
     for (const doc of staleDocs) {
       try {
         // Try to query the Python API Celery job status for this document
-        const pythonApiUrl = process.env.PYTHON_API_URL || "http://localhost:8001";
+        const pythonApiUrl = process.env.PYTHON_API_URL || "http://localhost:8000";
         const axios = (await import("axios")).default;
 
         let resolved = false;

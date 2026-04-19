@@ -14,4 +14,28 @@ router.get(
     healthController.getSystemHealth
 );
 
+router.get(
+    "/admin/alert-recipients",
+    authMiddleware,
+    healthController.getAlertRecipients
+);
+
+router.put(
+    "/admin/alert-recipients",
+    authMiddleware,
+    healthController.updateAlertRecipients
+);
+
+router.get(
+    "/admin/check-toggles",
+    authMiddleware,
+    healthController.getHealthCheckToggles
+);
+
+router.put(
+    "/admin/check-toggles",
+    authMiddleware,
+    healthController.updateHealthCheckToggles
+);
+
 export default router;

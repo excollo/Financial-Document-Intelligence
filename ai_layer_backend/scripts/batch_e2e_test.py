@@ -7,7 +7,7 @@ import asyncio
 from typing import List, Dict, Any
 
 # Configurations
-API_BASE_URL = os.getenv("AI_PLATFORM_URL", "http://localhost:8001")
+API_BASE_URL = os.getenv("AI_PLATFORM_URL", "http://localhost:8000")
 INTERNAL_SECRET = os.getenv("INTERNAL_SECRET", "4f8a12e3b9c7d4a5f6b8c9d0a1e2f3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0")
 NUM_CONCURRENT_JOBS = 5
 TIMEOUT = 300  # Max seconds to wait for all jobs

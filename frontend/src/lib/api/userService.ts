@@ -1,4 +1,5 @@
-import axios from "axios";
+import axios from "@/services/api";
+import { getCurrentWorkspace } from "@/services/workspaceContext";
 
 const API_URL = import.meta.env.VITE_API_URL;
 console.log("API_URL in userService:", API_URL);
@@ -58,6 +59,15 @@ export interface UsersResponse {
 }
 
 export const userService = {
+  getAuthHeaders() {
+    const token = localStorage.getItem("accessToken");
+    const currentWorkspace = getCurrentWorkspace();
+    return {
+      Authorization: `Bearer ${token}`,
+      ...(currentWorkspace && { "x-workspace": currentWorkspace }),
+    };
+  },
+
   // Admin: Get all users with pagination, search, and filters
   async getAllUsers(params: {
     page?: number;
@@ -73,60 +83,73 @@ export const userService = {
     if (params.role) queryParams.append("role", params.role);
     if (params.status) queryParams.append("status", params.status);
 
-    const response = await axios.get(
-      `${API_URL}/users?${queryParams.toString()}`
-    );
+    const response = await axios.get(`${API_URL}/users?${queryParams.toString()}`, {
+      headers: this.getAuthHeaders(),
+    });
     return response.data;
   },
 
   // Admin: Get user statistics
   async getUserStats(): Promise<UserStats> {
-    const response = await axios.get(`${API_URL}/users/stats`);
+    const response = await axios.get(`${API_URL}/users/stats`, {
+      headers: this.getAuthHeaders(),
+    });
     return response.data;
   },
 
   // Admin: Get single user by ID
   async getUserById(userId: string): Promise<User> {
-    const response = await axios.get(`${API_URL}/users/${userId}`);
+    const response = await axios.get(`${API_URL}/users/${userId}`, {
+      headers: this.getAuthHeaders(),
+    });
     return response.data;
   },
 
   // Admin: Create new user
   async createUser(userData: CreateUserRequest): Promise<User> {
-    const response = await axios.post(`${API_URL}/users`, userData);
+    const response = await axios.post(`${API_URL}/users`, userData, {
+      headers: this.getAuthHeaders(),
+    });
     return response.data;
   },
 
   // Admin: Update user
   async updateUser(userId: string, userData: UpdateUserRequest): Promise<User> {
-    const response = await axios.put(`${API_URL}/users/${userId}`, userData);
+    const response = await axios.put(`${API_URL}/users/${userId}`, userData, {
+      headers: this.getAuthHeaders(),
+    });
     return response.data;
   },
 
   // Admin: Delete user (soft delete - sets status to suspended)
   async deleteUser(userId: string): Promise<{ message: string }> {
-    const response = await axios.delete(`${API_URL}/users/${userId}`);
+    const response = await axios.delete(`${API_URL}/users/${userId}`, {
+      headers: this.getAuthHeaders(),
+    });
     return response.data;
   },
 
   // Admin: Activate/Reactivate user
   async activateUser(userId: string): Promise<{ message: string; user: User }> {
-    const response = await axios.patch(`${API_URL}/users/${userId}/activate`);
+    const response = await axios.patch(`${API_URL}/users/${userId}/activate`, undefined, {
+      headers: this.getAuthHeaders(),
+    });
     return response.data;
   },
 
   // User: Get own profile
   async getMyProfile(): Promise<User> {
-    const response = await axios.get(`${API_URL}/users/me/profile`);
+    const response = await axios.get(`${API_URL}/users/me/profile`, {
+      headers: this.getAuthHeaders(),
+    });
     return response.data;
   },
 
   // User: Update own profile
   async updateMyProfile(profileData: UpdateProfileRequest): Promise<User> {
-    const response = await axios.put(
-      `${API_URL}/users/me/profile`,
-      profileData
-    );
+    const response = await axios.put(`${API_URL}/users/me/profile`, profileData, {
+      headers: this.getAuthHeaders(),
+    });
     return response.data;
   },
 
@@ -134,36 +157,32 @@ export const userService = {
   async changeMyPassword(
     passwordData: ChangePasswordRequest
   ): Promise<{ message: string }> {
-    const response = await axios.put(
-      `${API_URL}/users/me/password`,
-      passwordData
-    );
+    const response = await axios.put(`${API_URL}/users/me/password`, passwordData, {
+      headers: this.getAuthHeaders(),
+    });
     return response.data;
   },
 
   async verifyPasswordChangeOtp(otp: string): Promise<{ message: string }> {
-    const response = await axios.post(
-      `${API_URL}/users/me/password/otp-verify`,
-      { otp }
-    );
+    const response = await axios.post(`${API_URL}/users/me/password/otp-verify`, { otp }, {
+      headers: this.getAuthHeaders(),
+    });
     return response.data;
   },
 
   // User: Initiate OTP for profile update
   async initiateProfileUpdateOtp(pendingUpdate: UpdateProfileRequest): Promise<{ message: string }> {
-    const response = await axios.post(
-      `${API_URL}/users/me/profile/otp-initiate`,
-      { pendingUpdate }
-    );
+    const response = await axios.post(`${API_URL}/users/me/profile/otp-initiate`, { pendingUpdate }, {
+      headers: this.getAuthHeaders(),
+    });
     return response.data;
   },
 
   // User: Verify OTP and apply update
   async verifyProfileUpdateOtp(otp: string): Promise<{ message: string; user: User }> {
-    const response = await axios.post(
-      `${API_URL}/users/me/profile/otp-verify`,
-      { otp }
-    );
+    const response = await axios.post(`${API_URL}/users/me/profile/otp-verify`, { otp }, {
+      headers: this.getAuthHeaders(),
+    });
     return response.data;
   },
 };

@@ -124,6 +124,18 @@ interface DashboardStats {
   totalDirectories: number;
 }
 
+const buildDocxFileName = (
+  rawName: string | undefined,
+  fallback: string
+): string => {
+  const normalized = (rawName || fallback)
+    .trim()
+    .replace(/\.(pdf|docx)$/i, "")
+    .replace(/[\\/:*?"<>|]+/g, "_");
+
+  return `${normalized || fallback}.docx`;
+};
+
 export default function AdminDashboardPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -608,10 +620,21 @@ export default function AdminDashboardPage() {
     let loadingToast;
     try {
       loadingToast = toast.loading("Download processing...");
-      // For now, just log - implement actual download logic
-      console.log("Downloading document:", doc._id);
+      const blob = await documentService.download(doc.id || doc._id);
+      if (!blob || blob.size === 0) {
+        throw new Error("Empty file received from server");
+      }
+
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = doc.name || "document.pdf";
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
       toast.dismiss(loadingToast);
-      toast.success("Document download initiated");
+      toast.success("Document downloaded successfully");
     } catch (error) {
       toast.dismiss(loadingToast);
       toast.error("Error downloading document: " + (error as any).message);
@@ -764,7 +787,7 @@ export default function AdminDashboardPage() {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${summary.title || "summary"}.docx`;
+      a.download = buildDocxFileName(summary.title, "summary");
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -916,7 +939,7 @@ export default function AdminDashboardPage() {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${report.drhpNamespace || "report"}.docx`;
+      a.download = buildDocxFileName(report.drhpNamespace, "report");
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -1026,13 +1049,13 @@ export default function AdminDashboardPage() {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 py-8">
+      <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 md:py-8">
         {activeMainTab === "overview" ? (
           <>
             {/* Top Section - Responsive Grid: Key Metrics + Reports Chart + Management Lists */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start ">
+            <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 items-start">
               {/* Left Column- Total Chats Chart */}
-              <div className="lg:col-span-2 my-4  border-t border-gray-100 bg-white flex flex-col shadow-sm rounded-lg items-center p-6 self-start">
+              <div className="xl:col-span-2 my-2 md:my-4 border-t border-gray-100 bg-white flex flex-col shadow-sm rounded-lg items-center p-4 md:p-6 self-start">
                 <div className="text-lg  font-bold text-[#4B2A06] my-5">
                   Total Chats
                 </div>
@@ -1067,7 +1090,7 @@ export default function AdminDashboardPage() {
                 </div>
               </div>
               {/*  Middle Column - Key Metrics */}
-              <div className="lg:col-span-3 mt-4 ">
+              <div className="xl:col-span-3 mt-2 md:mt-4">
                 <div className="grid grid-cols-2 gap-3">
                   <div className="shadow-sm  bg-white rounded-lg">
                     <CardHeader className="flex flex-row items-center space-y-0 pb-2">
@@ -1146,7 +1169,7 @@ export default function AdminDashboardPage() {
 
 
               {/* Right Columns - Management Lists */}
-              <div className="lg:col-span-7 grid grid-cols-1 xl:grid-cols-2  border-l border-gray-200 pl-2">
+              <div className="xl:col-span-7 xl:border-l border-gray-200 xl:pl-2">
                 {/* Document Management */}
                 <div className="p-4">
                   <h2 className="text-xl font-bold text-[#4B2A06] mb-3">
@@ -1155,7 +1178,7 @@ export default function AdminDashboardPage() {
                   <div className="text-sm font-medium text-gray-600 mb-3">
                     All Documents ({documents.length})
                   </div>
-                  <div className="h-[25vh] overflow-y-auto  scrollbar-hide ">
+                  <div className="max-h-[40vh] xl:max-h-[25vh] overflow-y-auto scrollbar-hide">
                     {documentsLoading ? (
                       <div className="text-center py-4 text-gray-600">
                         Loading documents...
@@ -1232,115 +1255,6 @@ export default function AdminDashboardPage() {
                         </div>
                       ))
                     )}
-                  </div>
-                </div>
-                {/* Summary Management */}
-                <div className="p-4">
-                  <div>
-                    <h2 className="text-xl font-bold text-[#4B2A06] mb-3">
-                      Summary Management
-                    </h2>
-                    <div className="text-sm font-medium text-gray-600 mb-3">
-                      All Summaries ({summaries.length})
-                    </div>
-                    <div className="h-[25vh] overflow-y-auto  overflow-x-none  pr-2 scrollbar-hide">
-                      {summariesLoading ? (
-                        <div className="text-center py-4 text-gray-600">
-                          Loading summaries...
-                        </div>
-                      ) : summaries.length === 0 ? (
-                        <div className="text-center py-4 text-gray-600">
-                          No summaries found
-                        </div>
-                      ) : (
-                        summaries.map((summary, index) => (
-                          <div
-                            key={summary.id}
-                            className={`flex items-center justify-between p-2 rounded-lg bg-white hover:bg-[rgba(62, 36, 7, 0.13)] border-b border-gray-200 ${index === 0
-                              ? "bg-[rgba(62, 36, 7, 0.13)] border-amber-200"
-                              : ""
-                              }`}
-                          >
-                            <div className="flex items-center gap-3 min-w-0">
-                              <FileText className="h-4 w-4 text-gray-600" />
-                              <div className="min-w-0">
-                                <div
-                                  className="font-medium text-[#4B2A06] flex items-center gap-2 text-sm truncate"
-                                  title={(summary.title || `Summary ${index + 1}`) as string}
-                                  style={{ maxWidth: '200px' }}
-                                >
-                                  {(summary.title || `Summary ${index + 1}`).length > 25
-                                    ? `${(summary.title || `Summary ${index + 1}`).substring(0, 25)}...`
-                                    : (summary.title || `Summary ${index + 1}`)
-                                  }
-                                </div>
-                                <div className="text-xs text-gray-500">
-                                  Created:{" "}
-                                  {formatDate(summary.updatedAt)}
-                                </div>
-                                <div className="text-xs text-[#4B2A06] font-bold">
-                                  Workspace: {summary.workspaceId?.name || 'Unknown'}
-                                </div>
-                                {index === 0 && (
-                                  <div className="text-xs text-gray-500 font-medium">
-                                    Latest Summary
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2 flex-shrink-0">
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <button
-                                    className="p-1 hover:bg-gray-100 rounded transition-colors"
-                                    title="More actions"
-                                  >
-                                    <MoreVertical className="h-4 w-4 text-gray-600" />
-                                  </button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end" className="bg-white w-56 border border-gray-200">
-                                  <DropdownMenuItem
-                                    onClick={() => handlePrintSummary(summary)}
-                                    className="flex items-center gap-2 cursor-pointer hover:bg-white data-[highlighted]:bg-gray-50"
-                                  >
-                                    <Printer className="h-4 w-4" />
-                                    <span>Print (Save as PDF)</span>
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    onClick={() => setViewSummaryId(summary.id)}
-                                    className="flex items-center gap-2 cursor-pointer hover:bg-white data-[highlighted]:bg-gray-50"
-                                  >
-                                    <Eye className="h-4 w-4" />
-                                    <span>View</span>
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    onClick={() => handleDownloadSummaryDocx(summary)}
-                                    className="flex items-center gap-2 cursor-pointer hover:bg-white data-[highlighted]:bg-gray-50"
-                                  >
-                                    <FileText className="h-4 w-4" />
-                                    <span>Download DOCX</span>
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    onClick={() => navigate(`/doc/${summary.documentId}`)}
-                                    className="flex items-center gap-2 cursor-pointer hover:bg-white data-[highlighted]:bg-gray-50"
-                                  >
-                                    <Eye className="h-4 w-4" />
-                                    <span>View Document</span>
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    onClick={() => handleDeleteSummary(summary)}
-                                    className="flex items-center gap-2 cursor-pointer hover:bg-white data-[highlighted]:bg-gray-50 text-red-600 focus:text-red-600"
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                    <span>Delete</span>
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
                   </div>
                 </div>
               </div>
@@ -1510,6 +1424,116 @@ export default function AdminDashboardPage() {
               })()}
             </div>
 
+            {/* Summary Management Section - Full Width */}
+            <div className="mt-8 border-t border-gray-200 pt-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6">
+                <h2 className="text-2xl font-bold text-[#4B2A06] mb-2 sm:mb-0">
+                  Summary Management
+                </h2>
+                <div className="text-md font-bold text-[#4B2A06]">
+                  Total Summaries : {summaries.length}
+                </div>
+              </div>
+              <div className="max-h-[40vh] overflow-y-auto overflow-x-none pr-2 scrollbar-hide">
+                {summariesLoading ? (
+                  <div className="text-center py-4 text-gray-600">
+                    Loading summaries...
+                  </div>
+                ) : summaries.length === 0 ? (
+                  <div className="text-center py-4 text-gray-600">
+                    No summaries found
+                  </div>
+                ) : (
+                  summaries.map((summary, index) => (
+                    <div
+                      key={summary.id}
+                      className={`flex items-center justify-between p-2 rounded-lg bg-white hover:bg-[rgba(62, 36, 7, 0.13)] border-b border-gray-200 ${index === 0
+                        ? "bg-[rgba(62, 36, 7, 0.13)] border-amber-200"
+                        : ""
+                        }`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <FileText className="h-4 w-4 text-gray-600" />
+                        <div className="min-w-0">
+                          <div
+                            className="font-medium text-[#4B2A06] flex items-center gap-2 text-sm truncate"
+                            title={(summary.title || `Summary ${index + 1}`) as string}
+                            style={{ maxWidth: '260px' }}
+                          >
+                            {(summary.title || `Summary ${index + 1}`).length > 35
+                              ? `${(summary.title || `Summary ${index + 1}`).substring(0, 35)}...`
+                              : (summary.title || `Summary ${index + 1}`)
+                            }
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            Created:{" "}
+                            {formatDate(summary.updatedAt)}
+                          </div>
+                          <div className="text-xs text-[#4B2A06] font-bold">
+                            Workspace: {summary.workspaceId?.name || 'Unknown'}
+                          </div>
+                          {index === 0 && (
+                            <div className="text-xs text-gray-500 font-medium">
+                              Latest Summary
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              className="p-1 hover:bg-gray-100 rounded transition-colors"
+                              title="More actions"
+                            >
+                              <MoreVertical className="h-4 w-4 text-gray-600" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="bg-white w-56 border border-gray-200">
+                            <DropdownMenuItem
+                              onClick={() => handlePrintSummary(summary)}
+                              className="flex items-center gap-2 cursor-pointer hover:bg-white data-[highlighted]:bg-gray-50"
+                            >
+                              <Printer className="h-4 w-4" />
+                              <span>Print (Save as PDF)</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => setViewSummaryId(summary.id)}
+                              className="flex items-center gap-2 cursor-pointer hover:bg-white data-[highlighted]:bg-gray-50"
+                            >
+                              <Eye className="h-4 w-4" />
+                              <span>View</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleDownloadSummaryDocx(summary)}
+                              className="flex items-center gap-2 cursor-pointer hover:bg-white data-[highlighted]:bg-gray-50"
+                            >
+                              <FileText className="h-4 w-4" />
+                              <span>Download DOCX</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => navigate(`/doc/${summary.documentId}`)}
+                              className="flex items-center gap-2 cursor-pointer hover:bg-white data-[highlighted]:bg-gray-50"
+                            >
+                              <Eye className="h-4 w-4" />
+                              <span>View Document</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleDeleteSummary(summary)}
+                              className="flex items-center gap-2 cursor-pointer hover:bg-white data-[highlighted]:bg-gray-50 text-red-600 focus:text-red-600"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              <span>Delete</span>
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
             <ShareDialog
               resourceType="directory"
               resourceId={shareDirId}
@@ -1675,9 +1699,9 @@ export default function AdminDashboardPage() {
 
             {/* Chat Management Section */}
             <div className="w-full mx-auto mt-8 border-t border-gray-200 pt-6">
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
                 {/* Left Column - Chat Statistics */}
-                <div className="lg:col-span-4 border-r border-gray-200 pr-6">
+                <div className="xl:col-span-4 xl:border-r border-gray-200 xl:pr-6">
                   <h2 className="text-2xl font-bold text-[#4B2A06] ">
                     Chat Management
                   </h2>
@@ -1757,7 +1781,7 @@ export default function AdminDashboardPage() {
                 </div>
 
                 {/* Right Column - Recent Chat Sessions */}
-                <div className="lg:col-span-8">
+                <div className="xl:col-span-8">
                   <h3 className="text-2xl font-bold text-[#4B2A06] mb-5">
                     Recent Chat Sessions
                   </h3>

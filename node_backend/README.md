@@ -63,7 +63,7 @@ To protect the infrastructure, communication between the Node.js and Python plat
 ## Data Models
 
 - **User**: Microsoft or email/password, with refresh tokens
-- **Document**: PDF file (stored in Cloudflare R2), metadata, user association
+- **Document**: PDF file (stored in Azure Blob Storage), metadata, user association
 - **Summary**: AI-generated summary, linked to document and user
 - **Chat**: Conversation history, linked to document and user
 
@@ -71,11 +71,11 @@ To protect the infrastructure, communication between the Node.js and Python plat
 
 - Node.js, Express, TypeScript
 - MongoDB
-- Cloudflare R2 (S3-compatible object storage) for file storage
+- Azure Blob Storage for file storage
 - Passport.js (Microsoft OAuth)
 - JWT authentication
 - Multer (file uploads, via multer-s3)
-- AWS SDK v3 for S3
+- Azure SDK for JS (@azure/storage-blob)
 - Axios, FormData
 
 ## Setup
@@ -98,11 +98,11 @@ CLIENT_SECRET=your_microsoft_client_secret
 REDIRECT_URI=https://smart-rhtp-backend-2.onrender.com/api/auth/callback
 FRONTEND_URL=https://financial-document-intelligence.vercel.app/
 
-# Cloudflare R2 (S3-compatible) configuration
-R2_ACCESS_KEY_ID=your_r2_access_key_id
-R2_SECRET_ACCESS_KEY=your_r2_secret_access_key
-R2_BUCKET_NAME=your_r2_bucket_name
-CLOUDFLARE_URI=https://<accountid>.<region>.r2.cloudflarestorage.com
+# Azure Blob Storage configuration
+AZURE_BLOB_ACCOUNT_NAME=your_account_name
+AZURE_BLOB_ACCOUNT_KEY=your_account_key
+AZURE_BLOB_STORAGE_CONNECTION_STRING=your_connection_string
+AZURE_BLOB_CONTAINER_NAME=drhp-files
 ```
 
 ## Password Reset

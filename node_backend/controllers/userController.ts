@@ -46,7 +46,9 @@ export const userController = {
         .select(
           "-password -refreshTokens -resetPasswordToken -resetPasswordExpires"
         )
-        .sort({ createdAt: -1 })
+        // Cosmos DB may exclude createdAt from ORDER BY index policy.
+        // _id is always indexed and preserves newest-first semantics for ObjectIds.
+        .sort({ _id: -1 })
         .skip(skip)
         .limit(Number(limit));
 

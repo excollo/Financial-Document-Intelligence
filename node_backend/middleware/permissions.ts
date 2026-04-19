@@ -26,6 +26,14 @@ async function getUserRoleForDirectory(req: any, directoryId: string | null): Pr
   const domain = req.userDomain;
   const dir = await Directory.findOne({ id: directoryId, domain });
   if (!dir) return "none";
+
+  // All members of the current workspace can edit directories in that workspace.
+  // This matches the existing workspace-level behavior already used for documents.
+  const currentWorkspace = req.currentWorkspace || domain;
+  if (dir.workspaceId === currentWorkspace && dir.domain === domain) {
+    return "editor";
+  }
+
   if (dir.ownerUserId && req.user?._id && dir.ownerUserId === req.user._id.toString()) {
     return "owner";
   }
@@ -44,7 +52,7 @@ async function getUserRoleForDirectory(req: any, directoryId: string | null): Pr
   }
 
   // Workspace share by domain or currentWorkspace
-  const workspaceKey = req.currentWorkspace || domain;
+  const workspaceKey = currentWorkspace;
   const wsShare = await SharePermission.findOne({ domain, resourceType: "directory", resourceId: directoryId, scope: "workspace", principalId: workspaceKey });
   if (wsShare) return wsShare.role as Role;
 

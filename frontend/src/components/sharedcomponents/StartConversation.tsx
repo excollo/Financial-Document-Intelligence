@@ -293,7 +293,7 @@ export const StartConversation: React.FC = () => {
                     const rhp = (docs || []).find((d: any) => d.id === doc.relatedRhpId);
                     if (rhp) {
                       return (
-                        (report.drhpNamespace === doc.namespace && report.rhpNamespace === rhp.rhpNamespace) ||
+                        (report.drhpNamespace === doc.namespace && report.rhpNamespace === rhp.namespace) ||
                         (report.drhpId === doc.id && report.rhpId === rhp.id)
                       );
                     }
@@ -380,7 +380,7 @@ export const StartConversation: React.FC = () => {
                   const rhp = (docs || []).find((d: any) => d.id === doc.relatedRhpId);
                   if (rhp) {
                     return (
-                      (report.drhpNamespace === doc.namespace && report.rhpNamespace === rhp.rhpNamespace) ||
+                      (report.drhpNamespace === doc.namespace && report.rhpNamespace === rhp.namespace) ||
                       (report.drhpId === doc.id && report.rhpId === rhp.id)
                     );
                   }
@@ -584,7 +584,7 @@ export const StartConversation: React.FC = () => {
             linkedPairs.forEach(({ drhp, rhp }) => {
               const reportsForPair = allReports.filter(
                 (r: any) =>
-                  (r.drhpNamespace === drhp.namespace && r.rhpNamespace === rhp.rhpNamespace) ||
+                  (r.drhpNamespace === drhp.namespace && r.rhpNamespace === rhp.namespace) ||
                   (r.drhpId === drhp.id && r.rhpId === rhp.id)
               );
               reportCount += reportsForPair.length;
@@ -885,7 +885,7 @@ export const StartConversation: React.FC = () => {
             const rhp = (dirDocuments || []).find((d: any) => d.id === doc.relatedRhpId);
             if (rhp) {
               return (
-                (report.drhpNamespace === doc.namespace && report.rhpNamespace === rhp.rhpNamespace) ||
+                (report.drhpNamespace === doc.namespace && report.rhpNamespace === rhp.namespace) ||
                 (report.drhpId === doc.id && report.rhpId === rhp.id)
               );
             }
@@ -997,7 +997,7 @@ export const StartConversation: React.FC = () => {
                 const rhp = (docs || []).find((d: any) => d.id === doc.relatedRhpId);
                 if (rhp) {
                   return (
-                    (report.drhpNamespace === doc.namespace && report.rhpNamespace === rhp.rhpNamespace) ||
+                    (report.drhpNamespace === doc.namespace && report.rhpNamespace === rhp.namespace) ||
                     (report.drhpId === doc.id && report.rhpId === rhp.id)
                   );
                 }
@@ -1312,7 +1312,7 @@ export const StartConversation: React.FC = () => {
               directoryId: document.directoryId,
               drhpId,
               rhpId,
-              title: `${document.name.split('.')[0]} Intelligence Report`
+              title: `${(document?.name || 'Document').split('.')[0]} Intelligence Report`
             });
 
             // Refresh jobs for this directory if we are inside it
@@ -1381,7 +1381,7 @@ export const StartConversation: React.FC = () => {
         directoryId: selectedDoc.directoryId || targetDoc.directoryId,
         drhpId,
         rhpId,
-        title: `${selectedDoc.name.split('.')[0]} Intelligence Report`
+        title: `${(selectedDoc?.name || 'Document').split('.')[0]} Intelligence Report`
       });
 
       // Close modal

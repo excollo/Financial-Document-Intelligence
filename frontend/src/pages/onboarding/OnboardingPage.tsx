@@ -223,7 +223,7 @@ const OnboardingPage = () => {
                 )}
 
                 {/* Page Header */}
-                <div className="mb-8 flex items-center justify-between">
+                <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                     <div className="w-full">
                         <h1 className="text-2xl font-bold text-[#4B2A06]">
                             {isReOnboarding ? "Update SOP & Re-Configure" : "Welcome to Smart DRHP Platform"}
@@ -240,7 +240,7 @@ const OnboardingPage = () => {
                         <button
                             type="button"
                             onClick={() => navigate('/dashboard')}
-                            className="w-50 justify-end text-center text-sm text-[#4B2A06] hover:text-[#4B2A06] transition-colors py-2 border border-[#4B2A06] rounded-md"
+                            className="w-full lg:w-auto text-center text-sm text-[#4B2A06] hover:text-[#4B2A06] transition-colors py-2 px-4 border border-[#4B2A06] rounded-md"
                         >
                             Skip for now — use default configuration
                         </button>

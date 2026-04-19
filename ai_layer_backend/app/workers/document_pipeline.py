@@ -33,14 +33,21 @@ def process_document(
     import asyncio
     
     logger.info("Celery: Starting document ingestion task", job_id=job_id)
+    metadata = metadata or {}
     
     try:
         # Run the async pipeline service in the sync Celery worker
+        current_retry = int(getattr(self.request, "retries", 0))
+        pipeline_metadata = {
+            **metadata,
+            "_celery_current_retry": current_retry,
+            "_celery_max_retries": int(self.max_retries),
+        }
         result = asyncio.run(ingestion_pipeline.process(
             file_url=file_url,
             file_type=file_type,
             job_id=job_id,
-            metadata=metadata
+            metadata=pipeline_metadata
         ))
         
         logger.info("Celery: Document ingestion task successful", job_id=job_id)
@@ -48,13 +55,23 @@ def process_document(
     
     except Exception as e:
         logger.error("Celery: Document ingestion task FAILED", job_id=job_id, error=str(e))
-        # Ensure backend is notified of failure if not already handled in service
-        backend_notifier.notify_status(
-            job_id=job_id,
-            status="failed",
-            namespace=metadata.get("filename", "document.pdf") if metadata else "document.pdf",
-            error={"message": str(e), "stack": traceback.format_exc()}
-        )
+        # Avoid premature "failed" status on transient retries.
+        # Autoretry will rerun the task until max_retries is reached.
+        current_retry = int(getattr(self.request, "retries", 0))
+        if current_retry >= int(self.max_retries):
+            backend_notifier.notify_status(
+                job_id=job_id,
+                status="failed",
+                namespace=metadata.get("filename", "document.pdf") if metadata else "document.pdf",
+                error={"message": str(e), "stack": traceback.format_exc()}
+            )
+        else:
+            logger.warning(
+                "Task failed but will retry; skipping terminal failed callback",
+                job_id=job_id,
+                current_retry=current_retry,
+                max_retries=self.max_retries,
+            )
         raise
 
 

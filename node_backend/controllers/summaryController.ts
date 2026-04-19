@@ -2,15 +2,11 @@ import { Request, Response } from "express";
 import { Summary } from "../models/Summary";
 import { User } from "../models/User";
 import axios from "axios";
-import { writeFile, unlink } from "fs/promises";
-import { exec } from "child_process";
-import { promisify } from "util";
+import { writeFile } from "fs/promises";
 import path from "path";
-import os from "os";
 import { io } from "../index";
 import { publishEvent } from "../lib/events";
-
-const execAsync = promisify(exec);
+import { generateDocxBuffer } from "../services/docxService";
 
 interface AuthRequest extends Request {
   user?: any;
@@ -39,7 +35,7 @@ export const summaryController = {
         domainId = user?.domainId;
       }
 
-      console.log(`Triggering Python Summary for: ${namespace} (${docType})`);
+      console.log(`Triggering Python Summary for: ${namespace} (${docType}) at ${pythonApiUrl}/jobs/summary`);
 
       const payload = {
         namespace,
@@ -54,9 +50,13 @@ export const summaryController = {
         }
       };
 
+      console.log(`[DEBUG] About to call Python API: ${pythonApiUrl}/jobs/summary`);
+      console.log(`[DEBUG] Internal Secret Present: ${!!process.env.INTERNAL_SECRET}`);
+      
       const pythonResponse = await axios.post(`${pythonApiUrl}/jobs/summary`, payload, {
         headers: {
-          "X-Internal-Secret": INTERNAL_SECRET
+          "X-Internal-Secret": process.env.INTERNAL_SECRET,
+          "Content-Type": "application/json"
         },
         timeout: 30000
       });
@@ -183,55 +183,18 @@ export const summaryController = {
             }
           }
 
-          // Combine with user's own summaries or all summaries for admins
-          if (req.user && req.user.role !== "admin") {
-            // Regular users: show their own summaries + summaries for shared documents
-            if (sharedDocumentIds.length > 0) {
-              // Remove domain/workspaceId from base query since we're using $or
-              delete query.domain;
-              delete query.workspaceId;
-              query.$or = [
-                {
-                  userId: req.user._id.toString(),
-                  domain: domain,
-                  workspaceId: currentWorkspace,
-                },
-                { documentId: { $in: sharedDocumentIds } },
-              ];
-              if (req.user.microsoftId) {
-                query.$or.push({
-                  microsoftId: req.user.microsoftId,
-                  domain: domain,
-                  workspaceId: currentWorkspace,
-                });
-              }
-            } else {
-              // No shared documents, show only user's own summaries
-              if (req.user.microsoftId) {
-                query.microsoftId = req.user.microsoftId;
-              } else if (req.user._id) {
-                query.userId = req.user._id.toString();
-              }
-            }
-          } else {
-            // Admins: show all summaries in domain + summaries for shared documents
-            if (sharedDocumentIds.length > 0) {
-              // Remove domain/workspaceId from base query since we're using $or
-              delete query.domain;
-              delete query.workspaceId;
-              query.$or = [
-                { domain: domain, workspaceId: currentWorkspace },
-                { documentId: { $in: sharedDocumentIds } },
-              ];
-            }
-            // Otherwise, query already has domain and workspaceId, so it will show all
-          }
-        } else if (req.user && req.user.role !== "admin") {
-          // No shared directories, show only user's own summaries
-          if (req.user.microsoftId) {
-            query.microsoftId = req.user.microsoftId;
-          } else if (req.user._id) {
-            query.userId = req.user._id.toString();
+          // Non-user-specific summaries:
+          // 1) Always include all summaries within the current domain/workspace.
+          // 2) If the user has access to shared documents, also include summaries
+          //    whose `documentId` belongs to those shared documents.
+          if (sharedDocumentIds.length > 0) {
+            // Remove domain/workspaceId from base query since we're using $or
+            delete query.domain;
+            delete query.workspaceId;
+            query.$or = [
+              { domain: domain, workspaceId: currentWorkspace },
+              { documentId: { $in: sharedDocumentIds } },
+            ];
           }
         }
       }
@@ -414,9 +377,6 @@ export const summaryController = {
       try { await writeFile(path.join(process.cwd(), "debug_error.log"), `Found summary: ${summary.id} (Type: ${typeof summary.id})\n`, { flag: "a" }); } catch { }
 
 
-      const tmpDir = os.tmpdir();
-      const docxPath = path.join(tmpDir, `summary_${id}.docx`);
-
       // Clean content: Replace literal \n with real newlines, remove \r, \t, etc.
       // This matches the frontend 'cleanSummaryContent' logic
       const cleanContent = (summary.content || "")
@@ -434,29 +394,16 @@ export const summaryController = {
       }
 
 
-      let inputPath: string;
-      let pandocCommand: string;
+      const normalizedTitle = (summary.title || "summary")
+        .replace(/\.pdf$/i, "")
+        .replace(/\.docx$/i, "")
+        .replace(/[^a-z0-9._-]/gi, "_");
 
-      if (format === "markdown") {
-
-        inputPath = path.join(tmpDir, `summary_${id}.md`);
-        await writeFile(inputPath, cleanContent, "utf8");
-        pandocCommand = `pandoc "${inputPath}" -f markdown -t docx -o "${docxPath}"`;
-      } else {
-        inputPath = path.join(tmpDir, `summary_${id}.html`);
-        await writeFile(inputPath, cleanContent, "utf8");
-        pandocCommand = `pandoc "${inputPath}" -f html -t docx -o "${docxPath}"`;
-      }
-
-
-      // Log paths
-      try { await writeFile(path.join(process.cwd(), "debug_error.log"), `Paths: Input=${inputPath}, Output=${docxPath}, Cmd=${pandocCommand}\n`, { flag: "a" }); } catch { }
-
-      // Convert to DOCX using Pandoc
-      const { stdout, stderr } = await execAsync(pandocCommand);
-
-      // Log success
-      try { await writeFile(path.join(process.cwd(), "debug_error.log"), `Pandoc Success. Stdout: ${stdout}, Stderr: ${stderr}\n`, { flag: "a" }); } catch { }
+      const { buffer: docxBuffer, engine } = await generateDocxBuffer(
+        cleanContent,
+        format === "markdown" ? "markdown" : "html"
+      );
+      console.log(`DOCX generated with engine: ${engine}`);
 
       // Send DOCX file
       res.setHeader(
@@ -465,26 +412,12 @@ export const summaryController = {
       );
       res.setHeader(
         "Content-Disposition",
-        `attachment; filename="${(summary.title || "summary").replace(/[^a-z0-9]/gi, "_")}.docx"`
+        `attachment; filename="${normalizedTitle}.docx"`
       );
-      res.sendFile(docxPath, async (err) => {
-        // Clean up temp files
-        if (err) {
-          console.error("Error sending file:", err);
-          try { await writeFile(path.join(process.cwd(), "debug_error.log"), `Error sending file: ${err.message}\n`, { flag: "a" }); } catch { }
-        } else {
-          try { await writeFile(path.join(process.cwd(), "debug_error.log"), `File sent successfully.\n`, { flag: "a" }); } catch { }
-        }
-        try {
-          await unlink(inputPath);
-          await unlink(docxPath);
-        } catch (cleanupError) {
-          console.error("Error cleaning up temp files:", cleanupError);
-        }
-      });
+      res.send(docxBuffer);
 
     } catch (error: any) {
-      console.error("Error generating DOCX with Pandoc:", error);
+      console.error("Error generating DOCX:", error);
       // Debug logging
       try {
         await writeFile(path.join(process.cwd(), "debug_error.log"), `Error: ${JSON.stringify(error, Object.getOwnPropertyNames(error))}\nStack: ${error.stack}\n`, { flag: "a" });

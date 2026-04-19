@@ -15,6 +15,7 @@ Post-processing (all n8n-mapped):
   Date metadata wrapper
 """
 import asyncio
+import os
 import re
 import time
 from typing import Dict, Any, List, Optional
@@ -44,6 +45,14 @@ import openai
 import json
 
 logger = get_logger(__name__)
+
+# Context soft caps (chars ≈ 4 chars/token rough upper bound). Truncation uses chunk/table boundaries only.
+SUMMARY_AGENT_CONTEXT_MAX_CHARS = int(os.environ.get("SUMMARY_AGENT_CONTEXT_MAX_CHARS", "380000"))
+SUMMARY_AGENT_A3_CONTEXT_MAX_CHARS = int(os.environ.get("SUMMARY_AGENT_A3_CONTEXT_MAX_CHARS", "520000"))
+SUMMARY_MONGO_AGENT3_MAX_TABLES = int(os.environ.get("SUMMARY_MONGO_AGENT3_MAX_TABLES", "400"))
+SUMMARY_MONGO_AGENT3_MAX_CHARS = int(os.environ.get("SUMMARY_MONGO_AGENT3_MAX_CHARS", "320000"))
+SUMMARY_MONGO_AGENT6_MAX_TABLES = int(os.environ.get("SUMMARY_MONGO_AGENT6_MAX_TABLES", "280"))
+SUMMARY_MONGO_AGENT6_MAX_CHARS = int(os.environ.get("SUMMARY_MONGO_AGENT6_MAX_CHARS", "400000"))
 
 
 class SummaryPipeline:
@@ -87,6 +96,38 @@ class SummaryPipeline:
         
         return localized
 
+    @staticmethod
+    def _normalize_prompt(value: Any) -> Optional[str]:
+        """Normalize prompt value from domain config."""
+        if not isinstance(value, str):
+            return None
+        cleaned = value.strip()
+        return cleaned if cleaned else None
+
+    @staticmethod
+    def _normalize_subqueries(value: Any) -> Optional[List[str]]:
+        """Normalize subqueries value from domain config."""
+        queries: List[str] = []
+        if isinstance(value, list):
+            queries = [str(v).strip() for v in value if str(v).strip()]
+        elif isinstance(value, str):
+            normalized = value.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\r", "\n")
+            queries = [line.strip() for line in normalized.split("\n") if line.strip()]
+        return queries if queries else None
+
+    def _resolve_agent_config(
+        self,
+        tenant_config: Dict[str, Any],
+        agent_id: int
+    ) -> tuple[Optional[str], Optional[List[str]]]:
+        """
+        Resolve agent prompt/subqueries from tenant config.
+        Empty values return None so the agent fallback prompt/subqueries are used.
+        """
+        prompt = self._normalize_prompt(tenant_config.get(f"agent{agent_id}_prompt"))
+        subqueries = self._normalize_subqueries(tenant_config.get(f"agent{agent_id}_subqueries"))
+        return prompt, subqueries
+
     def _post_process_final_markdown(self, markdown: str, doc_type: str) -> str:
         """
         Final cleanup before returning to user. 
@@ -119,8 +160,44 @@ class SummaryPipeline:
             markdown = markdown.replace("OUR BUSINESS ANALYSIS", "SECTION III: OUR BUSINESS")
 
         return markdown
+
+    @staticmethod
+    def _toc_page_span(item: Dict[str, Any]) -> tuple[int, int]:
+        """TOC from ingestion uses start_page/end_page; legacy may use page_start/page_end."""
+        s = item.get("start_page", item.get("page_start"))
+        e = item.get("end_page", item.get("page_end"))
+        try:
+            start = int(s) if s is not None else 1
+        except (TypeError, ValueError):
+            start = 1
+        try:
+            end = int(e) if e is not None else start
+        except (TypeError, ValueError):
+            end = start
+        return start, max(start, end)
+
+    @staticmethod
+    def _clip_chunk_context(context: str, max_chars: int, note: str) -> str:
+        """Trim retrieved context at chunk boundaries (---), never mid-cell."""
+        if not context or len(context) <= max_chars:
+            return context
+        head = context[:max_chars]
+        cut = -1
+        for sep in ("\n\n---\n\n", "\n---\n"):
+            cut = head.rfind(sep)
+            if cut > max_chars // 4:
+                return f"{head[:cut].rstrip()}\n\n> {note}\n"
+        return f"{head.rstrip()}\n\n> {note}\n"
         
-    async def _retrieve_tables(self, job_id: str = None, namespace: str = None, page_range: Optional[tuple] = None, min_cells: int = 15) -> str:
+    async def _retrieve_tables(
+        self,
+        job_id: str = None,
+        namespace: str = None,
+        page_range: Optional[tuple] = None,
+        min_cells: int = 15,
+        max_tables: Optional[int] = None,
+        max_chars: Optional[int] = None,
+    ) -> str:
         """
         Retrieve structured tables from MongoDB extraction_results.
         Supports page_range=(start, end).
@@ -147,23 +224,60 @@ class SummaryPipeline:
                 }
             }
 
+            fetch_limit = min(1000, max_tables) if max_tables else 1000
             cursor = collection.find(query).sort("page", 1)
-            tables = await cursor.to_list(length=200)
+            tables = await cursor.to_list(length=fetch_limit)
             
-            if not tables: return ""
+            if not tables:
+                return ""
                 
             table_md_blocks = []
             for t in tables:
                 sec = t.get("section", t.get("chapter", "General"))
+                sub = t.get("subsection", "")
+                heading = t.get("table_heading", "")
                 pg = t.get("page", "?")
                 md = t.get("markdown", "")
                 
-                # Double-check: ensure it's not a generic glossary entry
-                if len(md.split("|")) < min_cells:
+                # Ensure it's a meaningful markdown table, not a tiny glossary fragment.
+                if len(md.split("|")) < min_cells or md.count("\n") < 2:
                     continue
                     
-                table_md_blocks.append(f"### Table from {sec} (Page {pg})\n{md}")
-                
+                context_title_parts = [f"Table from {sec}"]
+                if sub:
+                    context_title_parts.append(f"Subsection: {sub}")
+                if heading:
+                    context_title_parts.append(f"Heading: {heading}")
+                context_title = " | ".join(context_title_parts)
+                table_md_blocks.append(f"### {context_title} (Page {pg})\n{md}")
+
+            if not table_md_blocks:
+                return ""
+
+            if max_chars:
+                while len(table_md_blocks) > 1 and len("\n\n".join(table_md_blocks)) > max_chars:
+                    table_md_blocks.pop()
+                result = "\n\n".join(table_md_blocks)
+                if len(result) > max_chars:
+                    # One (or few) very large tables: trim the last block at row boundaries only.
+                    last = table_md_blocks[-1]
+                    budget = max_chars - len("\n\n".join(table_md_blocks[:-1])) - 2 - 80
+                    if budget > 2000 and "\n" in last:
+                        lines = last.split("\n")
+                        kept: List[str] = []
+                        used = 0
+                        for line in lines:
+                            if used + len(line) + 1 > budget:
+                                break
+                            kept.append(line)
+                            used += len(line) + 1
+                        last = "\n".join(kept) + "\n\n> [Remaining rows omitted for length.]\n"
+                        table_md_blocks[-1] = last
+                    result = "\n\n".join(table_md_blocks)
+                    if len(result) > max_chars:
+                        result = result[: max_chars - 120].rsplit("\n", 1)[0] + "\n\n> [Tables truncated for length.]\n"
+                return result
+
             return "\n\n".join(table_md_blocks)
         except Exception as e:
             logger.warning(f"Failed to retrieve tables: {str(e)}")
@@ -295,13 +409,12 @@ class SummaryPipeline:
             rerank_top_n=10,
             metadata_filter=metadata_filter
         )
-        
-        # Pull high-fidelity tables from Mongo
-        job_id = metadata_filter.get("job_id") if metadata_filter else None
-        mongo_tables = await self._retrieve_tables(job_id=job_id, namespace=namespace)
-        if mongo_tables:
-            context = f"--- STRUCTURED TABLES FROM EXTRACTION ---\n{mongo_tables}\n\n--- TEXT CONTEXT ---\n{context}"
-        
+        context = self._clip_chunk_context(
+            context,
+            SUMMARY_AGENT_CONTEXT_MAX_CHARS,
+            "[Additional retrieved chunks omitted for length.]",
+        )
+
         if not context:
             logger.warning("Agent 1: No context found")
             return {"error": "No investor data found", "extraction_status": "failed"}
@@ -355,22 +468,24 @@ class SummaryPipeline:
         
         # Retrieve context
         capital_query = custom_subqueries or ["Extract complete equity share capital history table and premium rounds from DRHP"]
+        capital_query = capital_query + [
+            "Extract COMPLETE share capital history table across all pages with every row and every column, including bonus/subdivision/allotment rounds and valuation fields."
+        ]
         context = await self._retrieve_context(
             capital_query,
             namespace,
             index_name,
             host,
-            vector_top_k=12,
-            rerank_top_n=12,
+            vector_top_k=20,
+            rerank_top_n=20,
             metadata_filter=metadata_filter
         )
-        
-        # Pull high-fidelity tables from Mongo
-        job_id = metadata_filter.get("job_id") if metadata_filter else None
-        mongo_tables = await self._retrieve_tables(job_id=job_id, namespace=namespace)
-        if mongo_tables:
-            context = f"--- STRUCTURED TABLES FROM EXTRACTION ---\n{mongo_tables}\n\n--- TEXT CONTEXT ---\n{context}"
-        
+        context = self._clip_chunk_context(
+            context,
+            SUMMARY_AGENT_CONTEXT_MAX_CHARS,
+            "[Additional retrieved chunks omitted for length.]",
+        )
+
         if not context:
             logger.warning("Agent 2: No context found")
             return {"error": "No capital history data found", "type": "calculation_data"}
@@ -380,10 +495,10 @@ class SummaryPipeline:
                 model="gpt-4.1-mini",
                 messages=[
                     {"role": "system", "content": custom_prompt or CAPITAL_HISTORY_EXTRACTOR_SYSTEM_PROMPT},
-                    {"role": "user", "content": f"Extract and summarize share capital from this DRHP context:\n\n{context}"}
+                    {"role": "user", "content": f"Extract and summarize share capital from this DRHP context. Do not drop any row or any column from share capital history tables; preserve complete tabular coverage across all pages. Ensure chronology is complete from earliest to latest event.\n\n{context}"}
                 ],
                 temperature=0.0,
-                max_tokens=8192,
+                max_tokens=16384,
                 response_format={"type": "json_object"}
             )
             
@@ -426,7 +541,12 @@ class SummaryPipeline:
         # SUBQUERIES[0] = Section I, SUBQUERIES[1] = Section II
         queries = custom_subqueries or [SUBQUERIES[0], SUBQUERIES[1]]
         context = await self._retrieve_context(queries, namespace, index_name, host, vector_top_k=8, metadata_filter=metadata_filter)
-        
+        context = self._clip_chunk_context(
+            context,
+            SUMMARY_AGENT_CONTEXT_MAX_CHARS,
+            "[Additional retrieved chunks omitted for length.]",
+        )
+
         response = await self.client.chat.completions.create(
             model="gpt-4.1-mini",
             messages=[
@@ -455,25 +575,12 @@ class SummaryPipeline:
         # SUBQUERIES[2] = Section IV, SUBQUERIES[3] = Section V
         queries = custom_subqueries or [SUBQUERIES[2], SUBQUERIES[3]]
         context = await self._retrieve_context(queries, namespace, index_name, host, vector_top_k=15, metadata_filter=metadata_filter)
-        
-        # Add high-fidelity tables from Mongo for Industry/Management
-        job_id = metadata_filter.get("job_id") if metadata_filter else None
-        toc = await self._get_toc(namespace)
-        hi_fi_pages = []
-        for item in toc:
-            title = str(item.get("title", "")).upper()
-            if any(term in title for term in ["INDUSTRY", "MARKET ANALYSIS", "MANAGEMENT", "PROMOTERS"]):
-                hi_fi_pages.append((item.get("page_start", 1), item.get("page_end", 999)))
-        
-        # Retrieval for combined pages
-        hi_fi_tables = ""
-        for pr in hi_fi_pages:
-            tables = await self._retrieve_tables(job_id=job_id, namespace=namespace, page_range=pr, min_cells=4)
-            if tables: hi_fi_tables += f"\n{tables}"
-            
-        if hi_fi_tables:
-            context = f"### MONGODB HIGH-FIDELITY TABLES (INDUSTRY & MANAGEMENT)\n{hi_fi_tables}\n\n{context}"
-        
+        context = self._clip_chunk_context(
+            context,
+            SUMMARY_AGENT_CONTEXT_MAX_CHARS,
+            "[Additional retrieved chunks omitted for length.]",
+        )
+
         response = await self.client.chat.completions.create(
             model="gpt-4.1-mini",
             messages=[
@@ -502,12 +609,28 @@ class SummaryPipeline:
         # SUBQUERIES[5] = Section VII
         queries = custom_subqueries or [SUBQUERIES[5]]
         context = await self._retrieve_context(queries, namespace, index_name, host, vector_top_k=12, metadata_filter=metadata_filter)
-        
-        # Add high-fidelity tables from Mongo for financials
+        context = self._clip_chunk_context(
+            context,
+            SUMMARY_AGENT_CONTEXT_MAX_CHARS,
+            "[Additional retrieved chunks omitted for length.]",
+        )
+
+        # Mongo extraction tables: Agent 6 only (Section VII financials)
         job_id = metadata_filter.get("job_id") if metadata_filter else None
-        mongo_tables = await self._retrieve_tables(job_id=job_id, namespace=namespace)
+        mongo_tables = await self._retrieve_tables(
+            job_id=job_id,
+            namespace=namespace,
+            min_cells=4,
+            max_tables=SUMMARY_MONGO_AGENT6_MAX_TABLES,
+            max_chars=SUMMARY_MONGO_AGENT6_MAX_CHARS,
+        )
         if mongo_tables:
             context = f"--- STRUCTURED FINANCIAL TABLES ---\n{mongo_tables}\n\n{context}"
+        context = self._clip_chunk_context(
+            context,
+            SUMMARY_AGENT_CONTEXT_MAX_CHARS,
+            "[Additional context after financial tables omitted for length.]",
+        )
 
         response = await self.client.chat.completions.create(
             model="gpt-4.1-mini",
@@ -537,7 +660,12 @@ class SummaryPipeline:
         # SUBQUERIES[6] = VIII, SUBQUERIES[7] = IX
         queries = custom_subqueries or [SUBQUERIES[6], SUBQUERIES[7]]
         context = await self._retrieve_context(queries, namespace, index_name, host, vector_top_k=12, metadata_filter=metadata_filter)
-        
+        context = self._clip_chunk_context(
+            context,
+            SUMMARY_AGENT_CONTEXT_MAX_CHARS,
+            "[Additional retrieved chunks omitted for length.]",
+        )
+
         response = await self.client.chat.completions.create(
             model="gpt-4.1-mini",
             messages=[
@@ -566,7 +694,12 @@ class SummaryPipeline:
         # SUBQUERIES[8] = X
         queries = custom_subqueries or [SUBQUERIES[8]]
         context = await self._retrieve_context(queries, namespace, index_name, host, vector_top_k=10, metadata_filter=metadata_filter)
-        
+        context = self._clip_chunk_context(
+            context,
+            SUMMARY_AGENT_CONTEXT_MAX_CHARS,
+            "[Additional retrieved chunks omitted for length.]",
+        )
+
         response = await self.client.chat.completions.create(
             model="gpt-4.1-mini",
             messages=[
@@ -595,7 +728,12 @@ class SummaryPipeline:
         # SUBQUERIES[9] = XI, SUBQUERIES[10] = XII
         queries = custom_subqueries or [SUBQUERIES[9], SUBQUERIES[10]]
         context = await self._retrieve_context(queries, namespace, index_name, host, vector_top_k=10, metadata_filter=metadata_filter)
-        
+        context = self._clip_chunk_context(
+            context,
+            SUMMARY_AGENT_CONTEXT_MAX_CHARS,
+            "[Additional retrieved chunks omitted for length.]",
+        )
+
         response = await self.client.chat.completions.create(
             model="gpt-4.1-mini",
             messages=[
@@ -629,9 +767,18 @@ class SummaryPipeline:
         """
         logger.info("A-3 Business Table Extractor: Starting", namespace=namespace)
 
+        # Always enforce full 16-query coverage for Agent 3.
+        # If tenant config overrides only a subset, fill missing slots from defaults.
+        extraction_queries = BUSINESS_EXTRACTION_QUERIES.copy()
+        if custom_business_subqueries:
+            for idx, query in enumerate(custom_business_subqueries[:len(extraction_queries)]):
+                if isinstance(query, str) and query.strip():
+                    extraction_queries[idx] = query.strip()
+        total_queries = len(extraction_queries)
+
         # Matches n8n "Extraction Queries - All Tables" → joined with \n\n as prompt
         user_prompt = (
-            "You will receive 16 sequential extraction queries, each focusing on a specific "
+            f"You will receive {total_queries} sequential extraction queries, each focusing on a specific "
             "category of tables from the \"Our Business\" chapter.\n\n"
             "For EACH query:\n"
             "1. Search the vector store comprehensively\n"
@@ -639,7 +786,7 @@ class SummaryPipeline:
             "3. Return tables in perfect Markdown format\n"
             "4. Preserve all data exactly as shown\n\n"
             "Queries to process:\n"
-            + "\n\n".join((custom_business_subqueries if custom_business_subqueries else BUSINESS_EXTRACTION_QUERIES))
+            + "\n\n".join(extraction_queries)
         )
 
         # 1. PRE-COLLECT MONGO TABLES (High-Fidelity)
@@ -647,17 +794,41 @@ class SummaryPipeline:
         
         # Try to find "Our Business" page range from TOC to focus the high-fidelity extraction
         toc = await self._get_toc(namespace)
-        page_range = None
+        matched_ranges = []
+        business_toc_terms = [
+            "OUR BUSINESS",
+            "BUSINESS MODEL",
+            "CAPACITY AND CAPACITY UTILIZATION",
+            "INFRASTRUCTURE",
+            "PLANT",
+            "MACHINERY",
+            "PERFORMANCE INDICATORS",
+            "INTELLECTUAL PROPERTY",
+            "TRADEMARK",
+            "SWOT",
+            "PROPERTIES",
+            "FACILITIES",
+            "HOSPITAL",
+        ]
         for item in toc:
             title = str(item.get("title", "")).upper()
-            if any(term in title for term in ["OUR BUSINESS", "BUSINESS MODEL", "CAPACITY AND CAPACITY UTILIZATION"]):
-                page_start = item.get("page_start", 1)
-                page_end = item.get("page_end", 999)
-                page_range = (page_start, page_end)
-                logger.info("A-3: Focused high-fidelity extraction for Our Business / Capacity", page_range=page_range)
-                break
+            if any(term in title for term in business_toc_terms):
+                ps, pe = self._toc_page_span(item)
+                matched_ranges.append((ps, pe))
+
+        page_range = None
+        if matched_ranges:
+            page_range = (min(r[0] for r in matched_ranges), max(r[1] for r in matched_ranges))
+            logger.info("A-3: Focused high-fidelity extraction for Our Business / Capacity", page_range=page_range)
         
-        mongo_tables = await self._retrieve_tables(job_id=job_id, namespace=namespace, page_range=page_range, min_cells=6)
+        mongo_tables = await self._retrieve_tables(
+            job_id=job_id,
+            namespace=namespace,
+            page_range=page_range,
+            min_cells=3,
+            max_tables=SUMMARY_MONGO_AGENT3_MAX_TABLES,
+            max_chars=SUMMARY_MONGO_AGENT3_MAX_CHARS,
+        )
         
         all_context_parts = []
         if mongo_tables:
@@ -665,7 +836,7 @@ class SummaryPipeline:
         seen = set()
 
         # 2. COLLECT PIECONE CONTEXT (Narrative and secondary table fragments)
-        for i, query in enumerate((custom_business_subqueries if custom_business_subqueries else BUSINESS_EXTRACTION_QUERIES)):
+        for i, query in enumerate(extraction_queries):
             try:
                 ctx = await self._retrieve_context(
                     [query],
@@ -683,15 +854,20 @@ class SummaryPipeline:
                         if c and c not in seen:
                             all_context_parts.append(c)
                             seen.add(c)
-                logger.debug(f"A-3: Query {i+1}/16 retrieved", chars=len(ctx) if ctx else 0)
+                logger.debug(f"A-3: Query {i+1}/{total_queries} retrieved", chars=len(ctx) if ctx else 0)
             except Exception as qe:
-                logger.warning(f"A-3: Query {i+1} failed", error=str(qe))
+                logger.warning(f"A-3: Query {i+1}/{total_queries} failed", error=str(qe))
 
         if not all_context_parts:
             logger.warning("A-3: No business chapter context found")
             return ""
 
         full_context = "\n\n---\n\n".join(all_context_parts)
+        full_context = self._clip_chunk_context(
+            full_context,
+            SUMMARY_AGENT_A3_CONTEXT_MAX_CHARS,
+            "[Additional business-chapter context omitted for length.]",
+        )
         logger.info("A-3: Context collected", chunks=len(all_context_parts), chars=len(full_context))
 
         try:
@@ -837,58 +1013,68 @@ class SummaryPipeline:
             # PHASE 1: Parallel Data Extraction and Specialized Generation
             logger.info("Phase 1: Multi-Agent Parallel Processing (A1 - A9)")
 
+            agent1_prompt, agent1_subqueries = self._resolve_agent_config(tenant_config, 1)
+            agent2_prompt, agent2_subqueries = self._resolve_agent_config(tenant_config, 2)
+            agent3_prompt_cfg, agent3_subqueries_cfg = self._resolve_agent_config(tenant_config, 3)
+            agent4_prompt, agent4_subqueries = self._resolve_agent_config(tenant_config, 4)
+            agent5_prompt, agent5_subqueries = self._resolve_agent_config(tenant_config, 5)
+            agent6_prompt, agent6_subqueries = self._resolve_agent_config(tenant_config, 6)
+            agent7_prompt, agent7_subqueries = self._resolve_agent_config(tenant_config, 7)
+            agent8_prompt, agent8_subqueries = self._resolve_agent_config(tenant_config, 8)
+            agent9_prompt, agent9_subqueries = self._resolve_agent_config(tenant_config, 9)
+
             investor_task = self._agent_1_investor_extractor(
-                namespace, 
-                tenant_config.get("agent1_prompt"), 
-                tenant_config.get("agent1_subqueries"), 
+                namespace,
+                agent1_prompt,
+                agent1_subqueries,
                 index_name, host, metadata_filter
             )
             capital_task = self._agent_2_capital_history_extractor(
-                namespace, 
-                tenant_config.get("agent2_prompt"), 
-                tenant_config.get("agent2_subqueries"), 
+                namespace,
+                agent2_prompt,
+                agent2_subqueries,
                 index_name, host, metadata_filter
             )
             sec3_task = self._agent_3_business_table_extractor(
-                namespace, 
-                tenant_config.get("agent3_prompt", a3_prompt), 
-                tenant_config.get("agent3_subqueries", []), 
+                namespace,
+                agent3_prompt_cfg or a3_prompt,
+                agent3_subqueries_cfg or a3_subqueries,
                 index_name, host, metadata_filter
             )
             sec1_2_task = self._agent_4_generator(
-                namespace, doc_type, 
-                tenant_config.get("agent4_prompt"), 
-                tenant_config.get("agent4_subqueries"), 
+                namespace, doc_type,
+                agent4_prompt,
+                agent4_subqueries,
                 index_name, host, metadata_filter
             )
             sec4_5_task = self._agent_5_generator(
-                namespace, doc_type, 
-                tenant_config.get("agent5_prompt"), 
-                tenant_config.get("agent5_subqueries"), 
+                namespace, doc_type,
+                agent5_prompt,
+                agent5_subqueries,
                 index_name, host, metadata_filter
             )
             sec7_task = self._agent_6_generator(
-                namespace, doc_type, 
-                tenant_config.get("agent6_prompt"), 
-                tenant_config.get("agent6_subqueries"), 
+                namespace, doc_type,
+                agent6_prompt,
+                agent6_subqueries,
                 index_name, host, metadata_filter
             )
             sec8_9_task = self._agent_7_generator(
-                namespace, doc_type, 
-                tenant_config.get("agent7_prompt"), 
-                tenant_config.get("agent7_subqueries"), 
+                namespace, doc_type,
+                agent7_prompt,
+                agent7_subqueries,
                 index_name, host, metadata_filter
             )
             sec10_task = self._agent_8_generator(
-                namespace, doc_type, 
-                tenant_config.get("agent8_prompt"), 
-                tenant_config.get("agent8_subqueries"), 
+                namespace, doc_type,
+                agent8_prompt,
+                agent8_subqueries,
                 index_name, host, metadata_filter
             )
             sec11_12_task = self._agent_9_generator(
-                namespace, doc_type, 
-                tenant_config.get("agent9_prompt"), 
-                tenant_config.get("agent9_subqueries"), 
+                namespace, doc_type,
+                agent9_prompt,
+                agent9_subqueries,
                 index_name, host, metadata_filter
             )
 

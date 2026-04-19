@@ -75,24 +75,15 @@ export const DirectoryCard: React.FC<DirectoryCardProps> = ({
               e.stopPropagation();
               if (!compareLoading) onCompare(directory);
             }}
-            title={linkedStatus ? "View comparison report" : "Compare documents in this directory"}
+            title={linkedStatus ? "Compare documents" : "Compare documents in this directory"}
             disabled={compareLoading}
           >
-            {linkedStatus ? (
-              <img
-                className="h-3 w-3 object-contain"
-                src="https://img.icons8.com/pastel-glyph/128/document--v1.png"
-                alt="view"
-                style={{ display: 'block', minWidth: '12px', minHeight: '12px' }}
-              />
-            ) : (
-              <img
-                className="h-3 w-3 object-contain"
-                src="https://img.icons8.com/ios/50/compare.png"
-                alt="compare"
-                style={{ display: 'block', minWidth: '12px', minHeight: '12px' }}
-              />
-            )}
+            <img
+              className="h-3 w-3 object-contain"
+              src="https://img.icons8.com/ios/50/compare.png"
+              alt="compare"
+              style={{ display: 'block', minWidth: '12px', minHeight: '12px' }}
+            />
           </button>
           
           <button

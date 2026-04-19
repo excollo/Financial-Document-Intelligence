@@ -8,15 +8,11 @@ router = APIRouter(prefix="/health", tags=["Health"])
 
 @router.get("/detailed")
 async def get_detailed_health():
-    """
-    Returns a detailed health report of all external dependencies.
-    Used by the Node.js backend to aggregate system health.
-    """
+    """Returns a detailed health report."""
     return await health_service.get_full_status()
 
-@router.get("/basic")
-async def get_basic_health():
-    """
-    Simple health check for load balancers.
-    """
-    return {"status": "operational", "service": "ai-python-platform"}
+@router.get("/")
+@router.get("")
+async def get_basic_health_v2():
+    """Simple health check for load balancers."""
+    return {"status": "operational", "service": "ai-python-platform-router"}

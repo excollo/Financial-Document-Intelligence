@@ -52,6 +52,18 @@ import { cleanSummaryContent } from "@/lib/utils/markdownConverter";
 
 interface ComparePageProps { }
 
+const buildDocxFileName = (
+  rawName: string | undefined,
+  fallback: string
+): string => {
+  const normalized = (rawName || fallback)
+    .trim()
+    .replace(/\.(pdf|docx)$/i, "")
+    .replace(/[\\/:*?"<>|]+/g, "_");
+
+  return `${normalized || fallback}.docx`;
+};
+
 export const ComparePage: React.FC<ComparePageProps> = () => {
   const { drhpId } = useParams<{ drhpId: string }>();
   const [searchParams] = useSearchParams();
@@ -478,7 +490,7 @@ export const ComparePage: React.FC<ComparePageProps> = () => {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${selectedReport.title}.docx`;
+      a.download = buildDocxFileName(selectedReport.title, "report");
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);

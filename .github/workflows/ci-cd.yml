@@ -8,6 +8,7 @@ on:
 env:
   ACR_NAME: drhpacr
   RESOURCE_GROUP: DRHP-summarizer
+  CELERY_WORKER_CONTAINER_APP: fdi-celery-worker
 
 jobs:
   # -------------------------------------------------------------
@@ -103,7 +104,9 @@ jobs:
       - name: Azure Login
         uses: azure/login@v2
         with:
-          creds: '{"clientId":"${{ secrets.AZUREAPPSERVICE_CLIENTID_B953055700A1448D828BDD500A13D066 }}","clientSecret":"${{ secrets.AZURE_CLIENT_SECRET }}","subscriptionId":"${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_0B47EF5A196D4AA59065B1555D1BE5ED }}","tenantId":"${{ secrets.AZUREAPPSERVICE_TENANTID_038C3B5AD8C34641A8B618343B76608F }}"}'
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       # Login to ACR natively using Admin Credentials
       - name: Login to ACR
@@ -143,7 +146,9 @@ jobs:
       - name: Azure Login
         uses: azure/login@v2
         with:
-          creds: '{"clientId":"${{ secrets.AZUREAPPSERVICE_CLIENTID_B953055700A1448D828BDD500A13D066 }}","clientSecret":"${{ secrets.AZURE_CLIENT_SECRET }}","subscriptionId":"${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_0B47EF5A196D4AA59065B1555D1BE5ED }}","tenantId":"${{ secrets.AZUREAPPSERVICE_TENANTID_038C3B5AD8C34641A8B618343B76608F }}"}'
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       # 🚀 Deploy Node Backend
       - name: 'Deploy Node Backend to App Service'
@@ -158,14 +163,60 @@ jobs:
           az webapp config container set \
             --name ${{ github.ref_name == 'main' && 'fdi-ai-api-prod' || 'fdi-ai-api-dev' }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --docker-custom-image-name ${{ env.ACR_NAME }}.azurecr.io/ai-backend:${{ github.ref_name }}
+            --container-image-name ${{ env.ACR_NAME }}.azurecr.io/ai-backend:${{ github.ref_name }}
+          az webapp config appsettings set \
+            --name ${{ github.ref_name == 'main' && 'fdi-ai-api-prod' || 'fdi-ai-api-dev' }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --settings WEBSITES_PORT=8000 PORT=8000
+          az webapp config set \
+            --name ${{ github.ref_name == 'main' && 'fdi-ai-api-prod' || 'fdi-ai-api-dev' }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --generic-configurations "{\"healthCheckPath\":\"/health\"}"
           az webapp restart --name ${{ github.ref_name == 'main' && 'fdi-ai-api-prod' || 'fdi-ai-api-dev' }} --resource-group ${{ env.RESOURCE_GROUP }}
 
-      # 🚀 Deploy AI Worker
-      - name: 'Deploy AI Worker to App Service'
+      # 🚀 Deploy AI Worker to Azure Container Apps
+      - name: 'Deploy AI Worker to Azure Container Apps'
         run: |
-          az webapp config container set \
-            --name ${{ github.ref_name == 'main' && 'fdi-ai-worker-prod' || 'fdi-ai-worker-dev' }} \
+          az extension add --name containerapp --upgrade --yes
+          az containerapp show \
+            --name ${{ env.CELERY_WORKER_CONTAINER_APP }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --docker-custom-image-name ${{ env.ACR_NAME }}.azurecr.io/ai-backend:${{ github.ref_name }}
-          az webapp restart --name ${{ github.ref_name == 'main' && 'fdi-ai-worker-prod' || 'fdi-ai-worker-dev' }} --resource-group ${{ env.RESOURCE_GROUP }}
+            -o yaml > worker-update.yaml
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("worker-update.yaml")
+          text = p.read_text()
+          image = "${{ env.ACR_NAME }}.azurecr.io/ai-backend:${{ github.ref_name }}"
+          app_env = "${{ github.ref_name == 'main' && 'prod' || 'dev' }}"
+          import re
+
+          # Replace worker image with latest branch build tag.
+          text = re.sub(
+              r"(?m)^      image: .*$",
+              f"      image: {image}",
+              text,
+              count=1,
+          )
+
+          # Ensure args are expressed as two distinct elements: ['-c', '<command>']
+          text = re.sub(
+              r"(?ms)      args:\n(?:      - .*\n)+      command:\n",
+              "      args:\n"
+              "      - -c\n"
+              "      - celery -A app.workers.celery_app worker --loglevel=info --pool=solo --concurrency=1\n"
+              "      command:\n",
+              text,
+          )
+
+          # Keep APP_ENV synced to branch deployment target
+          text = re.sub(
+              r"(?m)^      - name: APP_ENV\n        value: .*$",
+              f"      - name: APP_ENV\n        value: {app_env}",
+              text,
+          )
+          p.write_text(text)
+          PY
+          az containerapp update \
+            --name ${{ env.CELERY_WORKER_CONTAINER_APP }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --yaml worker-update.yaml

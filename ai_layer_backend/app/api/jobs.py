@@ -27,7 +27,7 @@ class PipelineJobRequest(BaseModel):
     job_id: str = Field(..., description="Job identifier from Node backend")
     tenant_id: str = Field(..., description="Tenant identifier")
     document_name: str = Field(..., description="Original name of the document")
-    s3_input_key: str = Field(..., description="Path to input PDF in S3/R2")
+    s3_input_key: str = Field(..., description="Path to input PDF in Azure Blob Storage")
     sop_config_id: Optional[str] = Field(default=None, description="Optional SOP config ID to use")
 
 
@@ -122,14 +122,18 @@ async def submit_document_job(request: DocumentJobRequest):
     Asynchronous Document Ingestion.
     Returns 202 Accepted immediately and offloads work to Celery.
     """
-    job_id = str(uuid.uuid4())
+    request_metadata = request.metadata or {}
+    incoming_document_id = str(request_metadata.get("documentId") or "").strip()
+    # Prefer documentId as Celery job id so backend callbacks can always resolve
+    # the target document even if metadata is partially missing later.
+    job_id = incoming_document_id or str(uuid.uuid4())
     
     try:
         logger.info("Enqueuing document ingestion job", job_id=job_id, file_url=request.file_url)
         
         celery_app.send_task(
             "process_document",
-            args=[request.file_url, request.file_type, job_id, request.metadata],
+            args=[request.file_url, request.file_type, job_id, request_metadata],
             task_id=job_id
         )
         
@@ -153,7 +157,7 @@ async def delete_document(
     doc_type: str = "drhp"
 ):
     """
-    Comprehensive document cleanup: deletes Pinecone vectors, MongoDB results, and S3 visuals.
+    Comprehensive document cleanup: deletes Pinecone vectors, MongoDB results, and Azure Blob visuals.
     """
     try:
         logger.info("Starting cascading deletion", filename=namespace)
@@ -196,14 +200,14 @@ async def delete_document(
         except Exception as pc_err:
             logger.warning("Pinecone vector deletion failed", error=str(pc_err))
 
-        # 3. S3/Cloudflare R2 Visuals Purge
+        # 3. Azure Blob Purge (Visuals)
         if job_id:
             try:
                 visuals_prefix = f"visuals/{job_id}/"
                 await s3_service.delete_prefix(visuals_prefix)
-                logger.info("Deleted visuals from S3", prefix=visuals_prefix)
+                logger.info("Deleted visuals from Azure Blob Storage", prefix=visuals_prefix)
             except Exception as s3_err:
-                logger.warning("S3 visuals purge failed", error=str(s3_err))
+                logger.warning("Azure visuals purge failed", error=str(s3_err))
 
         return {
             "status": "success",
@@ -272,6 +276,7 @@ async def submit_summary_job(request: SummaryJobRequest) -> JobResponse:
             "domainId": final_domain_id
         })
         
+        print(f"DEBUG: Entering submit_summary_job for {request.namespace}")
         logger.info(
             "Summary job submitted",
             job_id=job_id,
@@ -279,11 +284,13 @@ async def submit_summary_job(request: SummaryJobRequest) -> JobResponse:
             doc_type=request.doc_type
         )
         
+        print("DEBUG: Sending task to Celery...")
         celery_app.send_task(
             "generate_summary",
             args=[request.namespace, request.doc_type, job_id, task_metadata],
             task_id=job_id
         )
+        print("DEBUG: Celery task sent successfully!")
         
         return JobResponse(
             job_id=job_id,

@@ -1,7 +1,8 @@
 import axios from "axios";
+import nodemailer from "nodemailer";
 
 interface EmailData {
-  to: string;
+  to: string | string[];
   subject: string;
   template: string;
   data: any;
@@ -15,6 +16,21 @@ const getBrevoConfig = () => {
   if (!apiKey) throw new Error("BREVO_API_KEY environment variable is not set");
   if (!fromEmail) throw new Error("BREVO_FROM_EMAIL is not set");
   return { apiKey, fromEmail, fromName };
+};
+
+const getSmtpConfig = () => {
+  const host = process.env.SMTP_HOST;
+  const port = Number(process.env.SMTP_PORT || 587);
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASS;
+  const from = process.env.SMTP_FROM || process.env.BREVO_FROM_EMAIL;
+  const fromName = process.env.APP_NAME || "RHP Document";
+
+  if (!host || !user || !pass || !from) {
+    throw new Error("SMTP fallback not fully configured (need SMTP_HOST, SMTP_USER, SMTP_PASS, SMTP_FROM/BREVO_FROM_EMAIL)");
+  }
+
+  return { host, port, user, pass, from, fromName };
 };
 
 // Email templates (same as before)
@@ -332,6 +348,9 @@ const emailTemplates = {
           .content { padding: 30px 20px; background: #f9f9f9; }
           .service-item { border-bottom: 1px solid #eee; padding: 10px 0; }
           .status-error { color: #d32f2f; font-weight: bold; }
+          .error-block { background: #fff3f3; border-left: 4px solid #d32f2f; padding: 12px; margin: 10px 0; border-radius: 4px; }
+          .error-label { font-weight: bold; color: #333; }
+          .error-value { font-family: monospace; white-space: pre-wrap; word-break: break-word; }
           .button { 
             display: inline-block; 
             background: #4B2A06; 
@@ -355,6 +374,15 @@ const emailTemplates = {
             <ul>
               ${data.failingServices.map((s: string) => `<li class="status-error">${s}</li>`).join('')}
             </ul>
+            ${(data.failureDetails || []).map((item: any) => `
+              <div class="error-block">
+                <div class="status-error">${item.service}</div>
+                <div><span class="error-label">Status:</span> <span class="error-value">${item.status || "error"}</span></div>
+                <div><span class="error-label">Message:</span> <span class="error-value">${item.message || "No message provided"}</span></div>
+                <div><span class="error-label">Code:</span> <span class="error-value">${item.error_code || "N/A"}</span></div>
+                <div><span class="error-label">Details:</span> <span class="error-value">${item.details ? JSON.stringify(item.details, null, 2) : "N/A"}</span></div>
+              </div>
+            `).join("")}
             <div style="text-align: center;">
               <a href="${data.dashboardUrl}" class="button" style="color: white;">View Admin Dashboard</a>
             </div>
@@ -364,18 +392,16 @@ const emailTemplates = {
       </body>
       </html>
     `,
-    text: `System Health Alert!\n\nCritical Issue Detected at ${data.timestamp}.\nFailing Services: ${data.failingServices.join(', ')}.\n\nView details: ${data.dashboardUrl}`,
+    text: `System Health Alert!\n\nCritical Issue Detected at ${data.timestamp}.\nFailing Services: ${data.failingServices.join(', ')}.\n\nError Details:\n${(data.failureDetails || []).map((item: any) => `- ${item.service}\n  status: ${item.status || "error"}\n  message: ${item.message || "No message provided"}\n  code: ${item.error_code || "N/A"}\n  details: ${item.details ? JSON.stringify(item.details) : "N/A"}`).join("\n")}\n\nView details: ${data.dashboardUrl}`,
   }),
 };
 
 export const sendEmail = async (emailData: EmailData): Promise<void> => {
   try {
-    const { apiKey, fromEmail, fromName } = getBrevoConfig();
-
-    console.log("📧 Using Brevo API to send email");
-    console.log("   From:", `${fromName} <${fromEmail}>`);
-    console.log("   To:", emailData.to);
-    console.log("   Template:", emailData.template);
+    const recipients = Array.isArray(emailData.to) ? emailData.to : [emailData.to];
+    if (recipients.length === 0) {
+      throw new Error("No email recipients provided");
+    }
 
     // Check if template exists
     if (!emailTemplates[emailData.template as keyof typeof emailTemplates]) {
@@ -386,31 +412,98 @@ export const sendEmail = async (emailData: EmailData): Promise<void> => {
     const template = emailTemplates[
       emailData.template as keyof typeof emailTemplates
     ](emailData.data);
+    let usedSmtpFallback = false;
 
-    const resp = await axios.post(
-      "https://api.brevo.com/v3/smtp/email",
-      {
-        sender: { email: fromEmail, name: fromName },
-        to: [{ email: emailData.to }],
-        subject: emailData.subject,
-        htmlContent: template.html,
-        textContent: template.text,
-      },
-      { headers: { "api-key": apiKey, "content-type": "application/json" }, timeout: 15000 }
-    );
-    console.log("✅ Email sent successfully via Brevo!");
-    console.log("   Message ID:", resp.data?.messageId || "n/a");
-    console.log("   Recipient:", emailData.to);
+    try {
+      const { apiKey, fromEmail, fromName } = getBrevoConfig();
+      console.log("📧 Using Brevo API to send email");
+      console.log("   From:", `${fromName} <${fromEmail}>`);
+      console.log("   To:", recipients.join(", "));
+      console.log("   Template:", emailData.template);
+
+      const deliveryResults = await Promise.allSettled(
+        recipients.map((recipientEmail) =>
+          axios.post(
+            "https://api.brevo.com/v3/smtp/email",
+            {
+              sender: { email: fromEmail, name: fromName },
+              to: [{ email: recipientEmail }],
+              subject: emailData.subject,
+              htmlContent: template.html,
+              textContent: template.text,
+            },
+            { headers: { "api-key": apiKey, "content-type": "application/json" }, timeout: 15000 }
+          )
+        )
+      );
+
+      const failedRecipients: string[] = [];
+      deliveryResults.forEach((result, idx) => {
+        if (result.status === "fulfilled") {
+          console.log(`✅ Email sent to ${recipients[idx]} (Message ID: ${result.value.data?.messageId || "n/a"})`);
+        } else {
+          failedRecipients.push(recipients[idx]);
+          console.error(`❌ Failed to send email to ${recipients[idx]}:`, result.reason?.message || result.reason);
+        }
+      });
+
+      if (failedRecipients.length > 0) {
+        throw new Error(`Failed to deliver to: ${failedRecipients.join(", ")}`);
+      }
+    } catch (brevoError: any) {
+      const statusCode = brevoError?.response?.status;
+      if (statusCode !== 401) {
+        throw brevoError;
+      }
+
+      // Brevo auth failure: fallback to SMTP transport.
+      usedSmtpFallback = true;
+      console.warn("⚠️ Brevo returned 401. Falling back to SMTP transport.");
+      const { host, port, user, pass, from, fromName } = getSmtpConfig();
+      const transporter = nodemailer.createTransport({
+        host,
+        port,
+        secure: port === 465,
+        auth: { user, pass },
+      });
+
+      const smtpResults = await Promise.allSettled(
+        recipients.map((recipientEmail) =>
+          transporter.sendMail({
+            from: `${fromName} <${from}>`,
+            to: recipientEmail,
+            subject: emailData.subject,
+            html: template.html,
+            text: template.text,
+          })
+        )
+      );
+
+      const failedRecipients: string[] = [];
+      smtpResults.forEach((result, idx) => {
+        if (result.status === "fulfilled") {
+          console.log(`✅ Email sent via SMTP to ${recipients[idx]}`);
+        } else {
+          failedRecipients.push(recipients[idx]);
+          console.error(`❌ SMTP failed for ${recipients[idx]}:`, result.reason?.message || result.reason);
+        }
+      });
+
+      if (failedRecipients.length > 0) {
+        throw new Error(`Failed to deliver to: ${failedRecipients.join(", ")}`);
+      }
+    }
 
     // If admin email is configured and this is a registration OTP, also send copy to admin
-    if (process.env.ADMIN_EMAIL && emailData.template === "registration-otp") {
+    if (!usedSmtpFallback && process.env.ADMIN_EMAIL && emailData.template === "registration-otp") {
       try {
+        const { apiKey, fromEmail, fromName } = getBrevoConfig();
         await axios.post(
           "https://api.brevo.com/v3/smtp/email",
           {
             sender: { email: fromEmail, name: fromName },
             to: [{ email: process.env.ADMIN_EMAIL }],
-            subject: `[Admin Copy] ${emailData.subject} - User: ${emailData.to}`,
+            subject: `[Admin Copy] ${emailData.subject} - User: ${recipients.join(", ")}`,
             htmlContent: template.html,
             textContent: template.text,
           },
@@ -422,7 +515,10 @@ export const sendEmail = async (emailData: EmailData): Promise<void> => {
       }
     }
   } catch (error: any) {
-    console.error("❌ Error sending email:", error);
+    console.error("❌ Error sending email:", error?.message || "Unknown error");
+    if (error?.response) {
+      console.error("   Brevo Error Details:", error.response.data);
+    }
     console.error("Error details:", {
       message: error?.message,
       stack: error?.stack,

@@ -287,15 +287,15 @@ export default function ProfilePage() {
         searchValue=""
         onSearchChange={() => { }}
       />
-      <div className="fixed w-[100vw] mx-auto h-[100vh] ">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 ">
+      <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 md:gap-6">
           {/* Sidebar */}
-          <aside className="w-[22vw] h-[90vh] lg:col-span-1  sticky top-[80px] self-start border-r border-gray-200 py-6 pl-6">
-            <h1 className="text-3xl font-bold mb-4">Settings</h1>
+          <aside className="w-full md:col-span-1 md:sticky md:top-[80px] self-start border-r-0 md:border-r border-gray-200 py-4 md:py-6 md:pl-2 lg:pl-4">
+            <h1 className="text-2xl md:text-3xl font-bold mb-3 md:mb-4">Settings</h1>
             <button
               onClick={() => setActiveTab("profile")}
-              className={`w-full text-left px-4 py-8 flex flex-col gap-1 ${activeTab === "profile"
-                ? "bg-[#ECE9E2] text-[#4B2A06] border-r-[4px] border-r-[#4B2A06]"
+              className={`w-full text-left px-4 py-4 md:py-6 flex flex-col gap-1 ${activeTab === "profile"
+                ? "bg-[#ECE9E2] text-[#4B2A06] md:border-r-[4px] md:border-r-[#4B2A06] border-l-[4px] md:border-l-0 border-l-[#4B2A06]"
                 : "bg-white hover:bg-gray-50"
                 }`}
             >
@@ -308,8 +308,8 @@ export default function ProfilePage() {
             </button>
             <button
               onClick={() => setActiveTab("summary")}
-              className={`w-full text-left px-4 py-8  flex flex-col gap-1 ${activeTab === "summary"
-                ? "bg-[#ECE9E2] text-[#4B2A06] border-r-[4px] border-r-[#4B2A06]"
+              className={`w-full text-left px-4 py-4 md:py-6 flex flex-col gap-1 ${activeTab === "summary"
+                ? "bg-[#ECE9E2] text-[#4B2A06] md:border-r-[4px] md:border-r-[#4B2A06] border-l-[4px] md:border-l-0 border-l-[#4B2A06]"
                 : "bg-white hover:bg-gray-50"
                 }`}
             >
@@ -323,8 +323,8 @@ export default function ProfilePage() {
             </button>
             <button
               onClick={() => setActiveTab("security")}
-              className={`w-full text-left px-4 py-8 flex flex-col gap-1 ${activeTab === "security"
-                ? "bg-[#ECE9E2] text-[#4B2A06] border-r-[4px] border-r-[#4B2A06]"
+              className={`w-full text-left px-4 py-4 md:py-6 flex flex-col gap-1 ${activeTab === "security"
+                ? "bg-[#ECE9E2] text-[#4B2A06] md:border-r-[4px] md:border-r-[#4B2A06] border-l-[4px] md:border-l-0 border-l-[#4B2A06]"
                 : "bg-white hover:bg-gray-50"
                 }`}
             >
@@ -338,8 +338,8 @@ export default function ProfilePage() {
             {currentUser?.role === "admin" && (
               <button
                 onClick={() => setActiveTab("fund-config")}
-                className={`w-full text-left px-4 py-8 flex flex-col gap-1 ${activeTab === "fund-config"
-                  ? "bg-[#ECE9E2] text-[#4B2A06] border-r-[4px] border-r-[#4B2A06]"
+                className={`w-full text-left px-4 py-4 md:py-6 flex flex-col gap-1 ${activeTab === "fund-config"
+                  ? "bg-[#ECE9E2] text-[#4B2A06] md:border-r-[4px] md:border-r-[#4B2A06] border-l-[4px] md:border-l-0 border-l-[#4B2A06]"
                   : "bg-white hover:bg-gray-50"
                   }`}
               >
@@ -354,7 +354,7 @@ export default function ProfilePage() {
           </aside>
 
           {/* Content */}
-          <section className=" w-[70vw] lg:col-span-3 space-y-6 max-h-[calc(100vh-100px)]  overflow-y-auto p-6 scrollbar-hide">
+          <section className="w-full md:col-span-3 space-y-6 max-h-none md:max-h-[calc(100vh-100px)] overflow-visible md:overflow-y-auto p-2 sm:p-4 md:p-6 scrollbar-hide">
 
             {activeTab === "profile" && (
               <>
@@ -802,6 +802,54 @@ function FundConfigSection() {
   const [config, setConfig] = useState<DomainConfig | null>(null);
   const [newInvestor, setNewInvestor] = useState("");
   const [newMonitoredCompany, setNewMonitoredCompany] = useState("");
+  const summaryAgentDefs = [
+    { id: 1, title: "Agent 1" },
+    { id: 2, title: "Agent 2" },
+    { id: 3, title: "Agent 3" },
+    { id: 4, title: "Agent 4" },
+    { id: 5, title: "Agent 5" },
+    { id: 6, title: "Agent 6" },
+    { id: 7, title: "Agent 7" },
+    { id: 8, title: "Agent 8" },
+    { id: 9, title: "Agent 9" },
+  ] as const;
+
+  const normalizeMultilineText = (value: unknown): string => {
+    if (typeof value !== "string") return "";
+    return value
+      .replace(/\\r\\n/g, "\n")
+      .replace(/\\n/g, "\n")
+      .replace(/\\r/g, "\n")
+      .replace(/\\t/g, "\t")
+      .replace(/\\"/g, '"');
+  };
+
+  const normalizeConfigForEditor = (raw: DomainConfig): DomainConfig => {
+    const normalized: DomainConfig = { ...raw };
+
+    normalized.sop_text = normalizeMultilineText(raw.sop_text);
+    normalized.agent1_prompt = normalizeMultilineText(raw.agent1_prompt);
+    normalized.agent2_prompt = normalizeMultilineText(raw.agent2_prompt);
+    normalized.agent3_prompt = normalizeMultilineText(raw.agent3_prompt);
+    normalized.agent4_prompt = normalizeMultilineText(raw.agent4_prompt);
+    normalized.agent5_prompt = normalizeMultilineText(raw.agent5_prompt);
+    normalized.agent6_prompt = normalizeMultilineText(raw.agent6_prompt);
+    normalized.agent7_prompt = normalizeMultilineText(raw.agent7_prompt);
+    normalized.agent8_prompt = normalizeMultilineText(raw.agent8_prompt);
+    normalized.agent9_prompt = normalizeMultilineText(raw.agent9_prompt);
+
+    normalized.agent1_subqueries = (raw.agent1_subqueries || []).map(normalizeMultilineText);
+    normalized.agent2_subqueries = (raw.agent2_subqueries || []).map(normalizeMultilineText);
+    normalized.agent3_subqueries = (raw.agent3_subqueries || []).map(normalizeMultilineText);
+    normalized.agent4_subqueries = (raw.agent4_subqueries || []).map(normalizeMultilineText);
+    normalized.agent5_subqueries = (raw.agent5_subqueries || []).map(normalizeMultilineText);
+    normalized.agent6_subqueries = (raw.agent6_subqueries || []).map(normalizeMultilineText);
+    normalized.agent7_subqueries = (raw.agent7_subqueries || []).map(normalizeMultilineText);
+    normalized.agent8_subqueries = (raw.agent8_subqueries || []).map(normalizeMultilineText);
+    normalized.agent9_subqueries = (raw.agent9_subqueries || []).map(normalizeMultilineText);
+
+    return normalized;
+  };
 
   useEffect(() => {
     fetchConfig();
@@ -811,7 +859,7 @@ function FundConfigSection() {
     setLoading(true);
     try {
       const data = await domainService.getConfig();
-      setConfig(data);
+      setConfig(normalizeConfigForEditor(data));
     } catch (error) {
       console.error("Failed to fetch domain config:", error);
       toast.error("Failed to load fund settings");
@@ -1125,58 +1173,51 @@ function FundConfigSection() {
       <div className="shadow-md border border-gray-200 rounded-xl bg-white mb-6">
         <CardHeader>
           <CardTitle className="text-xl">AI Agent Prompts</CardTitle>
-          <div className="text-sm text-muted-foreground">Manage system prompts and subqueries for all extraction agents.</div>
+          <div className="text-sm text-muted-foreground">Manage prompts and subqueries for all 9 summary agents.</div>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="space-y-2">
-            <Label className="font-semibold text-lg">Agent 3 Prompt (Business Table Extractor)</Label>
-            <Textarea
-              className="min-h-[300px] font-mono text-sm leading-relaxed border-gray-200 bg-gray-50/30 p-4 rounded-xl focus:ring-1 focus:ring-[#4B2A06]"
-              placeholder="Enter Agent 3 Prompt..."
-              value={config?.agent3_prompt || ""}
-              onChange={(e) => setConfig(prev => prev ? ({ ...prev, agent3_prompt: e.target.value }) : null)}
-            />
-          </div>
+          {summaryAgentDefs.map(({ id, title }) => {
+            const promptKey = `agent${id}_prompt` as keyof DomainConfig;
+            const subqueriesKey = `agent${id}_subqueries` as keyof DomainConfig;
+            const promptValue = (config?.[promptKey] as string) || "";
+            const subqueriesValue = ((config?.[subqueriesKey] as string[]) || []).join("\n");
 
-          <div className="space-y-2">
-            <Label className="font-semibold text-lg">Agent 3 Subqueries (One per line)</Label>
-            <Textarea
-              className="min-h-[200px] font-mono text-sm leading-relaxed border-gray-200 bg-gray-50/30 p-4 rounded-xl focus:ring-1 focus:ring-[#4B2A06]"
-              placeholder="Enter Agent 3 Subqueries..."
-              value={config?.agent3_subqueries?.join('\n') || ""}
-              onChange={(e) => setConfig(prev => prev ? ({ ...prev, agent3_subqueries: e.target.value.split('\n').filter(s => s.trim() !== "") }) : null)}
-            />
-          </div>
+            return (
+              <div key={id} className="space-y-3 border border-gray-100 rounded-xl p-4">
+                <Label className="font-semibold text-lg">{title} Prompt</Label>
+                <Textarea
+                  className="min-h-[180px] font-mono text-sm leading-relaxed border-gray-200 bg-gray-50/30 p-4 rounded-xl focus:ring-1 focus:ring-[#4B2A06]"
+                  placeholder={`Enter ${title} Prompt...`}
+                  value={promptValue}
+                  onChange={(e) =>
+                    setConfig((prev) =>
+                      prev ? ({ ...prev, [promptKey]: e.target.value } as DomainConfig) : null
+                    )
+                  }
+                />
 
-          <div className="space-y-2">
-            <Label className="font-semibold text-lg">Agent 4 Prompt (Main Summary Generator)</Label>
-            <Textarea
-              className="min-h-[400px] font-mono text-sm leading-relaxed border-gray-200 bg-gray-50/30 p-4 rounded-xl focus:ring-1 focus:ring-[#4B2A06]"
-              placeholder="Enter Agent 4 Prompt..."
-              value={config?.agent4_prompt || ""}
-              onChange={(e) => setConfig(prev => prev ? ({ ...prev, agent4_prompt: e.target.value }) : null)}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label className="font-semibold text-lg">Agent 4 Subqueries (One per line)</Label>
-            <Textarea
-              className="min-h-[300px] font-mono text-sm leading-relaxed border-gray-200 bg-gray-50/30 p-4 rounded-xl focus:ring-1 focus:ring-[#4B2A06]"
-              placeholder="Enter Agent 4 Subqueries..."
-              value={config?.agent4_subqueries?.join('\n') || ""}
-              onChange={(e) => setConfig(prev => prev ? ({ ...prev, agent4_subqueries: e.target.value.split('\n').filter(s => s.trim() !== "") }) : null)}
-            />
-          </div>
-
-          <div className="space-y-2 pt-4 border-t border-gray-100">
-            <Label className="font-semibold text-lg">Agent 5 Prompt (Adverse Findings Research)</Label>
-            <Textarea
-              className="min-h-[250px] font-mono text-sm leading-relaxed border-gray-200 bg-gray-50/30 p-4 rounded-xl focus:ring-1 focus:ring-[#4B2A06]"
-              placeholder="Enter Agent 5 Prompt..."
-              value={config?.agent5_prompt || ""}
-              onChange={(e) => setConfig(prev => prev ? ({ ...prev, agent5_prompt: e.target.value }) : null)}
-            />
-          </div>
+                <Label className="font-semibold">{title} Subqueries (One per line)</Label>
+                <Textarea
+                  className="min-h-[140px] font-mono text-sm leading-relaxed border-gray-200 bg-gray-50/30 p-4 rounded-xl focus:ring-1 focus:ring-[#4B2A06]"
+                  placeholder={`Enter ${title} Subqueries...`}
+                  value={subqueriesValue}
+                  onChange={(e) =>
+                    setConfig((prev) =>
+                      prev
+                        ? ({
+                          ...prev,
+                          [subqueriesKey]: e.target.value
+                            .split("\n")
+                            .map((s) => s.trim())
+                            .filter((s) => s.length > 0),
+                        } as DomainConfig)
+                        : null
+                    )
+                  }
+                />
+              </div>
+            );
+          })}
         </CardContent>
       </div>
 

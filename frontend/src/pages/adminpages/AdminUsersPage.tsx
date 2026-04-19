@@ -302,10 +302,10 @@ export default function AdminUsersPage() {
         onSearchChange={() => {}}
       />
 
-      <div className="w-[90vw] mx-auto py-8">
+      <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-6">
         {/* Key Metrics Cards */}
         {stats && (
-          <div className="w-[80vw]  grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
+          <div className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
             <Card className="bg-[rgba(99,117,135,1)] text-white">
               <CardContent className="p-4">
                 <div className="flex items-start gap-2">
@@ -366,7 +366,7 @@ export default function AdminUsersPage() {
 
         {/* Search Bar - Full Width */}
         <div className="mb-6">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
               <Input
@@ -376,13 +376,13 @@ export default function AdminUsersPage() {
                 className="pl-10 bg-gray-100 border-gray-200 rounded-lg focus:ring-0 focus:outline-none bg-white"
               />
             </div>
-            <div className="text-sm text-gray-500 ml-4">Date : All</div>
+            <div className="text-sm text-gray-500 sm:ml-4">Date : All</div>
           </div>
         </div>
 
         {/* Users Section - No Card, No Border */}
         <div>
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
             <h2 className="text-xl font-bold text-gray-900">
               Users ({totalUsers})
             </h2>
@@ -505,7 +505,7 @@ export default function AdminUsersPage() {
             </div>
           ) : (
             <>
-              <div className=" overflow-x-auto">
+              <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
                     <tr className="border-b border-gray-200">

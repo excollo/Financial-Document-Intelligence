@@ -244,7 +244,7 @@ export const workspaceInvitationController = {
       const invitations = await WorkspaceInvitation.find({
         workspaceId: currentWorkspaceId,
       })
-        .sort({ createdAt: -1 })
+        .sort({ _id: -1 })
         .populate("inviterId", "name email");
 
       res.json(invitations);
@@ -265,7 +265,7 @@ export const workspaceInvitationController = {
         expiresAt: { $gt: new Date() },
       })
         .populate("inviterId", "name email")
-        .sort({ createdAt: -1 });
+        .sort({ _id: -1 });
 
       res.json(invitations);
     } catch (error) {

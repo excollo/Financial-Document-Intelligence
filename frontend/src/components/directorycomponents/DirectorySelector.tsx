@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -210,6 +211,8 @@ export function DirectorySelector({
     return null;
   };
 
+  const suggestionList = Array.isArray(suggestions) ? suggestions : [];
+
   return (
     <>
       <Dialog open={open} onOpenChange={onClose}>
@@ -218,6 +221,9 @@ export function DirectorySelector({
             <DialogTitle className="text-[#4B2A06]">
               Select Company Directory
             </DialogTitle>
+            <DialogDescription>
+              Search for an existing company folder or create a new one.
+            </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
@@ -238,13 +244,13 @@ export function DirectorySelector({
                 <div className="flex items-center justify-center py-8">
                   <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
                 </div>
-              ) : suggestions.length === 0 ? (
+              ) : suggestionList.length === 0 ? (
                 <div className="p-4 text-sm text-gray-500 text-center">
                   {searchQuery ? "No directories found" : "No directories yet"}
                 </div>
               ) : (
                 <div className="divide-y divide-gray-200">
-                  {suggestions.map((dir) => (
+                  {suggestionList.map((dir) => (
                     <button
                       key={dir.id}
                       onClick={() => {
@@ -333,6 +339,9 @@ export function DirectorySelector({
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="text-[#4B2A06]">Create New Directory</DialogTitle>
+            <DialogDescription>
+              Enter the company name for this folder. We will flag duplicates and close matches.
+            </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">

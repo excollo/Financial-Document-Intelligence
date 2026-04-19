@@ -2,16 +2,9 @@ import { Request, Response } from "express";
 import { Report } from "../models/Report";
 import { User } from "../models/User";
 import axios from "axios";
-import { writeFile, unlink } from "fs/promises";
-import { exec } from "child_process";
-import { promisify } from "util";
-import path from "path";
-import os from "os";
 import { io } from "../index";
 import { publishEvent } from "../lib/events";
-
-
-const execAsync = promisify(exec);
+import { generateDocxBuffer } from "../services/docxService";
 
 interface AuthRequest extends Request {
   user?: any;
@@ -94,10 +87,11 @@ export const reportController = {
       const currentWorkspace = req.currentWorkspace || req.userDomain;
       const domain = req.userDomain || (link?.domain);
 
-      const query: any = {
-        domain: domain, // Use link domain if available, otherwise user domain
-        workspaceId: currentWorkspace,
-      };
+      const query: any = {};
+      if (domain) query.domain = domain;
+      if (currentWorkspace) query.workspaceId = currentWorkspace;
+
+      console.log("Fetching reports with query:", JSON.stringify(query));
 
       // Handle link access
       if (link) {
@@ -246,11 +240,22 @@ export const reportController = {
       // Visibility: All members of the workspace can see all reports in that workspace.
       // Do not further restrict by userId/microsoftId for reads.
 
-      const reports = await Report.find(query).sort({ updatedAt: -1 });
+    const rawReports = await Report.find(query).lean();
+      console.log(`Found ${rawReports.length} reports`);
+      
+      const reports = rawReports.sort((a: any, b: any) => {
+        const timeA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+        const timeB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+        return timeB - timeA;
+      });
       res.json(reports);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching reports:", error);
-      res.status(500).json({ message: "Error fetching reports" });
+      res.status(500).json({ 
+        message: "Error fetching reports", 
+        details: error.message,
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      });
     }
   },
 
@@ -442,14 +447,15 @@ export const reportController = {
         return res.status(404).json({ error: "Report not found" });
       }
 
-      // Write HTML to a temp file
-      const tmpDir = os.tmpdir();
-      const htmlPath = path.join(tmpDir, `report_${id}.html`);
-      const docxPath = path.join(tmpDir, `report_${id}.docx`);
-      await writeFile(htmlPath, report.content, "utf8");
-
-      // Convert HTML to DOCX using Pandoc
-      await execAsync(`pandoc "${htmlPath}" -o "${docxPath}"`);
+      const normalizedTitle = (report.title || "report")
+        .replace(/\.pdf$/i, "")
+        .replace(/\.docx$/i, "")
+        .replace(/[^a-z0-9._-]/gi, "_");
+      const { buffer: docxBuffer, engine } = await generateDocxBuffer(
+        report.content,
+        "html"
+      );
+      console.log(`Report DOCX generated with engine: ${engine}`);
 
       // Send DOCX file
       res.setHeader(
@@ -458,22 +464,11 @@ export const reportController = {
       );
       res.setHeader(
         "Content-Disposition",
-        `attachment; filename="${(report.title || "report").replace(/[^a-z0-9]/gi, "_")}.docx"`
+        `attachment; filename="${normalizedTitle}.docx"`
       );
-      res.sendFile(docxPath, async (err) => {
-        // Clean up temp files
-        if (err) {
-          console.error("Error sending file:", err);
-        }
-        try {
-          await unlink(htmlPath);
-          await unlink(docxPath);
-        } catch (cleanupError) {
-          console.error("Error cleaning up temp files:", cleanupError);
-        }
-      });
+      res.send(docxBuffer);
     } catch (error) {
-      console.error("Error generating DOCX with Pandoc:", error);
+      console.error("Error generating DOCX:", error);
       res.status(500).json({ error: "Failed to generate DOCX" });
     }
   },
@@ -645,7 +640,12 @@ export const reportController = {
         domain: req.user?.domain || req.userDomain, // Use user's actual domain for admin
       };
 
-      const reports = await Report.find(query).sort({ updatedAt: -1 });
+      const rawReports = await Report.find(query);
+      const reports = rawReports.sort((a: any, b: any) => {
+        const timeA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+        const timeB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+        return timeB - timeA;
+      });
 
       // Get all workspaces to map workspaceId to workspace name
       const { Workspace } = await import("../models/Workspace");
@@ -653,10 +653,19 @@ export const reportController = {
       const workspaceMap = new Map(workspaces.map(ws => [ws.workspaceId, { workspaceId: ws.workspaceId, name: ws.name, slug: ws.slug }]));
 
       // Add workspace information to each report
-      const reportsWithWorkspace = reports.map(report => ({
-        ...report.toObject(),
-        workspaceId: workspaceMap.get(report.workspaceId) || { workspaceId: report.workspaceId, name: workspaceMap.get(report.workspaceId)?.name ? workspaceMap.get(report.workspaceId)?.name : 'Excollo', slug: 'unknown' }
-      }));
+      const reportsWithWorkspace = reports.map(report => {
+        const reportObj = report.toObject ? report.toObject() : report;
+        const wsData = workspaceMap.get(reportObj.workspaceId);
+        
+        return {
+          ...reportObj,
+          workspaceId: wsData || { 
+            workspaceId: reportObj.workspaceId, 
+            name: 'Excollo', 
+            slug: 'unknown' 
+          }
+        };
+      });
 
       res.json(reportsWithWorkspace);
     } catch (error) {

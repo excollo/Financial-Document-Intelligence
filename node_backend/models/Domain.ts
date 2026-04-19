@@ -75,6 +75,20 @@ const domainSchema = new mongoose.Schema({
   subquery_changes_log: { type: [String], default: [] },
 
   matched_investors: { type: mongoose.Schema.Types.Mixed, default: [] },
+  health_alert_recipients: { type: [String], default: [] },
+  health_alert_updated_by: { type: String, default: null },
+  health_check_toggles: {
+    mongodb: { type: Boolean, default: true },
+    brevo: { type: Boolean, default: true },
+    azure_storage: { type: Boolean, default: true },
+    ai_platform: { type: Boolean, default: true },
+    external_ai: {
+      openai: { type: Boolean, default: true },
+      pinecone: { type: Boolean, default: true },
+      cohere: { type: Boolean, default: true },
+      perplexity: { type: Boolean, default: false },
+    },
+  },
 
   // ── Onboarding Metadata ──
   onboarding_status: {

@@ -1,9 +1,7 @@
 
-import asyncio
 from app.services.summarization.markdown_converter import MarkdownConverter
-from app.services.summarization.pipeline import SummaryPipeline
 
-async def test_conversion():
+def test_conversion():
     conv = MarkdownConverter()
     print("Testing MarkdownConverter.convert_investor_json_to_markdown...")
     investor_json = {
@@ -20,4 +18,4 @@ async def test_conversion():
     print("Test passed (No TypeError)")
 
 if __name__ == "__main__":
-    asyncio.run(test_conversion())
+    test_conversion()

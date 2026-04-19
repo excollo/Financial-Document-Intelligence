@@ -20,7 +20,7 @@ export const chatController = {
         return res.status(400).json({ error: "Missing required fields (message, namespace, documentType)" });
       }
 
-      const pythonApiUrl = process.env.PYTHON_API_URL || "http://localhost:8001";
+      const pythonApiUrl = process.env.PYTHON_API_URL || "http://localhost:8000";
       const INTERNAL_SECRET = process.env.INTERNAL_SECRET || "";
 
       console.log(`Forwarding chat query to Python: ${namespace}`);
@@ -312,6 +312,68 @@ export const chatController = {
     } catch (error) {
       console.error("Error fetching all chats:", error);
       res.status(500).json({ error: "Failed to fetch chats" });
+    }
+  },
+
+  // Admin: Get detailed chat with user/document context
+  async getAdminChatDetail(req: AuthRequest, res: Response) {
+    try {
+      const user = req.user;
+      if (!user || user.role !== "admin") {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+
+      const domain = req.user?.domain || req.userDomain;
+      const chatId = req.params.id;
+
+      const chat = await Chat.findOne({
+        id: chatId,
+        domain,
+      });
+
+      if (!chat) {
+        return res.status(404).json({ error: "Chat not found" });
+      }
+
+      const document = await Document.findOne({
+        id: chat.documentId,
+        domain,
+      }).select("id name type namespace rhpNamespace");
+
+      let chatUser: any = null;
+      if (chat.microsoftId) {
+        chatUser = await User.findOne({ microsoftId: chat.microsoftId, domain }).select(
+          "_id name email microsoftId"
+        );
+      } else if (chat.userId) {
+        chatUser = await User.findById(chat.userId).select(
+          "_id name email microsoftId"
+        );
+      }
+
+      return res.json({
+        chat,
+        document: document
+          ? {
+              id: document.id,
+              name: document.name,
+              type: document.type,
+              namespace: document.namespace,
+              rhpNamespace: document.rhpNamespace,
+            }
+          : null,
+        user: chatUser
+          ? {
+              id: String(chatUser._id),
+              name: chatUser.name || null,
+              email: chatUser.email || null,
+              microsoftId: chatUser.microsoftId || null,
+            }
+          : null,
+      });
+    } catch (error) {
+      console.error("Error fetching admin chat detail:", error);
+      res.status(500).json({ error: "Failed to fetch chat detail" });
     }
   },
 

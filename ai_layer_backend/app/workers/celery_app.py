@@ -13,17 +13,31 @@ from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
-# ✅ FORCE ENV VARIABLES (fallback if settings fails)
-BROKER_URL = os.getenv("CELERY_BROKER_URL") or os.getenv("REDIS_URL")
-RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", BROKER_URL)
+from app.core.config import settings
+
+# ✅ Use settings (loads from .env automatically via Pydantic)
+BROKER_URL = settings.CELERY_BROKER_URL
+RESULT_BACKEND = settings.CELERY_RESULT_BACKEND
 
 if not BROKER_URL:
-    # Try to find REDIS-URL (hyphenated) just in case
-    BROKER_URL = os.getenv("REDIS-URL")
-    if not BROKER_URL:
-        raise ValueError("❌ CELERY_BROKER_URL or REDIS_URL is not set!")
+    raise ValueError("❌ CELERY_BROKER_URL or REDIS_URL is not set in settings!")
 
-logger.info(f"Using Celery Broker: {BROKER_URL}")
+logger.info(f"Using Celery Broker: {BROKER_URL.split('@')[-1] if '@' in BROKER_URL else BROKER_URL}")
+
+# ✅ Startup Diagnostic: Verify Redis connectivity (Non-blocking)
+def check_redis_connectivity():
+    import redis
+    try:
+        # Use a very short timeout for the initial boot check
+        r = redis.from_url(BROKER_URL, socket_connect_timeout=2, socket_timeout=2)
+        r.ping()
+        logger.info("📡 Redis Connectivity: SUCCESS")
+    except Exception as e:
+        logger.warning(f"📡 Redis Connectivity: PENDING (Worker will retry automatically) - {str(e)}")
+
+# Run check but don't let it crash the boot
+if os.environ.get("SKIP_REDIS_CHECK") != "true":
+    check_redis_connectivity()
 
 # ✅ Create Celery app
 celery_app = Celery(
@@ -50,7 +64,15 @@ celery_app.conf.update(
     task_acks_late=True,
     task_reject_on_worker_lost=True,
 
+    # Connection and Transport Resilience
     broker_connection_retry_on_startup=True,
+    broker_connection_timeout=10,  # Don't wait forever
+    broker_transport_options={
+        "socket_timeout": 5,      # Timeout for individual operations
+        "socket_connect_timeout": 5, # Timeout for initial connection
+        "visibility_timeout": 3600,  # 1 hour
+        "retry_on_timeout": True,
+    },
 )
 
 # ✅ Auto-discover tasks
@@ -80,10 +102,14 @@ def task_prerun_handler(sender=None, task_id=None, task=None, **kwargs):
 
 
 @task_postrun.connect
-def task_postrun_handler(sender=None, task_id=None, task=None, **kwargs):
-    logger.info(
-        f"✅ Task completed: {task.name} | ID: {task_id}"
-    )
+def task_postrun_handler(sender=None, task_id=None, task=None, state=None, **kwargs):
+    # task_postrun fires for SUCCESS/RETRY/FAILURE; log status explicitly to avoid false positives.
+    if state == "SUCCESS":
+        logger.info(f"✅ Task completed: {task.name} | ID: {task_id}")
+    elif state == "RETRY":
+        logger.warning(f"🔁 Task retry scheduled: {task.name} | ID: {task_id}")
+    else:
+        logger.warning(f"ℹ️ Task finished with state={state}: {task.name} | ID: {task_id}")
 
 
 @task_failure.connect

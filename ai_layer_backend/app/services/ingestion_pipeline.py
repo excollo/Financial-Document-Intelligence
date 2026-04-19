@@ -167,7 +167,7 @@ class IngestionPipeline:
         try:
             # 1. Download document
             # Strategy: Try presigned URL first. If it expired (403), download
-            # directly from R2 using the Python backend's own credentials.
+            # directly from Azure Blob Storage using the Python backend's own credentials.
             # This handles the case where the Celery queue delay exceeds the
             # 1-hour presigned URL expiry.
             t_download = time.time()
@@ -181,21 +181,21 @@ class IngestionPipeline:
             except requests.exceptions.HTTPError as download_err:
                 status_code = download_err.response.status_code if download_err.response is not None else 0
                 if status_code == 403:
-                    # Presigned URL expired — download directly from R2
+                    # Presigned URL expired — download directly from Azure Blob Storage
                     file_key = metadata.get("fileKey")
                     if file_key:
                         logger.warning(
-                            "Presigned URL expired (403). Downloading directly from R2.",
+                            "Presigned URL expired (403). Downloading directly from Azure Blob Storage.",
                             job_id=job_id,
                             file_key=file_key
                         )
                         from app.services.s3 import s3_service
                         file_content = await s3_service.download_file(file_key)
-                        download_method = "r2_direct"
+                        download_method = "azure_blob_direct"
                         if not file_content:
-                            raise RuntimeError(f"R2 direct download also failed for key: {file_key}")
+                            raise RuntimeError(f"Azure Blob Storage direct download also failed for key: {file_key}")
                     else:
-                        logger.error("Presigned URL expired and no fileKey in metadata for R2 fallback", job_id=job_id)
+                        logger.error("Presigned URL expired and no fileKey in metadata for Azure Blob Storage fallback", job_id=job_id)
                         raise
                 else:
                     raise
@@ -417,15 +417,27 @@ class IngestionPipeline:
             logger.error("Ingestion pipeline failed", error=str(e), job_id=job_id)
             filename = metadata.get("filename", "document.pdf")
             document_id = metadata.get("documentId")
-            
-            # 1. First notify backend of failure (while document still exists)
-            backend_notifier.notify_status(
-                job_id=job_id,
-                status="failed",
-                namespace=filename,
-                document_id=document_id,
-                error={"message": str(e)},
-            )
+
+            current_retry = int(metadata.get("_celery_current_retry", 0))
+            max_retries = int(metadata.get("_celery_max_retries", 0))
+            is_terminal_attempt = current_retry >= max_retries
+
+            # Avoid sending a terminal failed callback during retriable attempts.
+            if is_terminal_attempt:
+                backend_notifier.notify_status(
+                    job_id=job_id,
+                    status="failed",
+                    namespace=filename,
+                    document_id=document_id,
+                    error={"message": str(e)},
+                )
+            else:
+                logger.warning(
+                    "Ingestion failed on retryable attempt; deferring failed callback until terminal attempt",
+                    job_id=job_id,
+                    current_retry=current_retry,
+                    max_retries=max_retries,
+                )
             
             # NOTE: We no longer delete the document automatically on failure
             # so the user can see the error message in their document list.

@@ -5,7 +5,9 @@ Supports sandbox, dev, and prod environments.
 import os
 from typing import Literal, Optional
 from functools import lru_cache
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, AliasChoices
 
 
 class Settings(BaseSettings):
@@ -27,7 +29,7 @@ class Settings(BaseSettings):
     
     # API Settings
     API_HOST: str = "0.0.0.0"
-    API_PORT: int = 8001
+    API_PORT: int = 8000
     API_WORKERS: int = 4
     
     # Redis Configuration
@@ -47,10 +49,13 @@ class Settings(BaseSettings):
     CELERY_ENABLE_UTC: bool = False
     
     # Azure Application Insights (Logging & Monitoring)
-    API_APPINSIGHTS_CONNECTION_STRING: str = ""
+    APPLICATIONINSIGHTS_CONNECTION_STRING: str = ""
     
     # MongoDB Configuration
-    MONGO_URI: str = ""
+    # Accept both MONGODB_URI (preferred) and legacy MONGO_URI.
+    MONGODB_URI: str = Field(default="", validation_alias=AliasChoices("MONGODB_URI", "MONGO_URI"))
+    COSMOSDB_URI: Optional[str] = None
+    MONGO_DB_NAME: str = "pdf-summarizer"
     
     # Logging
     LOG_LEVEL: str = "INFO"
@@ -61,6 +66,8 @@ class Settings(BaseSettings):
     CHUNK_OVERLAP: int = 800
     EMBEDDING_DIMENSION: int = 3072  # text-embedding-3-large
     EMBEDDING_MODEL: str = "text-embedding-3-large"
+    EXTRACTION_EXECUTOR_MODE: Literal["auto", "thread", "process"] = "auto"
+    EXTRACTION_MAX_WORKERS: int = 2
     
     # OpenAI
     OPENAI_API_KEY: str = ""
@@ -79,6 +86,12 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: Optional[str] = None
     SERPER_API_KEY: Optional[str] = None
     GPT_MODEL: str = "gpt-4o-mini"
+    
+    # Azure Blob Storage
+    AZURE_BLOB_ACCOUNT_NAME: str = ""
+    AZURE_BLOB_ACCOUNT_KEY: str = ""
+    AZURE_BLOB_CONTAINER_NAME: str = "drhp-files"
+    AZURE_BLOB_STORAGE_CONNECTION_STRING: str = ""
     
     # Internal authentication (Node <-> Python)
     INTERNAL_SECRET: str = ""  # Shared secret for internal API calls
@@ -109,15 +122,52 @@ class Settings(BaseSettings):
     def SUMMARY_STATUS_UPDATE_URL(self) -> str:
         return f"{self.NODE_BACKEND_URL}/api/summaries/summary-status/update"
 
-    # Cloudflare R2 / S3 Configuration
-    R2_ACCESS_KEY_ID: str = ""
-    R2_SECRET_ACCESS_KEY: str = ""
-    R2_BUCKET_NAME: str = "drhp-files"
-    CLOUDFLARE_URI: str = "https://0656c3a93c4bf3f9004bdca37344b55d.r2.cloudflarestorage.com"
-    S3_REGION: str = "auto"
+    @staticmethod
+    def _normalize_redis_url(url: str) -> str:
+        """
+        Normalize Redis URL query parameters for compatibility across clients.
+        In particular, redis-py expects ssl_cert_reqs values like:
+        'required' | 'optional' | 'none' (not CERT_REQUIRED).
+        """
+        if not url:
+            return url
+
+        parts = urlsplit(url)
+        if not parts.scheme:
+            return url
+
+        query_items = dict(parse_qsl(parts.query, keep_blank_values=True))
+        if parts.scheme.lower() == "rediss":
+            raw_ssl_value = query_items.get("ssl_cert_reqs", "").strip()
+            normalized_ssl = {
+                "CERT_REQUIRED": "required",
+                "REQUIRED": "required",
+                "required": "required",
+                "CERT_OPTIONAL": "optional",
+                "OPTIONAL": "optional",
+                "optional": "optional",
+                "CERT_NONE": "none",
+                "NONE": "none",
+                "none": "none",
+            }.get(raw_ssl_value, "required")
+            query_items["ssl_cert_reqs"] = normalized_ssl
+
+        normalized_query = urlencode(query_items)
+        return urlunsplit((parts.scheme, parts.netloc, parts.path, normalized_query, parts.fragment))
+
+
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        # Cosmos DB (Mongo API): prefer non-SRV URI when MONGODB_URI is cosmos +srv.
+        if (
+            self.MONGODB_URI
+            and "mongocluster.cosmos.azure.com" in self.MONGODB_URI
+            and self.MONGODB_URI.startswith("mongodb+srv://")
+            and self.COSMOSDB_URI
+        ):
+            self.MONGODB_URI = self.COSMOSDB_URI
+
         # Ensure NODE_BACKEND_URL doesn't have a trailing slash
         if self.NODE_BACKEND_URL.endswith("/"):
             self.NODE_BACKEND_URL = self.NODE_BACKEND_URL[:-1]
@@ -134,6 +184,12 @@ class Settings(BaseSettings):
             self.CELERY_BROKER_URL = base_redis_url
         if not self.CELERY_RESULT_BACKEND:
             self.CELERY_RESULT_BACKEND = base_redis_url
+
+        # Normalize all Redis-related URLs to avoid runtime SSL parsing warnings.
+        if self.REDIS_URL:
+            self.REDIS_URL = self._normalize_redis_url(self.REDIS_URL)
+        self.CELERY_BROKER_URL = self._normalize_redis_url(self.CELERY_BROKER_URL)
+        self.CELERY_RESULT_BACKEND = self._normalize_redis_url(self.CELERY_RESULT_BACKEND)
     
     @property
     def is_production(self) -> bool:

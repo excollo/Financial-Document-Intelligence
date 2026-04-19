@@ -30,7 +30,7 @@ class OnboardingAgent:
     """
 
     def __init__(self):
-        self.client = MongoClient(settings.MONGO_URI)
+        self.client = MongoClient(settings.MONGODB_URI)
         self.db = self.client[settings.MONGO_DB_NAME]
         self.collection = self.db["domains"]
         self.openai_client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
@@ -140,11 +140,6 @@ class OnboardingAgent:
             logger.error(f"Failed to save onboarding config: {e}")
             return False
 
-
-def onboard_tenant(domain_id: str, sop_text: str, toggles: dict = None) -> bool:
-    """Public API for onboarding."""
-    agent = OnboardingAgent()
-    return agent.process_new_tenant(domain_id, sop_text, toggles)
 
 def onboard_tenant(domain_id: str, sop_text: str, toggles: dict = None) -> bool:
     """Public API for onboarding."""
