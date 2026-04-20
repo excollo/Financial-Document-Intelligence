@@ -205,22 +205,33 @@ app.use(readLimiter);
 // Apply write limiter to all routes
 app.use(writeLimiter);
 
-// MongoDB Connection
-const MONGODB_URI = process.env.MONGODB_URI;
+// MongoDB / Azure Cosmos DB for MongoDB API
+// Prefer MONGODB_URI; if SRV discovery returns shard hostnames that fail DNS (ENOTFOUND), set
+// COSMOSDB_URI to the non-SRV connection string from Azure Portal (Keys → primary).
+const MONGODB_URI = (
+  process.env.MONGODB_URI?.trim() ||
+  process.env.COSMOSDB_URI?.trim() ||
+  ""
+);
 if (!MONGODB_URI) {
-  throw new Error("MONGODB_URI (or COSMOSDB_URI) is not set");
+  throw new Error("Set MONGODB_URI or COSMOSDB_URI in .env (Azure Cosmos / MongoDB connection string)");
 }
 
+const isCosmosHost = /cosmos\.azure\.com/i.test(MONGODB_URI);
+
 if (process.env.NODE_ENV !== 'test') {
-  console.log(`[DB] Connecting to MongoDB... URI starts with: ${MONGODB_URI.substring(0, 30)}***`);
+  const uriSource = process.env.MONGODB_URI?.trim() ? "MONGODB_URI" : "COSMOSDB_URI";
+  console.log(
+    `[DB] Connecting via ${uriSource}... host hint: ${MONGODB_URI.substring(0, 36)}***`
+  );
   mongoose
     .connect(MONGODB_URI, {
-      serverSelectionTimeoutMS: 30000,  // Give more time for Cosmos/firewall
+      serverSelectionTimeoutMS: 30000, // Give more time for Cosmos/firewall
       socketTimeoutMS: 60000,
       connectTimeoutMS: 30000,
       retryWrites: false, // Must be false for Cosmos DB
       retryReads: true,
-      tls: MONGODB_URI.includes("cosmos.azure.com"), // Force TLS for CosmosDB
+      tls: isCosmosHost, // Cosmos shard hostnames require TLS
     })
     .then(async () => {
       console.log("Connected to MongoDB");

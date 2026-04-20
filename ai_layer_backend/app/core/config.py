@@ -84,7 +84,11 @@ class Settings(BaseSettings):
     PERPLEXITY_API_KEY: Optional[str] = None
     COHERE_API_KEY: Optional[str] = None
     GEMINI_API_KEY: Optional[str] = None
-    SERPER_API_KEY: Optional[str] = None
+    # Serper.dev — also accepts SERPER_KEY in .env for convenience
+    SERPER_API_KEY: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("SERPER_API_KEY", "SERPER_KEY"),
+    )
     GPT_MODEL: str = "gpt-4o-mini"
     
     # Azure Blob Storage

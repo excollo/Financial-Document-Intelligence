@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { Navbar } from '@/components/sharedcomponents/Navbar';
@@ -6,7 +6,17 @@ import { TrendingUp, Filter, ChevronDown, ExternalLink, Calendar, Building2, Tag
 import { domainService } from '@/services/domainService';
 import { toast } from 'sonner';
 
-const API_URL = import.meta.env.VITE_API_URL;
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+
+/** Same JWT storage as AuthContext; never send `Bearer null` (it overrides axios.defaults). */
+function authHeaders(workspaceId: string): Record<string, string> {
+    const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
+    const h: Record<string, string> = { 'x-workspace': workspaceId };
+    if (token) {
+        h.Authorization = `Bearer ${token}`;
+    }
+    return h;
+}
 
 interface NewsArticle {
     _id: string;
@@ -21,10 +31,21 @@ interface NewsArticle {
     sentiment: 'positive' | 'negative' | 'neutral';
     riskLevel?: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
     findings?: string;
-    citations?: string[];
+    citations?: Array<{ url: string; title?: string; source?: string }> | string[];
+}
+
+/** One card per company; multiple DB rows collapsed with all outbound links */
+interface CompanyNewsGroup {
+    key: string;
+    company: string;
+    articles: NewsArticle[];
+    /** Deduped links for buttons (primary story + citations) */
+    sourceLinks: { url: string; label: string }[];
 }
 
 interface ArticleStats {
+    /** Distinct companies (matches grouped cards); falls back to article count if API is older */
+    totalCompanies?: number;
     totalArticles: number;
     sentimentSummary: {
         positive: number;
@@ -51,7 +72,7 @@ const NewsArticles: React.FC = () => {
     const [selectedSentiment, setSelectedSentiment] = useState<string>('');
     const [selectedCategory, setSelectedCategory] = useState<string>('');
     const [showFilters, setShowFilters] = useState(false);
-    const [timeFilter, setTimeFilter] = useState<'today' | 'yesterday' | 'last7' | 'last30' | 'all'>('today');
+    const [timeFilter, setTimeFilter] = useState<'today' | 'yesterday' | 'last7' | 'last30' | 'all'>('last7');
     const [showTimeFilter, setShowTimeFilter] = useState(false);
     const [isCrawling, setIsCrawling] = useState(false);
     const [domainId, setDomainId] = useState<string | null>(null);
@@ -101,7 +122,6 @@ const NewsArticles: React.FC = () => {
     const fetchStats = async () => {
         try {
             const workspaceId = localStorage.getItem('workspaceId') || 'ws_1758689602670_z3pxonjqn';
-            const token = localStorage.getItem('token');
 
             // Add date range based on time filter
             const params: any = {};
@@ -138,10 +158,7 @@ const NewsArticles: React.FC = () => {
             const response = await axios.get(
                 `${API_URL}/news-articles/stats`,
                 {
-                    headers: {
-                        Authorization: `Bearer ${token}`,
-                        'x-workspace': workspaceId,
-                    },
+                    headers: authHeaders(workspaceId),
                     params,
                 }
             );
@@ -158,7 +175,6 @@ const NewsArticles: React.FC = () => {
         try {
             setLoading(true);
             const workspaceId = localStorage.getItem('workspaceId') || 'ws_1758689602670_z3pxonjqn';
-            const token = localStorage.getItem('token');
 
             const params: any = { limit: 50 };
             if (selectedCompany) params.company = selectedCompany;
@@ -200,10 +216,7 @@ const NewsArticles: React.FC = () => {
             const response = await axios.get(
                 `${API_URL}/news-articles`,
                 {
-                    headers: {
-                        Authorization: `Bearer ${token}`,
-                        'x-workspace': workspaceId,
-                    },
+                    headers: authHeaders(workspaceId),
                     params,
                 }
             );
@@ -260,27 +273,29 @@ const NewsArticles: React.FC = () => {
         }
     };
 
-    const handleDelete = async (id: string) => {
-        if (!window.confirm('Are you sure you want to delete this news article?')) return;
+    const handleDeleteGroup = async (ids: string[]) => {
+        if (ids.length === 0) return;
+        const msg =
+            ids.length === 1
+                ? 'Are you sure you want to delete this news article?'
+                : `Delete all ${ids.length} saved articles for this company?`;
+        if (!window.confirm(msg)) return;
 
         try {
             const workspaceId = localStorage.getItem('workspaceId') || 'ws_1758689602670_z3pxonjqn';
-            const token = localStorage.getItem('token');
-
-            await axios.delete(`${API_URL}/news-articles/${id}`, {
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    'x-workspace': workspaceId,
-                }
-            });
-
-            toast.success('Article deleted successfully');
-            setArticles(prev => prev.filter(a => a._id !== id));
-            // Update stats too
+            await Promise.all(
+                ids.map((id) =>
+                    axios.delete(`${API_URL}/news-articles/${id}`, {
+                        headers: authHeaders(workspaceId),
+                    })
+                )
+            );
+            toast.success(ids.length === 1 ? 'Article deleted successfully' : 'Articles deleted successfully');
+            setArticles((prev) => prev.filter((a) => !ids.includes(a._id)));
             fetchStats();
         } catch (error: any) {
-            console.error('Error deleting article:', error);
-            toast.error(error.response?.data?.message || 'Failed to delete article');
+            console.error('Error deleting articles:', error);
+            toast.error(error.response?.data?.message || 'Failed to delete article(s)');
         }
     };
 
@@ -299,8 +314,10 @@ const NewsArticles: React.FC = () => {
         }
     };
 
-    const formatDate = (dateString: string) => {
+    const formatDate = (dateString: string | undefined) => {
+        if (!dateString) return 'Date unknown';
         const date = new Date(dateString);
+        if (Number.isNaN(date.getTime())) return 'Date unknown';
         const now = new Date();
         const diffMs = now.getTime() - date.getTime();
         const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
@@ -312,13 +329,99 @@ const NewsArticles: React.FC = () => {
             return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
         } else if (diffDays < 7) {
             return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
-        } else {
-            return date.toLocaleDateString('en-US', {
-                month: 'short',
-                day: 'numeric',
-                year: 'numeric'
+        }
+        return date.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+        });
+    };
+
+    const RISK_RANK: Record<string, number> = {
+        CRITICAL: 4,
+        HIGH: 3,
+        MEDIUM: 2,
+        LOW: 1,
+    };
+
+    const SENTIMENT_RANK: Record<string, number> = {
+        negative: 3,
+        neutral: 2,
+        positive: 1,
+    };
+
+    const groupArticlesByCompany = (list: NewsArticle[]): CompanyNewsGroup[] => {
+        const byKey = new Map<string, NewsArticle[]>();
+        for (const a of list) {
+            const key = (a.company || 'Unknown').trim().toLowerCase() || 'unknown';
+            if (!byKey.has(key)) byKey.set(key, []);
+            byKey.get(key)!.push(a);
+        }
+        const groups: CompanyNewsGroup[] = [];
+        for (const [key, arts] of byKey) {
+            const sorted = [...arts].sort(
+                (x, y) =>
+                    new Date(y.publishedDate || 0).getTime() -
+                    new Date(x.publishedDate || 0).getTime()
+            );
+            const seenUrls = new Set<string>();
+            const sourceLinks: { url: string; label: string }[] = [];
+            const pushLink = (url: string | undefined, label: string) => {
+                if (!url || !url.trim() || seenUrls.has(url)) return;
+                seenUrls.add(url);
+                sourceLinks.push({ url: url.trim(), label: label || 'Source' });
+            };
+            for (const art of sorted) {
+                pushLink(art.url, art.source || 'Article');
+                const cits = art.citations;
+                if (Array.isArray(cits)) {
+                    for (const c of cits) {
+                        if (typeof c === 'string') pushLink(c, 'Citation');
+                        else if (c && typeof c === 'object' && 'url' in c)
+                            pushLink(c.url, c.source || c.title || 'Source');
+                    }
+                }
+            }
+            groups.push({
+                key,
+                company: sorted[0]?.company || 'Unknown',
+                articles: sorted,
+                sourceLinks,
             });
         }
+        groups.sort((a, b) => {
+            const da = new Date(a.articles[0]?.publishedDate || 0).getTime();
+            const db = new Date(b.articles[0]?.publishedDate || 0).getTime();
+            return db - da;
+        });
+        return groups;
+    };
+
+    const companyGroups = useMemo(
+        () => groupArticlesByCompany(articles),
+        [articles]
+    );
+
+    const mergeGroupDisplay = (arts: NewsArticle[]) => {
+        const primary = arts[0];
+        let sentiment = primary.sentiment;
+        for (const a of arts) {
+            if ((SENTIMENT_RANK[a.sentiment] || 0) > (SENTIMENT_RANK[sentiment] || 0)) {
+                sentiment = a.sentiment;
+            }
+        }
+        let riskLevel: NewsArticle['riskLevel'] | undefined;
+        for (const a of arts) {
+            if (!a.riskLevel) continue;
+            if (!riskLevel || (RISK_RANK[a.riskLevel] || 0) > (RISK_RANK[riskLevel] || 0)) {
+                riskLevel = a.riskLevel;
+            }
+        }
+        const findings =
+            primary.findings ||
+            arts.map((a) => a.findings).find((f) => f && f.trim()) ||
+            '';
+        return { primary, sentiment, riskLevel, findings };
     };
 
     const clearFilters = () => {
@@ -349,17 +452,14 @@ const NewsArticles: React.FC = () => {
             }
 
             setIsCrawling(true);
-            const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
-            
+            const workspaceId = localStorage.getItem('workspaceId') || 'ws_1758689602670_z3pxonjqn';
             toast.info("Starting news crawl... This may take a minute.");
             
             const response = await axios.post(
                 `${API_URL}/domain/trigger-news-crawl`,
                 { domainId: targetDomainId },
                 {
-                    headers: {
-                        Authorization: `Bearer ${token}`
-                    }
+                    headers: authHeaders(workspaceId),
                 }
             );
             
@@ -373,7 +473,14 @@ const NewsArticles: React.FC = () => {
             }
         } catch (error: any) {
             console.error('Error triggering news monitor:', error);
-            const errorMsg = error.response?.data?.detail || "Failed to trigger monitor";
+            const d = error.response?.data;
+            const errorMsg =
+                (typeof d?.detail === 'string' ? d.detail : null) ||
+                (typeof d?.error === 'string' ? d.error : null) ||
+                (typeof d?.details === 'string' ? d.details : null) ||
+                (d?.detail != null ? String(d.detail) : null) ||
+                error.message ||
+                'Failed to trigger monitor';
             toast.error(errorMsg);
         } finally {
             setIsCrawling(false);
@@ -396,8 +503,16 @@ const NewsArticles: React.FC = () => {
                     <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-6">
                         <div className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
                             <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Total</div>
-                            <div className="text-2xl font-bold text-[#232323]">{stats.totalArticles}</div>
-                            <div className="text-xs text-gray-500 mt-1">Articles</div>
+                            <div className="text-2xl font-bold text-[#232323]">
+                                {stats.totalCompanies ?? stats.totalArticles}
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">Companies</div>
+                            {stats.totalCompanies != null &&
+                                stats.totalArticles > stats.totalCompanies && (
+                                    <div className="text-xs text-gray-400 mt-1">
+                                        {stats.totalArticles} article sources
+                                    </div>
+                                )}
                         </div>
                         {/* 
                         <div className="bg-green-50 border border-green-200 rounded-lg p-4 hover:shadow-md transition-shadow">
@@ -583,10 +698,18 @@ const NewsArticles: React.FC = () => {
                     )}
                 </div>
 
-                {/* Results Count */}
+                {/* Results Count — one row per company; article rows may be merged */}
                 <div className="flex items-center justify-between mb-4">
                     <p className="text-sm text-gray-600">
-                        Showing <span className="font-semibold text-[#232323]">{articles.length}</span> news {articles.length === 1 ? 'article' : 'articles'}
+                        Showing{' '}
+                        <span className="font-semibold text-[#232323]">{companyGroups.length}</span>{' '}
+                        {companyGroups.length === 1 ? 'company' : 'companies'}
+                        {articles.length > companyGroups.length && (
+                            <span className="text-gray-500">
+                                {' '}
+                                ({articles.length} sources)
+                            </span>
+                        )}
                         {timeFilter !== 'all' && (
                             <span className="text-[#FF7A1A] font-semibold ml-1">
                                 {timeFilter === 'today' && '(Today)'}
@@ -606,7 +729,7 @@ const NewsArticles: React.FC = () => {
                             <p className="text-gray-500">Loading latest news...</p>
                         </div>
                     </div>
-                ) : articles.length === 0 ? (
+                ) : companyGroups.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-16 text-gray-500 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
                         <TrendingUp className="h-16 w-16 mb-4 opacity-30" />
                         <p className="text-lg font-semibold mb-2">No articles found</p>
@@ -614,12 +737,14 @@ const NewsArticles: React.FC = () => {
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-1 lg:grid-cols-1 gap-6 ">
-                        {articles.map((article) => {
-                            const sentimentConfig = getSentimentConfig(article.sentiment);
+                        {companyGroups.map((group) => {
+                            const { primary, sentiment, riskLevel, findings } = mergeGroupDisplay(group.articles);
+                            const sentimentConfig = getSentimentConfig(sentiment);
+                            const ids = group.articles.map((a) => a._id);
 
                             return (
                                 <div
-                                    key={article._id}
+                                    key={group.key}
                                     className={`${sentimentConfig.bgColor} border-2 ${sentimentConfig.borderColor} rounded-xl overflow-hidden hover:shadow-2xl transition-all duration-300`}
                                 >
                                     <div className="px-4 py-2">
@@ -630,70 +755,69 @@ const NewsArticles: React.FC = () => {
                                                     <Building2 className="h-5 w-5" />
                                                 </div>
                                                 <div>
-                                                    <h3 className="text-lg font-bold text-[#232323]">{article.company}</h3>
-                                                    <div className="flex items-center gap-2 mt-1">
+                                                    <h3 className="text-lg font-bold text-[#232323]">{group.company}</h3>
+                                                    <div className="flex items-center gap-2 mt-1 flex-wrap">
                                                         <span className="text-xs text-gray-500 flex items-center gap-1">
                                                             <Calendar className="h-3 w-3" />
-                                                            {formatDate(article.publishedDate)}
+                                                            {formatDate(primary.publishedDate)}
                                                         </span>
-                                                        <span className="text-xs text-gray-400">•</span>
-                                                        <span className="text-xs font-semibold text-[#FF7A1A] uppercase">
-                                                            {article.source}
-                                                        </span>
+                                                        {group.articles.length > 1 && (
+                                                            <>
+                                                                <span className="text-xs text-gray-400">•</span>
+                                                                <span className="text-xs text-gray-600">
+                                                                    {group.articles.length} saved stories
+                                                                </span>
+                                                            </>
+                                                        )}
                                                     </div>
                                                 </div>
                                             </div>
 
-                                            <div className="flex items-center gap-2">
+                                            <div className="flex items-center gap-2 flex-wrap justify-end">
                                                 <div className={`flex items-center gap-2 px-2 py-1 rounded-full ${sentimentConfig.badgeColor} text-xs`}>
                                                     {sentimentConfig.icon}
-                                                    <span className="capitalize">{article.sentiment}</span>
+                                                    <span className="capitalize">{sentiment}</span>
                                                 </div>
-                                                {article.riskLevel && (
-                                                    <span className={`px-2 py-1 rounded-full text-xs uppercase ${getRiskLevelColor(article.riskLevel)}`}>
-                                                        {article.riskLevel}
+                                                {riskLevel && (
+                                                    <span className={`px-2 py-1 rounded-full text-xs uppercase ${getRiskLevelColor(riskLevel)}`}>
+                                                        {riskLevel}
                                                     </span>
                                                 )}
-                                                {/* Category Badge */}
 
                                                 <span className="inline-flex items-center gap-1.5 bg-white border border-gray-300 text-gray-700 px-3 py-1 rounded-full text-xs font-semibold">
                                                     <Tag className="h-3 w-3" />
-                                                    {article.category}
+                                                    {primary.category}
                                                 </span>
 
                                                 <button
-                                                    onClick={() => handleDelete(article._id)}
+                                                    onClick={() => handleDeleteGroup(ids)}
                                                     className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                                                    title="Delete Article"
+                                                    title="Delete all articles for this company"
                                                 >
                                                     <Trash2 className="h-4 w-4" />
                                                 </button>
-
                                             </div>
-
                                         </div>
-
-
 
                                         {/* Title/Description */}
                                         <div className={`mb-2 ${sentimentConfig.textColor}`}>
                                             <p className="text-sm text-gray leading-relaxed">
-                                                {article.description}
+                                                {primary.description}
                                             </p>
                                         </div>
 
                                         {/* Key Finding (if available) */}
-                                        {article.findings && article.findings !== article.description && (
-                                            <div className={`p-4 rounded-lg border-l-4 mb-4 ${article.sentiment === 'positive'
+                                        {findings && findings !== primary.description && (
+                                            <div className={`p-4 rounded-lg border-l-4 mb-4 ${sentiment === 'positive'
                                                 ? 'bg-green-100 border-green-500'
-                                                : article.sentiment === 'negative'
+                                                : sentiment === 'negative'
                                                     ? 'bg-red-100 border-red-500'
                                                     : 'bg-gray-100 border-gray-500'
                                                 }`}>
                                                 <div className="flex items-start gap-2">
-                                                    <AlertCircle className={`h-4 w-4 mt-0.5 flex-shrink-0 ${article.sentiment === 'positive'
+                                                    <AlertCircle className={`h-4 w-4 mt-0.5 flex-shrink-0 ${sentiment === 'positive'
                                                         ? 'text-green-700'
-                                                        : article.sentiment === 'negative'
+                                                        : sentiment === 'negative'
                                                             ? 'text-red-700'
                                                             : 'text-gray-700'
                                                         }`} />
@@ -702,48 +826,37 @@ const NewsArticles: React.FC = () => {
                                                             Key Finding
                                                         </p>
                                                         <p className="text-sm leading-relaxed">
-                                                            {article.findings}
+                                                            {findings}
                                                         </p>
                                                     </div>
                                                 </div>
                                             </div>
                                         )}
 
-                                        {/* Footer */}
+                                        {/* Footer — one button per outbound link */}
                                         <div className="flex flex-col gap-2 pt-2 border-t border-gray-200">
-                                            <div className="flex items-center justify-between">
-                                                <div className="text-xs text-gray-500">
-                                                    Source: <span className="font-semibold text-gray-700">{article.source}</span>
-                                                </div>
-                                                {!article.citations || article.citations.length <= 1 ? (
+                                            <div className="text-xs text-gray-500 mb-1">
+                                                Open a source:
+                                            </div>
+                                            <div className="flex flex-wrap gap-2">
+                                                {(group.sourceLinks.length > 0
+                                                    ? group.sourceLinks
+                                                    : primary.url
+                                                        ? [{ url: primary.url, label: primary.source || 'View' }]
+                                                        : []
+                                                ).map((link, idx) => (
                                                     <a
-                                                        href={article.url}
+                                                        key={`${link.url}-${idx}`}
+                                                        href={link.url}
                                                         target="_blank"
                                                         rel="noopener noreferrer"
-                                                        className="inline-flex items-center gap-2 px-3 py-1 bg-[#FF7A1A] text-white rounded-lg text-sm font-semibold hover:bg-[#4B2A06] transition-colors"
+                                                        className="inline-flex items-center gap-2 px-3 py-1.5 bg-[#FF7A1A] text-white rounded-lg text-xs font-semibold hover:bg-[#4B2A06] transition-colors"
                                                     >
-                                                        View Details
+                                                        {link.label}
                                                         <ExternalLink className="h-3 w-3" />
                                                     </a>
-                                                ) : null}
+                                                ))}
                                             </div>
-
-                                            {article.citations && article.citations.length > 1 && (
-                                                <div className="flex flex-wrap gap-2 mt-1">
-                                                    {article.citations.map((url: string, index: number) => (
-                                                        <a
-                                                            key={index}
-                                                            href={url}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            className="inline-flex items-center gap-2 px-2 py-1 bg-gray-100 text-[#4B2A06] rounded border border-gray-200 text-xs font-medium hover:bg-gray-200 transition-colors"
-                                                        >
-                                                            Citation {index + 1}
-                                                            <ExternalLink className="h-3 w-3" />
-                                                        </a>
-                                                    ))}
-                                                </div>
-                                            )}
                                         </div>
                                     </div>
                                 </div>

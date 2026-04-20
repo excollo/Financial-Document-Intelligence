@@ -479,23 +479,61 @@ export const domainController = {
 
             console.log(`🚀 Manual trigger: News Monitor crawl for domain: ${domainId}`);
 
+            const domainDoc = await Domain.findOne({ domainId });
+            if (!domainDoc) {
+                return res.status(404).json({
+                    error: "Domain not found",
+                    detail:
+                        "No domain record matches your account. Ensure your user is linked to a valid domain in MongoDB.",
+                });
+            }
+
             const response = await axios.post(`${PYTHON_API_URL}/news-monitor/trigger`, {
                 domainId: domainId
             }, {
                 headers: {
                     "X-Internal-Secret": INTERNAL_SECRET
-                }
+                },
+                // RSS + Serper + GPT per company can exceed default axios timeouts
+                timeout: 900_000,
+                validateStatus: (s) => s < 500,
             });
+
+            if (response.status >= 400) {
+                const py = response.data as { detail?: string | object };
+                let detail =
+                    typeof py?.detail === "string"
+                        ? py.detail
+                        : py?.detail != null
+                          ? JSON.stringify(py.detail)
+                          : JSON.stringify(response.data);
+                if (response.status === 404) {
+                    detail = `${detail} If the domain exists in Node, set ai_layer_backend MONGODB_URI (and optional MONGO_DB_NAME) to the same database as node_backend so the crawler can read the domains collection.`;
+                }
+                console.error("News monitor returned error:", response.status, detail);
+                return res.status(response.status).json({
+                    error: "News monitor request failed",
+                    detail,
+                });
+            }
 
             res.json({
                 message: "Instant news crawl triggered successfully",
                 pythonResponse: response.data
             });
         } catch (error: any) {
-            console.error("Error triggering manual news crawl:", error.response?.data || error.message);
-            res.status(500).json({
+            const status = error.response?.status;
+            const pyDetail = error.response?.data?.detail;
+            const detail =
+                typeof pyDetail === "string"
+                    ? pyDetail
+                    : pyDetail != null
+                      ? JSON.stringify(pyDetail)
+                      : error.response?.data ?? error.message;
+            console.error("Error triggering manual news crawl:", status, detail);
+            res.status(status && status >= 400 && status < 600 ? status : 500).json({
                 error: "Failed to trigger news crawl",
-                details: error.response?.data || error.message
+                detail,
             });
         }
     }

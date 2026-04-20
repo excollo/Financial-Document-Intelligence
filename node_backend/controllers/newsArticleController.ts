@@ -1,6 +1,26 @@
 import { Request, Response } from 'express';
 import NewsArticle from '../models/NewsArticle';
 import NewsCrawlResult from '../models/NewsCrawlResult';
+import { AuthRequest } from '../middleware/auth';
+
+/**
+ * Articles may be keyed by domainId (crawler) or workspaceId (legacy). When both JWT domain
+ * and x-workspace are present, match either so listings work across workspace/header mismatches.
+ */
+function tenantScope(req: AuthRequest): Record<string, unknown> | null {
+    const domainId = req.userDomain;
+    const workspaceId = req.headers['x-workspace'] as string | undefined;
+    if (domainId && workspaceId) {
+        return { $or: [{ domainId }, { workspaceId }] };
+    }
+    if (domainId) {
+        return { domainId };
+    }
+    if (workspaceId) {
+        return { workspaceId };
+    }
+    return null;
+}
 
 export const newsArticleController = {
     // POST endpoint for n8n to submit news articles
@@ -71,7 +91,7 @@ export const newsArticleController = {
     },
 
     // GET all news articles with filters
-    async getNewsArticles(req: Request, res: Response) {
+    async getNewsArticles(req: AuthRequest, res: Response) {
         try {
             const {
                 company,
@@ -86,14 +106,13 @@ export const newsArticleController = {
                 limit = 20,
             } = req.query;
 
-            const workspaceId = req.headers['x-workspace'] as string;
-
-            if (!workspaceId) {
-                return res.status(400).json({ message: 'Workspace ID required' });
+            const scope = tenantScope(req);
+            if (!scope) {
+                return res.status(400).json({ message: 'Domain or workspace context required' });
             }
 
-            // Build query
-            const query: any = { workspaceId };
+            // Build query (domainId matches Python crawler saves; workspace-only legacy)
+            const query: any = { ...scope };
 
             if (company) {
                 query.company = { $regex: company, $options: 'i' };
@@ -157,38 +176,84 @@ export const newsArticleController = {
     },
 
     // GET dashboard stats for news articles
-    async getArticleStats(req: Request, res: Response) {
+    async getArticleStats(req: AuthRequest, res: Response) {
         try {
-            const workspaceId = req.headers['x-workspace'] as string;
             const { startDate, endDate } = req.query;
 
-            if (!workspaceId) {
-                return res.status(400).json({ message: 'Workspace ID required' });
+            const scope = tenantScope(req);
+            if (!scope) {
+                return res.status(400).json({ message: 'Domain or workspace context required' });
             }
 
             // Build base query with date filters if provided
-            const baseQuery: any = { workspaceId };
+            const baseQuery: any = { ...scope };
             if (startDate || endDate) {
                 baseQuery.crawledAt = {};
                 if (startDate) baseQuery.crawledAt.$gte = new Date(startDate as string);
                 if (endDate) baseQuery.crawledAt.$lte = new Date(endDate as string);
             }
 
+            const companyKeyExpr = {
+                $let: {
+                    vars: {
+                        t: {
+                            $trim: {
+                                input: { $ifNull: ['$company', 'Unknown'] },
+                            },
+                        },
+                    },
+                    in: {
+                        $cond: [
+                            { $eq: [{ $strLenCP: '$$t' }, 0] },
+                            'unknown',
+                            { $toLower: '$$t' },
+                        ],
+                    },
+                },
+            };
+
             const [
                 totalArticles,
-                sentimentCounts,
-                riskCounts,
-                companyCounts,
+                companyAgg,
+                topCompanies,
                 recentArticles,
             ] = await Promise.all([
                 NewsArticle.countDocuments(baseQuery),
                 NewsArticle.aggregate([
                     { $match: baseQuery },
-                    { $group: { _id: '$sentiment', count: { $sum: 1 } } },
-                ]),
-                NewsArticle.aggregate([
-                    { $match: { ...baseQuery, riskLevel: { $exists: true } } },
-                    { $group: { _id: '$riskLevel', count: { $sum: 1 } } },
+                    {
+                        $addFields: {
+                            companyKey: companyKeyExpr,
+                            sentimentRank: {
+                                $switch: {
+                                    branches: [
+                                        { case: { $eq: ['$sentiment', 'negative'] }, then: 3 },
+                                        { case: { $eq: ['$sentiment', 'neutral'] }, then: 2 },
+                                        { case: { $eq: ['$sentiment', 'positive'] }, then: 1 },
+                                    ],
+                                    default: 0,
+                                },
+                            },
+                            riskRank: {
+                                $switch: {
+                                    branches: [
+                                        { case: { $eq: ['$riskLevel', 'CRITICAL'] }, then: 4 },
+                                        { case: { $eq: ['$riskLevel', 'HIGH'] }, then: 3 },
+                                        { case: { $eq: ['$riskLevel', 'MEDIUM'] }, then: 2 },
+                                        { case: { $eq: ['$riskLevel', 'LOW'] }, then: 1 },
+                                    ],
+                                    default: 0,
+                                },
+                            },
+                        },
+                    },
+                    {
+                        $group: {
+                            _id: '$companyKey',
+                            maxSentRank: { $max: '$sentimentRank' },
+                            maxRiskRank: { $max: '$riskRank' },
+                        },
+                    },
                 ]),
                 NewsArticle.aggregate([
                     { $match: baseQuery },
@@ -201,32 +266,41 @@ export const newsArticleController = {
                     .limit(5),
             ]);
 
-            // Format sentiment counts
+            /** One row per company — same merge rule as News Monitor cards (max sentiment / max risk). */
             const sentimentSummary = {
                 positive: 0,
                 negative: 0,
                 neutral: 0,
             };
-            sentimentCounts.forEach((item: any) => {
-                sentimentSummary[item._id as keyof typeof sentimentSummary] = item.count;
-            });
-
-            // Format risk counts
             const riskDistribution = {
                 LOW: 0,
                 MEDIUM: 0,
                 HIGH: 0,
                 CRITICAL: 0,
             };
-            riskCounts.forEach((item: any) => {
-                riskDistribution[item._id as keyof typeof riskDistribution] = item.count;
-            });
+
+            for (const row of companyAgg) {
+                const sr = row.maxSentRank ?? 0;
+                if (sr >= 3) sentimentSummary.negative += 1;
+                else if (sr === 2) sentimentSummary.neutral += 1;
+                else if (sr === 1) sentimentSummary.positive += 1;
+                else sentimentSummary.neutral += 1;
+
+                const rr = row.maxRiskRank ?? 0;
+                if (rr === 4) riskDistribution.CRITICAL += 1;
+                else if (rr === 3) riskDistribution.HIGH += 1;
+                else if (rr === 2) riskDistribution.MEDIUM += 1;
+                else if (rr === 1) riskDistribution.LOW += 1;
+            }
+
+            const totalCompanies = companyAgg.length;
 
             res.json({
+                totalCompanies,
                 totalArticles,
                 sentimentSummary,
                 riskDistribution,
-                topCompanies: companyCounts,
+                topCompanies,
                 recentArticles,
                 lastCrawlDate: recentArticles[0]?.crawledAt || null,
             });
@@ -240,14 +314,17 @@ export const newsArticleController = {
     },
 
     // GET single article by ID
-    async getArticleById(req: Request, res: Response) {
+    async getArticleById(req: AuthRequest, res: Response) {
         try {
             const { id } = req.params;
-            const workspaceId = req.headers['x-workspace'] as string;
+            const scope = tenantScope(req);
+            if (!scope) {
+                return res.status(400).json({ message: 'Domain or workspace context required' });
+            }
 
             const article = await NewsArticle.findOne({
                 _id: id,
-                workspaceId,
+                ...scope,
             });
 
             if (!article) {
@@ -265,17 +342,20 @@ export const newsArticleController = {
     },
 
     // GET articles by company
-    async getArticlesByCompany(req: Request, res: Response) {
+    async getArticlesByCompany(req: AuthRequest, res: Response) {
         try {
             const { company } = req.params;
             const { page = 1, limit = 20 } = req.query;
-            const workspaceId = req.headers['x-workspace'] as string;
+            const scope = tenantScope(req);
+            if (!scope) {
+                return res.status(400).json({ message: 'Domain or workspace context required' });
+            }
 
             const skip = (Number(page) - 1) * Number(limit);
 
             const articles = await NewsArticle.find({
                 company: { $regex: company, $options: 'i' },
-                workspaceId,
+                ...scope,
             })
                 .sort({ publishedDate: -1 })
                 .skip(skip)
@@ -283,7 +363,7 @@ export const newsArticleController = {
 
             const total = await NewsArticle.countDocuments({
                 company: { $regex: company, $options: 'i' },
-                workspaceId,
+                ...scope,
             });
 
             res.json({
@@ -305,18 +385,17 @@ export const newsArticleController = {
     },
 
     // DELETE article by ID
-    async deleteArticle(req: Request, res: Response) {
+    async deleteArticle(req: AuthRequest, res: Response) {
         try {
             const { id } = req.params;
-            const workspaceId = req.headers['x-workspace'] as string;
-
-            if (!workspaceId) {
-                return res.status(400).json({ message: 'Workspace ID required' });
+            const scope = tenantScope(req);
+            if (!scope) {
+                return res.status(400).json({ message: 'Domain or workspace context required' });
             }
 
             const result = await NewsArticle.findOneAndDelete({
                 _id: id,
-                workspaceId
+                ...scope,
             });
 
             if (!result) {

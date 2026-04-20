@@ -46,13 +46,13 @@ celery_app = Celery(
     backend=RESULT_BACKEND,
 )
 
-# ✅ Basic Config (safe defaults)
+# ✅ Basic Config (safe defaults) — schedule uses CELERY_TIMEZONE (default Asia/Kolkata for 8:00 IST jobs)
 celery_app.conf.update(
     task_serializer="json",
     result_serializer="json",
     accept_content=["json"],
-    timezone="UTC",
-    enable_utc=True,
+    timezone=settings.CELERY_TIMEZONE,
+    enable_utc=settings.CELERY_ENABLE_UTC,
 
     task_track_started=True,
     task_time_limit=3600,
@@ -82,9 +82,9 @@ import app.workers.pipeline_tasks
 
 celery_app.autodiscover_tasks(['app.workers'])
 
-# ✅ Scheduled tasks
+# ✅ Scheduled tasks — 08:00 in CELERY_TIMEZONE (default Asia/Kolkata = IST)
 celery_app.conf.beat_schedule = {
-    'daily-news-monitor-8am': {
+    'daily-news-monitor-8am-ist': {
         'task': 'run_daily_news_monitor',
         'schedule': crontab(hour=8, minute=0),
     },

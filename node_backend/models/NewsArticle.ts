@@ -13,6 +13,8 @@ export interface INewsArticle extends Document {
     riskLevel?: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
     confidence?: 'low' | 'medium' | 'high';
     findings?: string;
+    /** Same story from RSS + Serper: multiple sources */
+    citations?: Array<{ url: string; title?: string; source?: string }>;
     workspaceId: string;
     domainId: string;
     crawledAt: Date;
@@ -75,6 +77,16 @@ const NewsArticleSchema: Schema = new Schema(
         },
         findings: {
             type: String,
+        },
+        citations: {
+            type: [
+                {
+                    url: { type: String, required: true },
+                    title: { type: String },
+                    source: { type: String },
+                },
+            ],
+            default: undefined,
         },
         workspaceId: {
             type: String,
