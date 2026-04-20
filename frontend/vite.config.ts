@@ -9,6 +9,11 @@ export default defineConfig(({ mode }) => ({
     host: "::",
     port: 8080,
     proxy: {
+      "/api": {
+        target: "https://fdi-node-backend-dev-e2h7b7bmfbgvfgc6.centralindia-01.azurewebsites.net",
+        changeOrigin: true,
+        secure: true,
+      },
       "/webhook": {
         target: "https://n8n-excollo.azurewebsites.net",
         changeOrigin: true,

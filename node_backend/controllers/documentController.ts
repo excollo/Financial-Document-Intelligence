@@ -20,6 +20,24 @@ interface AuthRequest extends Request {
   currentWorkspace?: string;
 }
 
+/** Object key in blob storage: multer-azure-blob-storage sets `blobName`; S3-style engines set `key`. */
+function multerUploadedBlobKey(file: Express.Multer.File): string | undefined {
+  const f = file as Express.Multer.File & {
+    blobName?: string;
+    key?: string;
+    url?: string;
+    path?: string;
+  };
+  const name = f.blobName ?? f.key;
+  if (typeof name === "string" && name.length > 0) return name;
+  const rawUrl = f.url || f.path;
+  if (typeof rawUrl === "string" && rawUrl.length > 0) {
+    const last = decodeURIComponent(rawUrl.split("?")[0].split("/").pop() || "");
+    return last.length > 0 ? last : undefined;
+  }
+  return undefined;
+}
+
 export const documentController = {
   // Helper to normalize namespace consistently (trim, preserve .pdf extension)
   // Keep case as-is; rely on Mongo collation for case-insensitive uniqueness
@@ -991,14 +1009,11 @@ export const documentController = {
         return res.status(400).json({ error: "No file uploaded" });
       }
       const originalname = req.file.originalname;
-      // Ensure cross-compatibility with AWS S3 (key) and Azure Blob Storage (url/blobName)
-      const rawUrl = (req.file as any).url || (req.file as any).path;
-      const fileKey = (req.file as any).key || 
-                     (req.file as any).blobName || 
-                     (typeof rawUrl === 'string' ? decodeURIComponent(rawUrl.split('?')[0].split('/').pop() || "") : undefined);
-      
+      const fileKey = multerUploadedBlobKey(req.file);
       if (!fileKey) {
-        return res.status(400).json({ error: "Internal storage error: Upload succeeded but could not determine blob key." });
+        return res.status(400).json({
+          error: "Internal storage error: Upload succeeded but could not determine blob key.",
+        });
       }
       const user = (req as any).user;
       // Use original filename for namespace to preserve .pdf extension
@@ -1555,14 +1570,11 @@ export const documentController = {
       const drhp = await Document.findById(drhpId);
       if (!drhp) return res.status(404).json({ error: "DRHP not found" });
 
-      // Ensure cross-compatibility with AWS S3 (key) and Azure Blob Storage (url/blobName)
-      const rawUrl = (req.file as any).url || (req.file as any).path;
-      const fileKey = (req.file as any).key || 
-                     (req.file as any).blobName || 
-                     (typeof rawUrl === 'string' ? decodeURIComponent(rawUrl.split('?')[0].split('/').pop() || "") : undefined);
-
+      const fileKey = multerUploadedBlobKey(req.file);
       if (!fileKey) {
-        return res.status(400).json({ error: "Internal storage error: Upload succeeded but could not determine blob key." });
+        return res.status(400).json({
+          error: "Internal storage error: Upload succeeded but could not determine blob key.",
+        });
       }
       const user = (req as any).user;
 

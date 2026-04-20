@@ -115,7 +115,27 @@ const allowedOrigins = [
   "https://financial-document-intelligence.vercel.app",
   "http://localhost:8080",
   "http://localhost:3000",
+  ...((process.env.CORS_ALLOWED_ORIGINS || "")
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean)),
 ];
+
+const isAllowedOrigin = (origin: string): boolean => {
+  if (allowedOrigins.includes(origin)) return true;
+  try {
+    const parsed = new URL(origin);
+    if (
+      (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1") &&
+      (parsed.protocol === "http:" || parsed.protocol === "https:")
+    ) {
+      return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+};
 
 app.use(
   cors({
@@ -123,17 +143,12 @@ app.use(
       // Allow requests with no origin (like mobile apps or curl requests)
       if (!origin) return callback(null, true);
 
-      if (allowedOrigins.indexOf(origin) !== -1) {
+      if (isAllowedOrigin(origin)) {
         callback(null, true);
       } else if (origin.endsWith('.vercel.app') || origin.endsWith('.excollo.com')) {
         callback(null, true);
       } else {
-        // For development, allow any localhost origin
-        if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
-          callback(null, true);
-        } else {
-          callback(new Error('Not allowed by CORS'));
-        }
+        callback(new Error(`Not allowed by CORS: ${origin}`));
       }
     },
     credentials: true,
@@ -146,7 +161,26 @@ app.use(
 );
 
 // Handle preflight requests explicitly
-app.options('*', cors());
+app.options(
+  "*",
+  cors({
+    origin: function (origin, callback) {
+      if (!origin) return callback(null, true);
+      if (isAllowedOrigin(origin)) return callback(null, true);
+      callback(new Error(`Not allowed by CORS: ${origin}`));
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "x-workspace",
+      "x-link-token",
+      "x-internal-secret",
+    ],
+    optionsSuccessStatus: 204,
+  })
+);
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));

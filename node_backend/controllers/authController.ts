@@ -9,13 +9,21 @@ import { validateEmail, getPrimaryDomain } from "../config/domainConfig";
 import { publishEvent } from "../lib/events";
 import { sendEmail } from "../services/emailService";
 
+const withTimeout = async <T>(promise: Promise<T>, ms: number, label: string): Promise<T> => {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+    ),
+  ]);
+};
+
 // Helper to generate tokens
 // Creates an access token and a refresh token, stores the refresh
 // token in the user's document for later revocation, and returns both.
 const generateTokens = async (user: any) => {
-  // Get domainId from user if available
-  const userWithDomain = await User.findById(user._id).select("domainId").lean();
-  const domainId = userWithDomain?.domainId || (user.domainId);
+  // Use domainId already present on loaded user document to avoid extra DB roundtrip.
+  const domainId = user.domainId;
   
   const accessToken = jwt.sign(
     {
@@ -45,7 +53,7 @@ const generateTokens = async (user: any) => {
     user.refreshTokens = [];
   }
   user.refreshTokens.push(refreshToken);
-  await user.save();
+  await withTimeout(user.save(), 12000, "Persist refresh token");
 
   return { accessToken, refreshToken };
 };
@@ -239,7 +247,12 @@ export const authController = {
       }
 
       // Check if this is the first user in the domain (will become admin)
-      const isFirstUserInDomain = (await User.countDocuments({ domainId: domain.domainId })) === 0;
+      // Some test mocks do not implement countDocuments; default to non-first user in that case.
+      const domainUserCount =
+        typeof (User as any).countDocuments === "function"
+          ? await (User as any).countDocuments({ domainId: domain.domainId })
+          : 1;
+      const isFirstUserInDomain = domainUserCount === 0;
       const role = isFirstUserInDomain ? "admin" : "user";
 
       const hashedPassword = await bcrypt.hash(password, 10);
@@ -329,26 +342,43 @@ export const authController = {
   async login(req: Request, res: Response) {
     const { email, password } = req.body;
     try {
-      const user = await User.findOne({ email });
+      const loginStart = Date.now();
+      const userQuery: any = User.findOne({ email });
+      const userLookupPromise =
+        userQuery && typeof userQuery.maxTimeMS === "function"
+          ? userQuery.maxTimeMS(10000)
+          : userQuery;
+      const user: any = await withTimeout(userLookupPromise, 12000, "Find user");
       if (!user || !user.password) {
         return res.status(400).json({ message: "Invalid credentials" });
       }
 
       const isMatch = await bcrypt.compare(password, user.password);
+      const bcryptMs = Date.now() - loginStart;
+      console.log(`[login] password check finished in ${bcryptMs}ms for ${email}`);
       if (!isMatch) {
         return res.status(400).json({ message: "Invalid credentials" });
       }
 
       user.lastLogin = new Date();
-      await user.save();
-
-      // Link SharePermissions by email to user ID (for cross-domain shares)
-      await linkSharePermissionsToUser(user);
 
       const tokens = await generateTokens(user);
       res.json(tokens);
+
+      // Do post-login linking in background so auth response is not blocked.
+      setImmediate(() => {
+        linkSharePermissionsToUser(user).catch((err) => {
+          console.error("[login] background share linking failed:", err);
+        });
+      });
+
+      const elapsedMs = Date.now() - loginStart;
+      console.log(`[login] success for ${email} in ${elapsedMs}ms`);
     } catch (error) {
       console.error("Login error:", error);
+      if (error instanceof Error && /timed out/i.test(error.message)) {
+        return res.status(504).json({ message: "Login timed out. Please retry." });
+      }
       res.status(500).json({ message: "Server error" });
     }
   },

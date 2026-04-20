@@ -5,37 +5,82 @@ Production-ready config with ENV fallback + debug logging.
 
 import os
 import time
+import ssl
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 from celery import Celery
 from celery.signals import task_prerun, task_postrun, task_failure
 from celery.schedules import crontab
 
 from app.core.logging import get_logger
+from app.core.config import settings
 
 logger = get_logger(__name__)
 
-from app.core.config import settings
 
-# ✅ Use settings (loads from .env automatically via Pydantic)
-BROKER_URL = settings.CELERY_BROKER_URL
-RESULT_BACKEND = settings.CELERY_RESULT_BACKEND
+# Handle accidental "KEY=value" strings in env var values.
+def _strip_env_assignment_prefix(url: str | None) -> str | None:
+    if not url:
+        return url
+    value = url.strip()
+    for prefix in ("CELERY_BROKER_URL=", "CELERY_RESULT_BACKEND=", "REDIS_URL="):
+        if value.startswith(prefix):
+            logger.warning("Detected malformed Redis/Celery URL with assignment prefix; normalizing value")
+            return value[len(prefix):].strip()
+    return value
+
+
+# Ensure rediss URLs include ssl_cert_reqs so Celery/redis backend can initialize.
+def _normalize_rediss_url(url: str | None) -> str | None:
+    if not url:
+        return url
+
+    url = _strip_env_assignment_prefix(url)
+    if not url or not url.startswith("rediss://"):
+        return url
+
+    parsed = urlparse(url)
+    query = parse_qs(parsed.query, keep_blank_values=True)
+    if "ssl_cert_reqs" in query:
+        return url
+
+    query["ssl_cert_reqs"] = ["CERT_NONE"]
+    normalized = urlunparse(parsed._replace(query=urlencode(query, doseq=True)))
+    logger.warning(
+        "REDIS_URL is rediss without ssl_cert_reqs; appending ssl_cert_reqs=CERT_NONE for Celery compatibility"
+    )
+    return normalized
+
+
+_raw_broker = (settings.CELERY_BROKER_URL or "").strip() or os.getenv("CELERY_BROKER_URL") or os.getenv("REDIS_URL")
+_raw_backend = (settings.CELERY_RESULT_BACKEND or "").strip() or os.getenv("CELERY_RESULT_BACKEND") or _raw_broker
+
+BROKER_URL = _normalize_rediss_url(_raw_broker or None)
+RESULT_BACKEND = _normalize_rediss_url(_raw_backend or None)
 
 if not BROKER_URL:
     raise ValueError("❌ CELERY_BROKER_URL or REDIS_URL is not set in settings!")
 
-logger.info(f"Using Celery Broker: {BROKER_URL.split('@')[-1] if '@' in BROKER_URL else BROKER_URL}")
 
-# ✅ Startup Diagnostic: Verify Redis connectivity (Non-blocking)
-def check_redis_connectivity():
+def _broker_log_label(url: str) -> str:
+    return url.split("@")[-1] if "@" in url else url
+
+
+logger.info(f"Using Celery Broker: {_broker_log_label(BROKER_URL)}")
+
+
+def check_redis_connectivity() -> None:
     import redis
+
     try:
-        # Use a very short timeout for the initial boot check
         r = redis.from_url(BROKER_URL, socket_connect_timeout=2, socket_timeout=2)
         r.ping()
         logger.info("📡 Redis Connectivity: SUCCESS")
     except Exception as e:
-        logger.warning(f"📡 Redis Connectivity: PENDING (Worker will retry automatically) - {str(e)}")
+        logger.warning(
+            f"📡 Redis Connectivity: PENDING (Worker will retry automatically) - {str(e)}"
+        )
 
-# Run check but don't let it crash the boot
+
 if os.environ.get("SKIP_REDIS_CHECK") != "true":
     check_redis_connectivity()
 
@@ -74,6 +119,11 @@ celery_app.conf.update(
         "retry_on_timeout": True,
     },
 )
+
+if BROKER_URL and BROKER_URL.startswith("rediss://"):
+    celery_app.conf.broker_use_ssl = {"ssl_cert_reqs": ssl.CERT_NONE}
+if RESULT_BACKEND and RESULT_BACKEND.startswith("rediss://"):
+    celery_app.conf.redis_backend_use_ssl = {"ssl_cert_reqs": ssl.CERT_NONE}
 
 # ✅ Auto-discover tasks
 import app.workers.document_pipeline

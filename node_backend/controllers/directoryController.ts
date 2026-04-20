@@ -186,7 +186,9 @@ export const directoryController = {
           pageSize?: string;
           sort?: string;
           order?: string;
+          directoriesOnly?: string;
         };
+      const directoriesOnly = req.query?.directoriesOnly === "1";
       // Get current workspace from request
       // Workspace is required
       const currentWorkspace = req.currentWorkspace;
@@ -820,87 +822,82 @@ export const directoryController = {
       const sortKey = sort === "uploadedAt" ? "uploadedAt" : "name";
       const sortDir = (order || "asc").toLowerCase() === "desc" ? -1 : 1;
 
-      const allDocs = await Document.find(docFilter)
-        .sort({ [sortKey]: sortDir })
-        .lean();
+      let docs: any[] = [];
+      if (!directoriesOnly) {
+        const allDocs = await Document.find(docFilter)
+          .sort({ [sortKey]: sortDir })
+          .lean();
 
-      console.log(`[listChildren] Found ${allDocs.length} documents for directory ${parentId}${isViewingSharedDirectory ? ` (shared, original: ${originalDirectoryId})` : ''}`);
+        console.log(`[listChildren] Found ${allDocs.length} documents for directory ${parentId}${isViewingSharedDirectory ? ` (shared, original: ${originalDirectoryId})` : ''}`);
 
-      // Filter documents based on directory access permissions
-      // Only show documents from directories the user has access to
-      // Cross-domain users should only see documents in directories they have access to
-      let docs = allDocs;
+        docs = allDocs;
 
-      // Only filter if user is NOT a same-domain admin
-      if (!isSameDomainAdmin) {
-        const visibleDirIds = new Set(dirs.map((d) => d.id));
-        const docDirectoryIds = Array.from(
-          new Set(
-            allDocs
-              .map((doc) => doc.directoryId)
-              .filter((id): id is string => Boolean(id))
-          )
-        );
+        if (!isSameDomainAdmin) {
+          const visibleDirIds = new Set(dirs.map((d) => d.id));
+          const docDirectoryIds = Array.from(
+            new Set(
+              allDocs
+                .map((doc) => doc.directoryId)
+                .filter((id): id is string => Boolean(id))
+            )
+          );
 
-        const docShareQueryOr: any[] = [
-          {
-            scope: "workspace",
-            domain: workspaceDomain,
-            principalId: currentWorkspace,
-          },
-        ];
-        if (userId) {
-          docShareQueryOr.push({
-            scope: "user",
-            domain: { $in: [workspaceDomain] },
-            principalId: userId,
-          });
-        }
-        if (userEmail) {
-          docShareQueryOr.push({
-            scope: "user",
-            domain: { $in: [workspaceDomain] },
-            invitedEmail: userEmail,
-          });
-        }
-
-        const docSharePermissions =
-          docDirectoryIds.length > 0
-            ? await SharePermission.find({
-                resourceType: "directory",
-                resourceId: { $in: docDirectoryIds },
-                $or: docShareQueryOr,
-              })
-                .select("resourceId")
-                .lean()
-            : [];
-        const docSharedDirIds = new Set(
-          docSharePermissions.map((share: any) => share.resourceId)
-        );
-
-        docs = allDocs.filter((doc) => {
-          const docDirId = doc.directoryId || null;
-
-          // Cross-domain users cannot access root docs by default.
-          if (isCrossDomainUser && !docDirId) return false;
-          if (!isCrossDomainUser && !docDirId) return true;
-          if (!docDirId) return false;
-
-          // Directory already visible in current result set.
-          if (visibleDirIds.has(docDirId)) return true;
-
-          // Documents from original directory should be visible when viewing a shared dir.
-          if (
-            isViewingSharedDirectory &&
-            originalDirectoryId &&
-            docDirId === originalDirectoryId
-          ) {
-            return true;
+          const docShareQueryOr: any[] = [
+            {
+              scope: "workspace",
+              domain: workspaceDomain,
+              principalId: currentWorkspace,
+            },
+          ];
+          if (userId) {
+            docShareQueryOr.push({
+              scope: "user",
+              domain: { $in: [workspaceDomain] },
+              principalId: userId,
+            });
+          }
+          if (userEmail) {
+            docShareQueryOr.push({
+              scope: "user",
+              domain: { $in: [workspaceDomain] },
+              invitedEmail: userEmail,
+            });
           }
 
-          // Fallback: explicit share exists for this directory.
-          return docSharedDirIds.has(docDirId);
-        });
+          const docSharePermissions =
+            docDirectoryIds.length > 0
+              ? await SharePermission.find({
+                  resourceType: "directory",
+                  resourceId: { $in: docDirectoryIds },
+                  $or: docShareQueryOr,
+                })
+                  .select("resourceId")
+                  .lean()
+              : [];
+          const docSharedDirIds = new Set(
+            docSharePermissions.map((share: any) => share.resourceId)
+          );
+
+          docs = allDocs.filter((doc) => {
+            const docDirId = doc.directoryId || null;
+
+            if (isCrossDomainUser && !docDirId) return false;
+            if (!isCrossDomainUser && !docDirId) return true;
+            if (!docDirId) return false;
+
+            if (visibleDirIds.has(docDirId)) return true;
+
+            if (
+              isViewingSharedDirectory &&
+              originalDirectoryId &&
+              docDirId === originalDirectoryId
+            ) {
+              return true;
+            }
+
+            return docSharedDirIds.has(docDirId);
+          });
+        }
       }
 
       // Merge and paginate

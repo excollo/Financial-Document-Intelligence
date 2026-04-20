@@ -1,6 +1,8 @@
 import axios from "axios";
 
-const API_URL = import.meta.env.VITE_API_URL;
+const API_URL = import.meta.env.DEV
+  ? "/api"
+  : import.meta.env.VITE_API_URL;
 
 export interface User {
   microsoftId: string;
@@ -73,6 +75,9 @@ export const authService = {
     const response = await axios.post(`${API_URL}/auth/login`, {
       email,
       password,
+    }, {
+      timeout: 20000,
+      timeoutErrorMessage: "Login request timed out. Please try again.",
     });
     return response.data;
   },

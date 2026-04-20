@@ -1592,7 +1592,10 @@ export const StartConversation: React.FC = () => {
       formData.append("directoryId", directoryId); // Required - directory-first approach
 
       // Use the regular upload endpoint - backend will handle type based on formData
-      const uploadEndpoint = `${import.meta.env.VITE_API_URL}/documents/upload`;
+      const uploadApiBase = import.meta.env.DEV
+        ? "/api"
+        : import.meta.env.VITE_API_URL;
+      const uploadEndpoint = `${uploadApiBase}/documents/upload`;
 
       const res = await fetch(uploadEndpoint, {
         method: "POST",

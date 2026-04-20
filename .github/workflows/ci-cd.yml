@@ -95,12 +95,13 @@ jobs:
     needs: [test-node, test-ai]
     runs-on: ubuntu-latest
     permissions:
+      id-token: write
       contents: read
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # Login to Azure (Service Principal via Client Secret)
+      # Login to Azure using OIDC
       - name: Azure Login
         uses: azure/login@v2
         with:
@@ -136,13 +137,15 @@ jobs:
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
+      id-token: write
       contents: read
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # Login to Azure (Service Principal via Client Secret)
+      # Login to Azure using OIDC
       - name: Azure Login
         uses: azure/login@v2
         with:
@@ -150,12 +153,14 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      # 🚀 Deploy Node Backend
+      # 🚀 Deploy Node Backend (CLI-based, avoids webapps-deploy hangs)
       - name: 'Deploy Node Backend to App Service'
-        uses: azure/webapps-deploy@v2
-        with:
-          app-name: ${{ github.ref_name == 'main' && 'fdi-node-backend-prod' || 'fdi-node-backend-dev' }}
-          images: ${{ env.ACR_NAME }}.azurecr.io/node-backend:${{ github.ref_name }}
+        run: |
+          az webapp config container set \
+            --name ${{ github.ref_name == 'main' && 'fdi-node-backend-prod' || 'fdi-node-backend-dev' }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --docker-custom-image-name ${{ env.ACR_NAME }}.azurecr.io/node-backend:${{ github.ref_name }}
+          az webapp restart --name ${{ github.ref_name == 'main' && 'fdi-node-backend-prod' || 'fdi-node-backend-dev' }} --resource-group ${{ env.RESOURCE_GROUP }}
 
       # 🚀 Deploy AI API
       - name: 'Deploy AI API to App Service'

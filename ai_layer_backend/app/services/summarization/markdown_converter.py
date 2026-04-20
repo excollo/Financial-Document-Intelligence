@@ -464,17 +464,53 @@ class MarkdownConverter:
             if co.get("notes"): fmt += f"  *{co['notes']}*\n"
             return fmt
 
-        # -- Prepare list-based strings for f-string compatibility (No backslashes in f-string expressions) --
-        l1_sanctions_str = "\n".join(f"- **{i.get('list_name', 'Unknown List')}**: {i.get('summary', 'No details')}" for i in l1_sanctions) if l1_sanctions else "✅ **Result:** No sanctions or international debarment records found.\n"
-        
-        risk_factors_md = ""
-        if risk_factors:
-            factors_list = "\n".join(f"- {f}" for f in risk_factors)
-            risk_factors_md = f"\n### Contributing Risk Factors\n\n{factors_list}"
-
         # -- Build Report --
         confidence_pct = int(round(float(confidence_overall) * 100))
         jurisdictions_str = ", ".join(jurisdictions) if jurisdictions else "N/A"
+
+        sanctions_section = (
+            "\n".join(
+                f"- **{i.get('list_name', 'Unknown List')}**: {i.get('summary', 'No details')}"
+                for i in l1_sanctions
+            )
+            if l1_sanctions
+            else "✅ **Result:** No sanctions or international debarment records found.\n"
+        )
+        risk_factors_section = (
+            "\n### Contributing Risk Factors\n\n" + "\n".join(f"- {factor}" for factor in risk_factors)
+            if risk_factors
+            else ""
+        )
+        assoc_companies_section = (
+            "\n".join(format_company(c) for c in assoc_companies)
+            if assoc_companies
+            else "No associated companies identified."
+        )
+        assoc_persons_section = (
+            "\n".join(format_person(p) for p in assoc_persons)
+            if assoc_persons
+            else "No associated persons identified."
+        )
+        beneficial_owners_section = (
+            "\n".join(
+                ("- " + owner)
+                if isinstance(owner, str)
+                else f"- **{owner.get('name', 'Unknown')}**: {owner.get('ownership', 'Ownership stake identified')}"
+                for owner in beneficial_owners
+            )
+            if beneficial_owners
+            else "No beneficial owners identified."
+        )
+        related_adverse_section = (
+            "\n".join(
+                ("- " + entity)
+                if isinstance(entity, str)
+                else f"- **{entity.get('entity', 'Unknown')}**: {entity.get('adverse_action', 'Adverse action identified')}"
+                for entity in related_adverse
+            )
+            if related_adverse
+            else "No entities identified in adverse actions."
+        )
 
         markdown_report = f"""# Compliance Investigation Report
 
@@ -520,7 +556,7 @@ class MarkdownConverter:
 
 ### Layer 1: Sanctions & International Debarment Lists
 
-{l1_sanctions_str}
+{sanctions_section}
 
 ---
 
@@ -550,48 +586,37 @@ class MarkdownConverter:
 
 **Overall Risk Score:** {overall_risk_score}/10 ({formatted_risk})
 
-{risk_factors_md}
+{risk_factors_section}
 
 ---
 """
 
         # Entity Network section (Conditional)
         if any([assoc_companies, assoc_persons, beneficial_owners, related_adverse]):
-            assoc_cos_str = "\n".join(format_company(c) for c in assoc_companies) if assoc_companies else "No associated companies identified."
-            assoc_pers_str = "\n".join(format_person(p) for p in assoc_persons) if assoc_persons else "No associated persons identified."
-            
-            beneficial_owners_str = "No beneficial owners identified."
-            if beneficial_owners:
-                beneficial_owners_str = "\n".join(("- " + o) if isinstance(o, str) else (f"- **{o.get('name', 'Unknown')}**: {o.get('ownership', 'Ownership stake identified')}") for o in beneficial_owners)
-                
-            related_adverse_str = "No entities identified in adverse actions."
-            if related_adverse:
-                related_adverse_str = "\n".join(("- " + e) if isinstance(e, str) else (f"- **{e.get('entity', 'Unknown')}**: {e.get('adverse_action', 'Adverse action identified')}") for e in related_adverse)
-
             markdown_report += f"""
 ## Entity Network & Relationships
 
 ### Associated Companies
 
-{assoc_cos_str}
+{assoc_companies_section}
 
 ---
 
 ### Associated Persons & Key Personnel
 
-{assoc_pers_str}
+{assoc_persons_section}
 
 ---
 
 ### Beneficial Owners
 
-{beneficial_owners_str}
+{beneficial_owners_section}
 
 ---
 
 ### Entities in Adverse Actions
 
-{related_adverse_str}
+{related_adverse_section}
 
 ---
 """
