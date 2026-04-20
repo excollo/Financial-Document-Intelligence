@@ -8,7 +8,6 @@ on:
 env:
   ACR_NAME: drhpacr
   RESOURCE_GROUP: DRHP-summarizer
-  CELERY_WORKER_CONTAINER_APP: fdi-celery-worker
 
 jobs:
   # -------------------------------------------------------------
@@ -184,7 +183,7 @@ jobs:
         run: |
           az extension add --name containerapp --upgrade --yes
           az containerapp show \
-            --name ${{ env.CELERY_WORKER_CONTAINER_APP }} \
+            --name ${{ github.ref_name == 'main' && 'fdi-celery-worker' || 'fdi-celery-worker-dev' }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             -o yaml > worker-update.yaml
           python3 - <<'PY'
@@ -222,6 +221,6 @@ jobs:
           p.write_text(text)
           PY
           az containerapp update \
-            --name ${{ env.CELERY_WORKER_CONTAINER_APP }} \
+            --name ${{ github.ref_name == 'main' && 'fdi-celery-worker' || 'fdi-celery-worker-dev' }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --yaml worker-update.yaml
