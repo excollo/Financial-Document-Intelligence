@@ -4,8 +4,15 @@ import path from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import HTMLtoDOCX from "html-to-docx";
+import MarkdownIt from "markdown-it";
 
 const execFileAsync = promisify(execFile);
+const markdownIt = new MarkdownIt({
+  html: true,
+  breaks: true,
+  linkify: true,
+  typographer: true,
+});
 
 let pandocAvailableCache: boolean | null = null;
 
@@ -15,8 +22,28 @@ const escapeHtml = (input: string): string =>
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
 
-const markdownToBasicHtml = (markdown: string): string =>
-  `<html><body><pre>${escapeHtml(markdown)}</pre></body></html>`;
+const markdownToBasicHtml = (markdown: string): string => {
+  const rendered = markdownIt.render(markdown || "");
+  return `
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body { font-family: Arial, Helvetica, sans-serif; line-height: 1.5; font-size: 12pt; }
+      h1, h2, h3, h4, h5, h6 { margin: 14px 0 8px; }
+      p { margin: 8px 0; }
+      ul, ol { margin: 8px 0 8px 20px; }
+      table { border-collapse: collapse; width: 100%; margin: 10px 0; }
+      th, td { border: 1px solid #666; padding: 6px; vertical-align: top; text-align: left; }
+      th { background: #f3f3f3; }
+      code { font-family: "Courier New", monospace; background: #f7f7f7; padding: 1px 3px; }
+      pre { font-family: "Courier New", monospace; background: #f7f7f7; padding: 8px; white-space: pre-wrap; }
+      hr { border: 0; border-top: 1px solid #ccc; margin: 12px 0; }
+    </style>
+  </head>
+  <body>${rendered}</body>
+</html>`;
+};
 
 export async function checkPandocAvailable(force = false): Promise<boolean> {
   if (!force && pandocAvailableCache !== null) return pandocAvailableCache;
@@ -43,7 +70,7 @@ async function generateWithPandoc(
     await execFileAsync(
       "pandoc",
       [inputPath, "-f", inputFormat, "-t", "docx", "-o", outputPath],
-      { timeout: 30000 }
+      { timeout: 120000 }
     );
     return await readFile(outputPath);
   } finally {

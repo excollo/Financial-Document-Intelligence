@@ -1,0 +1,10 @@
+properties:
+  template:
+    containers:
+      - name: fdi-celery-worker
+        command:
+          - sh
+        args:
+          - -c
+          - celery -A app.workers.celery_app worker --loglevel=info --pool=solo --concurrency=1 --prefetch-multiplier=1 --max-tasks-per-child=5
+YAML && az containerapp update --name "fdi-celery-worker" --resource-group "DRHP-summarizer" --yaml "/Users/excollodev/Desktop/Financial-Document-Intelligence/fdi-worker-update.yaml"
