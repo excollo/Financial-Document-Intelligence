@@ -251,18 +251,38 @@ export const updateJobStatus = async (req: AuthRequest, res: Response) => {
       });
     }
 
+    const allowedStatuses = new Set([
+      "queued",
+      "processing",
+      "completed",
+      "completed_with_errors",
+      "failed",
+    ]);
+    const normalizedStatus =
+      typeof status === "string" && status.toLowerCase() === "success"
+        ? "completed"
+        : status;
+    if (normalizedStatus && !allowedStatuses.has(normalizedStatus)) {
+      return res.status(400).json({
+        error: "Invalid status value",
+        code: "INVALID_STATUS_VALUE",
+      });
+    }
+
     const updateFields: Record<string, any> = {};
-    if (status) updateFields.status = status;
+    if (normalizedStatus) updateFields.status = normalizedStatus;
     if (progress_pct !== undefined) updateFields.progress_pct = progress_pct;
     if (current_stage) updateFields.current_stage = current_stage;
     if (error_message) updateFields.error_message = error_message;
     if (output_urls) updateFields.output_urls = output_urls;
-    if (status === "completed") updateFields.completed_at = new Date();
+    if (normalizedStatus === "completed" || normalizedStatus === "completed_with_errors") {
+      updateFields.completed_at = new Date();
+    }
 
     const job = await Job.findOneAndUpdate(
       { id: job_id, tenant_id },
       { $set: updateFields },
-      { new: true }
+      { new: true, runValidators: true }
     );
 
     if (!job) {

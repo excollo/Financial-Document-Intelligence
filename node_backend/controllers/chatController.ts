@@ -2,7 +2,6 @@ import { Request, Response } from "express";
 import { Chat } from "../models/Chat";
 import { Document } from "../models/Document";
 import { User } from "../models/User";
-import { io } from "../index";
 import axios from "axios";
 
 interface AuthRequest extends Request {
@@ -277,10 +276,13 @@ export const chatController = {
       if (!jobId || !status) {
         return res.status(400).json({ message: "Missing jobId or status" });
       }
-      // Only emit on failure
-      if (status.trim().toLowerCase() === "failed") {
-        io.emit("chat_status", { jobId, status, error });
-      }
+      // Chat status callbacks are accepted for observability only.
+      // We avoid broadcasting unscoped job events without trusted persisted mapping.
+      console.warn("chatStatusUpdate received (no realtime emit without trusted mapping)", {
+        jobId,
+        status,
+        hasError: !!error,
+      });
       res.status(200).json({
         message: "Chat status update processed",
         jobId,

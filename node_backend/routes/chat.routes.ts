@@ -4,8 +4,16 @@ import { authMiddleware, authorize } from "../middleware/auth";
 import { domainAuthMiddleware } from "../middleware/domainAuth";
 import { linkAccess } from "../middleware/linkAccess";
 import { rateLimitByWorkspace } from "../middleware/rateLimitByWorkspace";
+import { verifyInternalCallbackRequest } from "../middleware/internalRequestVerification";
 
 const router = express.Router();
+
+// Internal callback endpoint must be checked before auth middleware.
+router.post(
+  "/chat-status/update",
+  verifyInternalCallbackRequest,
+  chatController.chatStatusUpdate
+);
 
 // Process link access FIRST so downstream middlewares can use it
 router.use(linkAccess);
@@ -62,8 +70,5 @@ router.delete(
   authorize(["admin"]),
   chatController.deleteAnyAdmin
 );
-
-// POST /chat-status/update (for n8n to notify chat status)
-router.post("/chat-status/update", chatController.chatStatusUpdate);
 
 export default router;

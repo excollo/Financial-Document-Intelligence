@@ -5,8 +5,16 @@ import { domainAuthMiddleware } from "../middleware/domainAuth";
 import { rateLimitByWorkspace } from "../middleware/rateLimitByWorkspace";
 import { requireReportPermission, requireBodyDocumentPermission } from "../middleware/permissions";
 import { linkAccess } from "../middleware/linkAccess";
+import { verifyInternalCallbackRequest } from "../middleware/internalRequestVerification";
 
 const router = express.Router();
+
+// Internal callback endpoint must be evaluated before user auth middleware.
+router.post(
+  "/report-status/update",
+  verifyInternalCallbackRequest,
+  reportController.reportStatusUpdate
+);
 
 // Allow link access for related reports
 router.use(linkAccess);
@@ -52,8 +60,5 @@ router.get("/:id/download-docx", reportController.downloadDocx);
 
 // Download PDF generated from HTML content for a report
 router.get("/:id/download-html-pdf", reportController.downloadPdfFromHtml);
-
-// POST /report-status/update (for n8n to notify status)
-router.post("/report-status/update", reportController.reportStatusUpdate);
 
 export default router;

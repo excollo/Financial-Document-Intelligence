@@ -5,6 +5,11 @@ Sends job status updates back to the Node.js backend.
 from typing import Dict, Any, Optional
 import requests
 import time
+import json
+import hmac
+import hashlib
+import secrets
+from urllib.parse import urlparse
 from app.core.config import settings
 from app.core.logging import get_logger
 
@@ -13,6 +18,29 @@ logger = get_logger(__name__)
 
 class BackendNotifier:
     """Service to notify the Node.js backend of job status."""
+
+    @staticmethod
+    def _build_signed_request(method: str, url: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        timestamp = str(int(time.time()))
+        nonce = secrets.token_hex(16)
+        body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
+        path = urlparse(url).path
+        signing_payload = f"{method.upper()}\n{path}\n{body}\n{timestamp}\n{nonce}"
+        signature = hmac.new(
+            (settings.INTERNAL_CALLBACK_SIGNING_SECRET or settings.INTERNAL_SECRET).encode("utf-8"),
+            signing_payload.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+        return {
+            "body": body,
+            "headers": {
+                "Content-Type": "application/json",
+                "X-Internal-Secret": settings.INTERNAL_SECRET,
+                "X-Timestamp": timestamp,
+                "X-Nonce": nonce,
+                "X-Signature": signature,
+            },
+        }
     
     @staticmethod
     def notify_status(
@@ -22,7 +50,9 @@ class BackendNotifier:
         error: Optional[Dict[str, Any]] = None,
         execution_id: Optional[str] = None,
         result: Optional[Dict[str, Any]] = None,
-        document_id: Optional[str] = None
+        document_id: Optional[str] = None,
+        workspace_id: Optional[str] = None,
+        domain_id: Optional[str] = None,
     ) -> bool:
         """
         Send status update to backend with exponential backoff.
@@ -36,7 +66,9 @@ class BackendNotifier:
             "execution": {
                 "workflowId": "python-platform",
                 "executionId": execution_id or job_id
-            }
+            },
+            "workspaceId": workspace_id,
+            "domainId": domain_id,
         }
         
         if result:
@@ -54,10 +86,11 @@ class BackendNotifier:
         for attempt in range(max_retries):
             try:
                 logger.info("Notifying backend of status", job_id=job_id, status=status, attempt=attempt + 1)
+                signed = BackendNotifier._build_signed_request("POST", settings.BACKEND_STATUS_URL, payload)
                 response = requests.post(
                     settings.BACKEND_STATUS_URL,
-                    json=payload,
-                    headers={"Content-Type": "application/json"},
+                    data=signed["body"],
+                    headers=signed["headers"],
                     timeout=10
                 )
                 response.raise_for_status()
@@ -141,7 +174,9 @@ class BackendNotifier:
         namespace: str,
         status: str,
         error: Optional[Dict[str, Any]] = None,
-        authorization: str = ""
+        authorization: str = "",
+        workspace_id: str = "",
+        domain_id: str = "",
     ) -> bool:
         """
         Updates the final status of a report generation job.
@@ -159,10 +194,13 @@ class BackendNotifier:
                 "message": None,
                 "stack": None,
                 "timestamp": str(time.time())
-            }
+            },
+            "workspaceId": workspace_id,
+            "domainId": domain_id,
         }
         
-        headers = {"Content-Type": "application/json"}
+        signed = BackendNotifier._build_signed_request("POST", settings.REPORT_STATUS_UPDATE_URL, payload)
+        headers = signed["headers"]
         if authorization:
             headers["Authorization"] = authorization
             
@@ -170,7 +208,7 @@ class BackendNotifier:
             logger.info("Updating report status", job_id=job_id, status=status)
             response = requests.post(
                 settings.REPORT_STATUS_UPDATE_URL,
-                json=payload,
+                data=signed["body"],
                 headers=headers,
                 timeout=10
             )
@@ -186,7 +224,7 @@ class BackendNotifier:
         namespace: str,
         status: str,
         error: Optional[Dict[str, Any]] = None,
-        authorization: str = ""
+        authorization: str = "",
     ) -> bool:
         """
         Updates the final status of a chat request.
@@ -207,7 +245,8 @@ class BackendNotifier:
             }
         }
         
-        headers = {"Content-Type": "application/json"}
+        signed = BackendNotifier._build_signed_request("POST", settings.CHAT_STATUS_UPDATE_URL, payload)
+        headers = signed["headers"]
         if authorization:
             headers["Authorization"] = authorization
             
@@ -215,7 +254,7 @@ class BackendNotifier:
             logger.info("Updating chat status", job_id=job_id, status=status)
             response = requests.post(
                 settings.CHAT_STATUS_UPDATE_URL,
-                json=payload,
+                data=signed["body"],
                 headers=headers,
                 timeout=10
             )
@@ -232,7 +271,9 @@ class BackendNotifier:
         namespace: str,
         status: str,
         error: Optional[Dict[str, Any]] = None,
-        authorization: str = ""
+        authorization: str = "",
+        workspace_id: str = "",
+        domain_id: str = "",
     ) -> bool:
         """
         Updates the final status of a summary request.
@@ -245,10 +286,13 @@ class BackendNotifier:
                 "message": None,
                 "stack": None,
                 "timestamp": str(time.time())
-            }
+            },
+            "workspaceId": workspace_id,
+            "domainId": domain_id,
         }
         
-        headers = {"Content-Type": "application/json"}
+        signed = BackendNotifier._build_signed_request("POST", settings.SUMMARY_STATUS_UPDATE_URL, payload)
+        headers = signed["headers"]
         if authorization:
             headers["Authorization"] = authorization
             
@@ -256,7 +300,7 @@ class BackendNotifier:
             logger.info("Updating summary status", job_id=job_id, status=status)
             response = requests.post(
                 settings.SUMMARY_STATUS_UPDATE_URL,
-                json=payload,
+                data=signed["body"],
                 headers=headers,
                 timeout=10
             )

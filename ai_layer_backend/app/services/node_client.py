@@ -7,6 +7,12 @@ This replaces the old `backend_notifier` service with properly authenticated cal
 """
 import httpx
 from typing import Dict, Any, Optional, List
+import json
+import time
+import hmac
+import hashlib
+import secrets
+from urllib.parse import urlparse
 from app.core.config import settings
 from app.core.logging import get_logger
 
@@ -22,6 +28,7 @@ class NodeBackendClient:
     def __init__(self):
         self.base_url = settings.NODE_BACKEND_URL.rstrip("/")
         self.secret = settings.INTERNAL_SECRET
+        self.signing_secret = settings.INTERNAL_CALLBACK_SIGNING_SECRET or settings.INTERNAL_SECRET
         self._headers = {
             "Content-Type": "application/json",
             "X-Internal-Secret": self.secret,
@@ -30,9 +37,28 @@ class NodeBackendClient:
         self._timeout = httpx.Timeout(connect=10.0, read=30.0, write=10.0, pool=10.0)
 
     def _check_secret(self):
-        if not self.secret:
+        if not self.secret or not self.signing_secret:
             logger.error("INTERNAL_SECRET is not configured — cannot call Node backend")
             raise RuntimeError("INTERNAL_SECRET is not configured")
+
+    def _signed_request(self, method: str, url: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        timestamp = str(int(time.time()))
+        nonce = secrets.token_hex(16)
+        body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
+        path = urlparse(url).path
+        signing_payload = f"{method.upper()}\n{path}\n{body}\n{timestamp}\n{nonce}"
+        signature = hmac.new(
+            self.signing_secret.encode("utf-8"),
+            signing_payload.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+        headers = {
+            **self._headers,
+            "X-Timestamp": timestamp,
+            "X-Nonce": nonce,
+            "X-Signature": signature,
+        }
+        return {"headers": headers, "body": body}
 
     async def update_job_status(
         self,
@@ -42,6 +68,7 @@ class NodeBackendClient:
         progress_pct: int = 0,
         current_stage: Optional[str] = None,
         error_message: Optional[str] = None,
+        output_urls: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Update the job status on the Node backend."""
         self._check_secret()
@@ -56,13 +83,16 @@ class NodeBackendClient:
             payload["current_stage"] = current_stage
         if error_message:
             payload["error_message"] = error_message
+        if output_urls:
+            payload["output_urls"] = output_urls
 
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
+                signed = self._signed_request("POST", f"{self.base_url}/api/jobs/internal/status", payload)
                 resp = await client.post(
                     f"{self.base_url}/api/jobs/internal/status",
-                    json=payload,
-                    headers=self._headers,
+                    content=signed["body"],
+                    headers=signed["headers"],
                 )
                 resp.raise_for_status()
                 data = resp.json()
@@ -122,10 +152,15 @@ class NodeBackendClient:
 
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
+                signed = self._signed_request(
+                    "POST",
+                    f"{self.base_url}/api/jobs/internal/section-result",
+                    payload,
+                )
                 resp = await client.post(
                     f"{self.base_url}/api/jobs/internal/section-result",
-                    json=payload,
-                    headers=self._headers,
+                    content=signed["body"],
+                    headers=signed["headers"],
                 )
                 resp.raise_for_status()
                 data = resp.json()
@@ -182,10 +217,15 @@ class NodeBackendClient:
 
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
+                signed = self._signed_request(
+                    "POST",
+                    f"{self.base_url}/api/jobs/internal/adverse-finding",
+                    payload,
+                )
                 resp = await client.post(
                     f"{self.base_url}/api/jobs/internal/adverse-finding",
-                    json=payload,
-                    headers=self._headers,
+                    content=signed["body"],
+                    headers=signed["headers"],
                 )
                 resp.raise_for_status()
                 data = resp.json()

@@ -36,7 +36,7 @@ const jobSchema = new mongoose.Schema(
     // Progress tracking
     status: {
       type: String,
-      enum: ["queued", "processing", "completed", "failed"],
+      enum: ["queued", "processing", "completed", "completed_with_errors", "failed"],
       default: "queued",
       index: true,
     },

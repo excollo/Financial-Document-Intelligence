@@ -58,6 +58,7 @@ class JobContext:
         progress_pct: Optional[int] = None,
         current_stage: Optional[str] = None,
         error_message: Optional[str] = None,
+        output_urls: Optional[Dict[str, Any]] = None,
     ):
         """Update internal state and notify the Node backend."""
         async with self._lock:
@@ -72,6 +73,7 @@ class JobContext:
                 progress_pct=self.progress_pct,
                 current_stage=self.current_stage,
                 error_message=error_message,
+                output_urls=output_urls,
             )
 
     async def submit_section_result(

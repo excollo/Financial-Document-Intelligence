@@ -63,6 +63,8 @@ def process_document(
                 job_id=job_id,
                 status="failed",
                 namespace=metadata.get("filename", "document.pdf") if metadata else "document.pdf",
+                workspace_id=(metadata or {}).get("workspaceId"),
+                domain_id=(metadata or {}).get("domainId"),
                 error={"message": str(e), "stack": traceback.format_exc()}
             )
         else:
@@ -189,7 +191,9 @@ def generate_summary(
             job_id=job_id,
             status=job_status,
             namespace=namespace,
-            authorization=metadata.get("authorization", "")
+            authorization=metadata.get("authorization", ""),
+            workspace_id=metadata.get("workspaceId", ""),
+            domain_id=metadata.get("domainId", ""),
         )
         
         execution_time = time.time() - start_time
@@ -227,7 +231,9 @@ def generate_summary(
             status="failed",
             namespace=namespace,
             error={"message": str(e), "stack": traceback.format_exc(), "timestamp": str(time.time())},
-            authorization=metadata.get("authorization", "")
+            authorization=metadata.get("authorization", ""),
+            workspace_id=metadata.get("workspaceId", ""),
+            domain_id=metadata.get("domainId", ""),
         )
         raise
 @celery_app.task(name="generate_comparison", bind=True)
@@ -298,8 +304,10 @@ def generate_comparison(
             backend_notifier.update_report_status(
                 job_id=job_id,
                 namespace=drhp_namespace,
-                status="success",
-                authorization=authorization
+                status="completed",
+                authorization=authorization,
+                workspace_id=metadata.get("workspaceId", ""),
+                domain_id=domain_id,
             )
         else:
             raise Exception(result.get("message", "Comparison failed"))
@@ -326,6 +334,8 @@ def generate_comparison(
             namespace=drhp_namespace,
             status="failed",
             error={"message": str(e), "stack": traceback.format_exc(), "timestamp": str(time.time())},
-            authorization=authorization
+            authorization=authorization,
+            workspace_id=metadata.get("workspaceId", ""),
+            domain_id=domain_id,
         )
         raise

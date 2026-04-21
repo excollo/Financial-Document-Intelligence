@@ -76,6 +76,20 @@ class AzureStorageService:
             logger.error(f"Azure SAS URL generation failed key={key}", error=str(e))
             return None
 
+    async def file_exists(self, key: str) -> bool:
+        """Check whether a blob exists."""
+        try:
+            if not self.blob_service_client:
+                return False
+            blob_client = self.blob_service_client.get_blob_client(
+                container=self.container_name,
+                blob=key,
+            )
+            return blob_client.exists()
+        except Exception as e:
+            logger.error(f"Azure blob exists check failed key={key}", error=str(e))
+            return False
+
     def get_public_url(self, key: str) -> str:
         """Construct the URL (without SAS token)."""
         return f"https://{self.account_name}.blob.core.windows.net/{self.container_name}/{key}"

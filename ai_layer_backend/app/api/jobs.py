@@ -46,6 +46,7 @@ class NewsJobRequest(BaseModel):
 
 class SummaryJobRequest(BaseModel):
     """Summary generation job request."""
+    job_id: Optional[str] = None
     namespace: str = Field(..., description="The filename/namespace in Pinecone to summarize")
     doc_type: str = Field(default="drhp", description="Type of document (drhp or rhp)")
     authorization: Optional[str] = None
@@ -56,6 +57,7 @@ class SummaryJobRequest(BaseModel):
 
 class ComparisonJobRequest(BaseModel):
     """Comparison generation job request."""
+    job_id: Optional[str] = None
     drhpNamespace: str
     rhpNamespace: str
     drhpDocumentId: str
@@ -263,7 +265,7 @@ async def submit_summary_job(request: SummaryJobRequest) -> JobResponse:
     Submit summary generation job.
     """
     try:
-        job_id = str(uuid.uuid4())
+        job_id = request.job_id or str(uuid.uuid4())
         
         # Prepare metadata - prioritize top-level fields but fallback to nested metadata
         task_metadata = request.metadata or {}
@@ -316,7 +318,7 @@ async def submit_comparison_job(request: ComparisonJobRequest) -> JobResponse:
     Submit DRHP vs RHP comparison job.
     """
     try:
-        job_id = str(uuid.uuid4())
+        job_id = request.job_id or str(uuid.uuid4())
         
         # Prepare metadata for worker
         worker_metadata = request.metadata or {}
@@ -326,7 +328,7 @@ async def submit_comparison_job(request: ComparisonJobRequest) -> JobResponse:
         
         worker_metadata.update({
             "authorization": final_auth,
-            "sessionId": request.sessionId,
+            "sessionId": job_id,
             "drhpDocumentId": request.drhpDocumentId,
             "rhpDocumentId": request.rhpDocumentId,
             "domain": request.domain,

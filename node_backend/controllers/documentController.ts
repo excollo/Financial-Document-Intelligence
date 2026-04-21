@@ -6,12 +6,12 @@ import { Domain } from "../models/Domain";
 import { User } from "../models/User";
 import axios from "axios";
 import FormData from "form-data";
-import { io } from "../index";
 import { storageService } from "../services/storageService";
 import { publishEvent } from "../lib/events";
 import { Summary } from "../models/Summary";
 import { Report } from "../models/Report";
 import { Chat } from "../models/Chat";
+import { emitToTenant, emitToWorkspace } from "../services/realtimeEmitter";
 const INTERNAL_SECRET = process.env.INTERNAL_SECRET || "";
 
 interface AuthRequest extends Request {
@@ -1388,9 +1388,16 @@ export const documentController = {
   async uploadStatusUpdate(req: AuthRequest, res: Response) {
     console.log("🚀 Received upload-status update hit!");
     try {
-      // Accept both jobId and documentId from n8n/Python (might send either)
-      const { jobId, documentId, status, error, namespace } = req.body;
-      const identifier = jobId || documentId;
+      // Canonical correlation: terminal updates require immutable document/job ID.
+      const { jobId, documentId, status, error, workspaceId, domainId } = req.body;
+      if (jobId && documentId && String(jobId) !== String(documentId)) {
+        console.warn("uploadStatusUpdate rejected due to identifier mismatch", {
+          jobId,
+          documentId,
+        });
+        return res.status(409).json({ message: "jobId and documentId mismatch" });
+      }
+      const identifier = String(documentId || jobId || "").trim();
 
       if (!identifier || !status) {
         return res.status(400).json({
@@ -1398,48 +1405,30 @@ export const documentController = {
           received: { jobId, documentId, status }
         });
       }
+      if (!workspaceId || !domainId) {
+        return res.status(400).json({
+          message: "Missing required scoped callback metadata",
+          required: ["workspaceId", "domainId"],
+        });
+      }
 
       const normalizedStatus = status.trim().toLowerCase();
-      console.log(`📥 Received status update for ${identifier}: ${normalizedStatus} (type: ${req.body.type || 'unknown'}, namespace: ${namespace || 'none'})`);
+      console.log(`📥 Received status update for ${identifier}: ${normalizedStatus}`);
 
-      // Update document status in MongoDB - try multiple lookup methods
+      // Update document status in MongoDB with strict immutable correlation.
       try {
-        let document = await Document.findOne({ id: identifier });
-
-        // If not found by id, try by documentId field
-        if (!document && documentId) {
-          document = await Document.findOne({ id: documentId });
-        }
-
-        // If still not found, try by fileKey
-        if (!document) {
-          document = await Document.findOne({ fileKey: identifier });
-        }
-
-        // If still not found, try by namespace (Python always sends this = filename)
-        if (!document && namespace) {
-          document = await Document.findOne({ namespace: namespace });
-        }
-
-        // If still not found, try by _id (MongoDB ObjectId)
-        if (!document && identifier.match(/^[0-9a-fA-F]{24}$/)) {
-          document = await Document.findById(identifier);
-        }
-
-        // Additional lookup: try searching by type if provided (for RHP documents)
-        if (!document && req.body.type) {
-          document = await Document.findOne({
-            type: req.body.type,
-            $or: [
-              { id: identifier },
-              { fileKey: identifier },
-              { documentId: identifier },
-              ...(namespace ? [{ namespace: namespace }] : [])
-            ]
-          });
-        }
+        const scopeQuery: any = { id: identifier };
+        if (workspaceId) scopeQuery.workspaceId = String(workspaceId);
+        if (domainId) scopeQuery.domainId = String(domainId);
+        const document = await Document.findOne(scopeQuery);
 
         if (document) {
+          if (workspaceId && String(document.workspaceId) !== String(workspaceId)) {
+            return res.status(409).json({ message: "Workspace scope mismatch" });
+          }
+          if (domainId && String(document.domainId) !== String(domainId)) {
+            return res.status(409).json({ message: "Tenant/domain scope mismatch" });
+          }
           // Map n8n status to our document status
           let newStatus = document.status; // Default to current status
 
@@ -1464,21 +1453,6 @@ export const documentController = {
             await document.save();
             console.log(`✅ Updated document ${document.id} (${document.name}, type: ${document.type}) status from "${oldStatus}" to "${newStatus}"`);
 
-            // Also try to find and update by MongoDB _id to ensure persistence (especially for RHP)
-            try {
-              const updateResult = await Document.updateOne(
-                { _id: document._id },
-                { $set: { status: newStatus } }
-              );
-              if (updateResult.modifiedCount > 0) {
-                console.log(`✅ Confirmed MongoDB update for document ${document.id} (type: ${document.type})`);
-              } else {
-                console.log(`ℹ️ MongoDB update confirmed (no changes needed) for document ${document.id} (type: ${document.type})`);
-              }
-            } catch (updateError) {
-              console.error(`⚠️ Secondary update failed (non-critical):`, updateError);
-            }
-
             // Verify the update was persisted
             const verifyDoc = await Document.findById(document._id);
             if (verifyDoc && verifyDoc.status === newStatus) {
@@ -1490,9 +1464,10 @@ export const documentController = {
             console.log(`ℹ️ Document ${document.id} (type: ${document.type}) status unchanged: "${oldStatus}"`);
           }
 
-          // Use the found document's id for socket emission
           const actualJobId = document.id;
-          io.emit("upload_status", { jobId: actualJobId, status: newStatus, error });
+          const payload = { jobId: actualJobId, status: newStatus, error };
+          emitToWorkspace(document.workspaceId, "upload_status", payload);
+          emitToTenant(document.domainId, "upload_status", payload);
 
           res.status(200).json({
             message: "Upload status update processed",
@@ -1506,10 +1481,6 @@ export const documentController = {
           });
         } else {
           console.warn(`⚠️ Document not found for identifier: ${identifier}`);
-          console.warn(`   Tried: id=${identifier}, documentId=${documentId}, fileKey lookup, _id lookup, type-based lookup`);
-
-          // Still emit socket event even if document not found (for debugging)
-          io.emit("upload_status", { jobId: identifier, status: normalizedStatus, error: error || "Document not found" });
 
           res.status(404).json({
             message: "Document not found",
@@ -1525,9 +1496,6 @@ export const documentController = {
           stack: dbError.stack,
           name: dbError.name,
         });
-
-        // Still emit socket event for debugging
-        io.emit("upload_status", { jobId: identifier, status: normalizedStatus, error: dbError.message });
 
         res.status(500).json({
           message: "Failed to update document status",
@@ -1726,7 +1694,9 @@ export const documentController = {
 
       // Emit upload status (use the actual status from n8n or default to processing)
       const jobId = rhpDoc.id;
-      io.emit("upload_status", { jobId, status: finalStatus });
+      const uploadPayload = { jobId, status: finalStatus };
+      emitToWorkspace(rhpDoc.workspaceId, "upload_status", uploadPayload);
+      emitToTenant(rhpDoc.domainId, "upload_status", uploadPayload);
 
       res
         .status(201)
@@ -2001,11 +1971,6 @@ export const documentController = {
   },
 
   async deleteInternal(req: Request, res: Response) {
-    const internalSecret = req.headers["x-internal-secret"];
-    if (!INTERNAL_SECRET || internalSecret !== INTERNAL_SECRET) {
-      return res.status(401).json({ error: "Unauthorized internal call" });
-    }
-
     try {
       const { id } = req.params;
       const document = await Document.findOne({ id });
@@ -2042,7 +2007,13 @@ export const documentController = {
       await Document.deleteOne({ id: document.id });
 
       // 4. Emit socket event for frontend removal
-      io.emit("upload_status", { jobId: document.id, status: "deleted", error: "Ingestion failed, cleaning up." });
+      const deletePayload = {
+        jobId: document.id,
+        status: "deleted",
+        error: "Ingestion failed, cleaning up.",
+      };
+      emitToWorkspace(document.workspaceId, "upload_status", deletePayload);
+      emitToTenant(document.domainId, "upload_status", deletePayload);
 
       console.log(`✅ Successfully deleted document ${document.id} via internal request.`);
       res.status(200).json({ message: "Document deleted successfully" });

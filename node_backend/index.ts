@@ -27,9 +27,13 @@ import http from "http";
 import { Server as SocketIOServer } from "socket.io";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
+import jwt from "jsonwebtoken";
+import { User } from "./models/User";
+import { resolveAuthorizedWorkspaceIds } from "./services/socketRoomResolver";
 import { testSmtpConnection } from "./services/emailService";
 import { HealthService } from "./services/healthService";
 import { checkPandocAvailable } from "./services/docxService";
+import { emitToWorkspace } from "./services/realtimeEmitter";
 
 dotenv.config();
 
@@ -105,6 +109,48 @@ const io = new SocketIOServer(server, {
   },
 });
 
+io.on("connection", async (socket) => {
+  try {
+    const authHeader =
+      (socket.handshake.headers.authorization as string | undefined) ||
+      (socket.handshake.auth?.token as string | undefined);
+    const rawToken = authHeader?.replace(/^Bearer\s+/i, "").trim();
+    if (!rawToken || !process.env.JWT_SECRET) {
+      socket.disconnect(true);
+      return;
+    }
+
+    const decoded = jwt.verify(rawToken, process.env.JWT_SECRET) as any;
+    let user: any = null;
+    if (decoded?.microsoftId) {
+      user = await User.findOne({ microsoftId: decoded.microsoftId }).select(
+        "_id domainId currentWorkspace"
+      );
+    } else if (decoded?.userId) {
+      user = await User.findById(decoded.userId).select("_id domainId currentWorkspace");
+    }
+    if (!user) {
+      socket.disconnect(true);
+      return;
+    }
+
+    socket.join(`user_${user._id.toString()}`);
+    if (user.domainId) {
+      socket.join(`tenant_${user.domainId}`);
+    }
+
+    const workspaceIds = await resolveAuthorizedWorkspaceIds(
+      user._id.toString(),
+      user.currentWorkspace
+    );
+    for (const workspaceId of workspaceIds) {
+      socket.join(`workspace_${workspaceId}`);
+    }
+  } catch {
+    socket.disconnect(true);
+  }
+});
+
 // Make io accessible elsewhere
 export { io };
 
@@ -138,7 +184,16 @@ app.use(
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-workspace', 'x-link-token', 'x-internal-secret'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'x-workspace',
+      'x-link-token',
+      'x-internal-secret',
+      'x-timestamp',
+      'x-nonce',
+      'x-signature',
+    ],
     exposedHeaders: ['Content-Type', 'Authorization'],
     preflightContinue: false,
     optionsSuccessStatus: 204,
@@ -148,7 +203,14 @@ app.use(
 // Handle preflight requests explicitly
 app.options('*', cors());
 
-app.use(express.json({ limit: "50mb" }));
+app.use(
+  express.json({
+    limit: "50mb",
+    verify: (req: any, _res, buf) => {
+      req.rawBody = Buffer.from(buf);
+    },
+  })
+);
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 app.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
@@ -359,14 +421,18 @@ async function recoverStaleDocuments() {
           if (celeryState === "SUCCESS") {
             doc.status = "completed";
             await doc.save();
-            io.emit("upload_status", { jobId: doc.id, status: "completed" });
+            emitToWorkspace(doc.workspaceId, "upload_status", { jobId: doc.id, status: "completed" });
             console.log(`✅ [StaleWatcher] Recovered doc ${doc.id} → completed (Celery SUCCESS)`);
             resolved = true;
           } else if (celeryState === "FAILURE") {
             doc.status = "failed";
             doc.error = { message: "Processing failed in Celery worker. Please re-upload." };
             await doc.save();
-            io.emit("upload_status", { jobId: doc.id, status: "failed", error: "Processing failed" });
+            emitToWorkspace(doc.workspaceId, "upload_status", {
+              jobId: doc.id,
+              status: "failed",
+              error: "Processing failed",
+            });
             console.log(`❌ [StaleWatcher] Recovered doc ${doc.id} → failed (Celery FAILURE)`);
             resolved = true;
           }
@@ -383,11 +449,15 @@ async function recoverStaleDocuments() {
             doc.status = "failed";
             doc.error = { message: "Processing timed out. Please re-upload the document." };
             await doc.save();
-            io.emit("upload_status", { jobId: doc.id, status: "failed", error: "Timed out" });
+            emitToWorkspace(doc.workspaceId, "upload_status", {
+              jobId: doc.id,
+              status: "failed",
+              error: "Timed out",
+            });
             console.log(`⏱️ [StaleWatcher] Hard-timeout doc ${doc.id} → failed after 50 min`);
           } else {
             // Still within grace period — just emit a refresh signal to the frontend
-            io.emit("upload_status", { jobId: doc.id, status: "processing" });
+            emitToWorkspace(doc.workspaceId, "upload_status", { jobId: doc.id, status: "processing" });
             console.log(`🔄 [StaleWatcher] Doc ${doc.id} still processing, refreshed frontend`);
           }
         }

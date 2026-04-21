@@ -4,9 +4,11 @@ import { User } from "../models/User";
 import axios from "axios";
 import { writeFile } from "fs/promises";
 import path from "path";
-import { io } from "../index";
 import { publishEvent } from "../lib/events";
 import { generateDocxBuffer } from "../services/docxService";
+import { v4 as uuidv4 } from "uuid";
+import { emitToTenant, emitToWorkspace } from "../services/realtimeEmitter";
+import { Job } from "../models/Job";
 
 interface AuthRequest extends Request {
   user?: any;
@@ -38,6 +40,7 @@ export const summaryController = {
       console.log(`Triggering Python Summary for: ${namespace} (${docType}) at ${pythonApiUrl}/jobs/summary`);
 
       const payload = {
+        job_id: uuidv4(),
         namespace,
         doc_type: docType.toLowerCase(),
         metadata: {
@@ -49,6 +52,18 @@ export const summaryController = {
           authorization: req.headers.authorization
         }
       };
+
+      await Job.create({
+        id: payload.job_id,
+        tenant_id: domainId || domain,
+        job_type: "extraction",
+        status: "processing",
+        current_stage: "summary",
+        progress_pct: 0,
+        workspace_id: req.currentWorkspace || domain,
+        created_by: req.user?._id?.toString?.() || null,
+        document_name: namespace,
+      });
 
       console.log(`[DEBUG] About to call Python API: ${pythonApiUrl}/jobs/summary`);
       console.log(`[DEBUG] Internal Secret Present: ${!!process.env.INTERNAL_SECRET}`);
@@ -64,7 +79,7 @@ export const summaryController = {
       if (pythonResponse.data && pythonResponse.data.status === "accepted") {
         return res.json({
           status: "processing",
-          job_id: pythonResponse.data.job_id,
+          job_id: pythonResponse.data.job_id || payload.job_id,
           message: "Summary generation job started"
         });
       }
@@ -152,10 +167,18 @@ export const summaryController = {
         // Get all documents from shared directories
         if (sharedDirectoryIds.length > 0) {
           const uniqueDirIds = [...new Set(sharedDirectoryIds)];
-          // Get documents from all shared directories (across domains/workspaces)
-          const sharedDocs = await Document.find({
-            directoryId: { $in: uniqueDirIds },
-          });
+          // Scope shared-doc lookup to trusted directory records.
+          const trustedDirectories = await Directory.find({
+            id: { $in: uniqueDirIds },
+          }).select("id domain workspaceId");
+          const sharedDirectoryScope = trustedDirectories.map((dir: any) => ({
+            directoryId: dir.id,
+            domain: dir.domain,
+            workspaceId: dir.workspaceId,
+          }));
+          const sharedDocs = sharedDirectoryScope.length
+            ? await Document.find({ $or: sharedDirectoryScope })
+            : [];
           const sharedDocumentIds = sharedDocs.map(doc => doc.id);
 
           // Also check for shared directories created via Directory.isShared
@@ -357,6 +380,13 @@ export const summaryController = {
   async downloadDocx(req: AuthRequest, res: Response) {
     try {
       const { id } = req.params;
+      const currentWorkspace = req.currentWorkspace || req.userDomain;
+      const scopeQuery: any = {
+        workspaceId: currentWorkspace,
+      };
+      if (req.userDomain) {
+        scopeQuery.domain = req.userDomain;
+      }
 
       // LOG START
       try { await writeFile(path.join(process.cwd(), "debug_error.log"), `Starting downloadDocx for ID: ${id}\n`, { flag: "a" }); } catch { }
@@ -365,7 +395,8 @@ export const summaryController = {
         $or: [
           { id: id },
           { id: Number(id) }
-        ]
+        ],
+        ...scopeQuery,
       });
 
       if (!summary || !summary.content) {
@@ -432,12 +463,14 @@ export const summaryController = {
   async update(req: AuthRequest, res: Response) {
     try {
       const { id } = req.params;
+      const currentWorkspace = req.currentWorkspace || req.userDomain;
       const query: any = {
         $or: [
           { id: id },
           { id: Number(id) }
         ],
         domain: req.userDomain, // Ensure user can only update summaries from their domain
+        workspaceId: currentWorkspace,
       };
 
       // All workspace members can update summaries in their workspace
@@ -512,18 +545,62 @@ export const summaryController = {
 
   async summaryStatusUpdate(req: Request, res: Response) {
     try {
-      const { jobId, status, error } = req.body;
-      console.log("Summary status update received from n8n:", { jobId, status, error });
+      const { jobId, status, error, workspaceId, domainId } = req.body;
+      console.log("Summary status update received from backend worker:", { jobId, status, error });
 
       if (!jobId || !status) {
         console.error("Missing jobId or status in summary status update:", { jobId, status });
         return res.status(400).json({ message: "Missing jobId or status" });
       }
 
-      // Emit real-time update to all connected clients
-      const eventData = { jobId, status, error };
-      console.log("Emitting summary_status event:", eventData);
-      io.emit("summary_status", eventData);
+      const normalized =
+        String(status).toLowerCase() === "success"
+          ? "completed"
+          : String(status).toLowerCase();
+      const mappedStatus = ["completed", "completed_with_errors", "failed", "processing"].includes(
+        normalized
+      )
+        ? normalized
+        : "processing";
+
+      const job = await Job.findOne({ id: jobId }).select("id tenant_id workspace_id").lean();
+      if (!job) {
+        console.warn("summaryStatusUpdate rejected: unknown jobId", { jobId });
+        return res.status(404).json({ message: "Unknown jobId" });
+      }
+      if (workspaceId && String(workspaceId) !== String(job.workspace_id)) {
+        console.warn("summaryStatusUpdate rejected: workspace mismatch", {
+          jobId,
+          callbackWorkspaceId: workspaceId,
+          expectedWorkspaceId: job.workspace_id,
+        });
+        return res.status(409).json({ message: "Workspace mismatch for callback" });
+      }
+      if (domainId && String(domainId) !== String(job.tenant_id)) {
+        console.warn("summaryStatusUpdate rejected: tenant/domain mismatch", {
+          jobId,
+          callbackDomainId: domainId,
+          expectedTenantId: job.tenant_id,
+        });
+        return res.status(409).json({ message: "Tenant mismatch for callback" });
+      }
+
+      await Job.updateOne(
+        { id: jobId },
+        {
+          $set: {
+            status: mappedStatus,
+            current_stage: "summary_callback",
+            ...(mappedStatus === "completed" || mappedStatus === "completed_with_errors"
+              ? { completed_at: new Date() }
+              : {}),
+          },
+        }
+      );
+
+      const eventData = { jobId, status: mappedStatus, error };
+      emitToWorkspace(job.workspace_id, "summary_status", eventData);
+      emitToTenant(job.tenant_id, "summary_status", eventData);
 
       // Log if there's an error
       if (error) {
@@ -532,7 +609,7 @@ export const summaryController = {
 
       res
         .status(200)
-        .json({ message: "Status update emitted", jobId, status, error });
+        .json({ message: "Status update emitted", jobId, status: mappedStatus, error });
     } catch (err) {
       console.error("Error in summaryStatusUpdate:", err);
       res.status(500).json({
@@ -545,11 +622,19 @@ export const summaryController = {
   async downloadHtmlPdf(req: AuthRequest, res: Response) {
     try {
       const { id } = req.params;
+      const currentWorkspace = req.currentWorkspace || req.userDomain;
+      const scopeQuery: any = {
+        workspaceId: currentWorkspace,
+      };
+      if (req.userDomain) {
+        scopeQuery.domain = req.userDomain;
+      }
       const summary = await Summary.findOne({
         $or: [
           { id: id },
           { id: Number(id) }
-        ]
+        ],
+        ...scopeQuery,
       });
       if (!summary || !summary.content) {
         return res.status(404).json({ error: "Summary not found" });

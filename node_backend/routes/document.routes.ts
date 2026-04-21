@@ -8,13 +8,22 @@ import multer from "multer";
 import { Request, Response, NextFunction } from "express";
 import { storageService } from "../services/storageService";
 import { rateLimitByWorkspace } from "../middleware/rateLimitByWorkspace";
+import { verifyInternalCallbackRequest } from "../middleware/internalRequestVerification";
 const Mau = require("multer-azure-blob-storage").MulterAzureStorage;
 
 const router = express.Router();
 
 // POST /upload-status/update (for n8n to notify upload status)
-router.post("/upload-status/update", documentController.uploadStatusUpdate);
-router.delete("/internal/:id", documentController.deleteInternal);
+router.post(
+  "/upload-status/update",
+  verifyInternalCallbackRequest,
+  documentController.uploadStatusUpdate
+);
+router.delete(
+  "/internal/:id",
+  verifyInternalCallbackRequest,
+  documentController.deleteInternal
+);
 
 // Process link access FIRST so downstream middlewares can use it
 router.use(linkAccess);

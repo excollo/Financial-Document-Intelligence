@@ -3,8 +3,8 @@ import { authMiddleware } from "../middleware/auth";
 import { domainAuthMiddleware } from "../middleware/domainAuth";
 import {
   tenantIsolation,
-  requireInternalSecret,
 } from "../middleware/tenantIsolation";
+import { verifyInternalCallbackRequest } from "../middleware/internalRequestVerification";
 import {
   createJob,
   listJobs,
@@ -50,19 +50,19 @@ router.delete(
 // ── Internal routes (Python pipeline → Node, validated by INTERNAL_SECRET) ──
 router.post(
   "/internal/status",
-  requireInternalSecret,
+  verifyInternalCallbackRequest,
   tenantIsolation,
   updateJobStatus
 );
 router.post(
   "/internal/section-result",
-  requireInternalSecret,
+  verifyInternalCallbackRequest,
   tenantIsolation,
   submitSectionResult
 );
 router.post(
   "/internal/adverse-finding",
-  requireInternalSecret,
+  verifyInternalCallbackRequest,
   tenantIsolation,
   submitAdverseFinding
 );

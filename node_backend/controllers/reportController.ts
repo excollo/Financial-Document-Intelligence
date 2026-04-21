@@ -2,9 +2,11 @@ import { Request, Response } from "express";
 import { Report } from "../models/Report";
 import { User } from "../models/User";
 import axios from "axios";
-import { io } from "../index";
 import { publishEvent } from "../lib/events";
 import { generateDocxBuffer } from "../services/docxService";
+import { v4 as uuidv4 } from "uuid";
+import { emitToTenant, emitToWorkspace } from "../services/realtimeEmitter";
+import { Job } from "../models/Job";
 
 interface AuthRequest extends Request {
   user?: any;
@@ -43,11 +45,12 @@ export const reportController = {
       console.log(`Triggering Python Comparison: ${drhpNamespace} vs ${rhpNamespace}`);
 
       const payload = {
+        job_id: uuidv4(),
         drhpNamespace,
         rhpNamespace,
         drhpDocumentId: drhpId,
         rhpDocumentId: rhpId,
-        sessionId: sessionId || Date.now().toString(),
+        sessionId: sessionId || undefined,
         domain: domain,
         domainId: domainId,
         authorization: req.headers.authorization,
@@ -56,6 +59,21 @@ export const reportController = {
           triggeredBy: req.user?._id
         }
       };
+      payload.sessionId = payload.job_id;
+
+      await Job.create({
+        id: payload.job_id,
+        tenant_id: domainId || domain,
+        job_type: "comparison",
+        status: "processing",
+        current_stage: "comparison",
+        progress_pct: 0,
+        workspace_id: req.currentWorkspace || domain,
+        created_by: req.user?._id?.toString?.() || null,
+        drhp_id: drhpId,
+        rhp_id: rhpId,
+        title: `${drhpNamespace} vs ${rhpNamespace}`,
+      });
 
       const pythonResponse = await axios.post(`${pythonApiUrl}/jobs/comparison`, payload, {
         headers: {
@@ -67,7 +85,7 @@ export const reportController = {
       if (pythonResponse.data && pythonResponse.data.status === "accepted") {
         return res.json({
           status: "processing",
-          job_id: pythonResponse.data.job_id,
+          job_id: pythonResponse.data.job_id || payload.job_id,
           message: "Comparison job started successfully"
         });
       }
@@ -177,10 +195,18 @@ export const reportController = {
         // Get all documents from shared directories
         if (sharedDirectoryIds.length > 0) {
           const uniqueDirIds = [...new Set(sharedDirectoryIds)];
-          // Get documents from all shared directories (across domains/workspaces)
-          const sharedDocs = await Document.find({
-            directoryId: { $in: uniqueDirIds },
-          });
+          // Scope shared-doc lookup to trusted directory records.
+          const trustedDirectories = await Directory.find({
+            id: { $in: uniqueDirIds },
+          }).select("id domain workspaceId");
+          const sharedDirectoryScope = trustedDirectories.map((dir: any) => ({
+            directoryId: dir.id,
+            domain: dir.domain,
+            workspaceId: dir.workspaceId,
+          }));
+          const sharedDocs = sharedDirectoryScope.length
+            ? await Document.find({ $or: sharedDirectoryScope })
+            : [];
           const sharedDocumentIds = sharedDocs.map(doc => doc.id);
           const sharedDocumentNamespaces = sharedDocs.map(doc => doc.namespace);
 
@@ -261,9 +287,11 @@ export const reportController = {
 
   async getById(req: AuthRequest, res: Response) {
     try {
+      const currentWorkspace = req.currentWorkspace || req.userDomain;
       const query: any = {
         id: req.params.id,
         domain: req.userDomain, // Ensure user can only access reports from their domain
+        workspaceId: currentWorkspace,
       };
 
       const report = await Report.findOne(query);
@@ -420,15 +448,63 @@ export const reportController = {
 
   async reportStatusUpdate(req: Request, res: Response) {
     try {
-      const { jobId, status, error } = req.body;
+      const { jobId, status, error, workspaceId, domainId } = req.body;
       if (!jobId || !status) {
         return res.status(400).json({ message: "Missing jobId or status" });
       }
-      // Emit real-time update
-      io.emit("compare_status", { jobId, status, error });
+      const normalized =
+        String(status).toLowerCase() === "success"
+          ? "completed"
+          : String(status).toLowerCase();
+      const mappedStatus = ["completed", "completed_with_errors", "failed", "processing"].includes(
+        normalized
+      )
+        ? normalized
+        : "processing";
+
+      const job = await Job.findOne({ id: jobId, job_type: "comparison" })
+        .select("id tenant_id workspace_id")
+        .lean();
+      if (!job) {
+        console.warn("reportStatusUpdate rejected: unknown comparison jobId", { jobId });
+        return res.status(404).json({ message: "Unknown jobId" });
+      }
+      if (workspaceId && String(workspaceId) !== String(job.workspace_id)) {
+        console.warn("reportStatusUpdate rejected: workspace mismatch", {
+          jobId,
+          callbackWorkspaceId: workspaceId,
+          expectedWorkspaceId: job.workspace_id,
+        });
+        return res.status(409).json({ message: "Workspace mismatch for callback" });
+      }
+      if (domainId && String(domainId) !== String(job.tenant_id)) {
+        console.warn("reportStatusUpdate rejected: tenant mismatch", {
+          jobId,
+          callbackDomainId: domainId,
+          expectedTenantId: job.tenant_id,
+        });
+        return res.status(409).json({ message: "Tenant mismatch for callback" });
+      }
+
+      await Job.updateOne(
+        { id: jobId },
+        {
+          $set: {
+            status: mappedStatus,
+            current_stage: "comparison_callback",
+            ...(mappedStatus === "completed" || mappedStatus === "completed_with_errors"
+              ? { completed_at: new Date() }
+              : {}),
+          },
+        }
+      );
+
+      const eventData = { jobId, status: mappedStatus, error };
+      emitToWorkspace(job.workspace_id, "compare_status", eventData);
+      emitToTenant(job.tenant_id, "compare_status", eventData);
       res
         .status(200)
-        .json({ message: "Status update emitted", jobId, status, error });
+        .json({ message: "Status update emitted", jobId, status: mappedStatus, error });
     } catch (err) {
       res.status(500).json({
         message: "Failed to emit status update",
@@ -442,7 +518,12 @@ export const reportController = {
   async downloadDocx(req: AuthRequest, res: Response) {
     try {
       const { id } = req.params;
-      const report = await Report.findOne({ id });
+      const currentWorkspace = req.currentWorkspace || req.userDomain;
+      const report = await Report.findOne({
+        id,
+        workspaceId: currentWorkspace,
+        domain: req.userDomain,
+      });
       if (!report || !report.content) {
         return res.status(404).json({ error: "Report not found" });
       }
@@ -478,9 +559,11 @@ export const reportController = {
   async update(req: AuthRequest, res: Response) {
     try {
       const { id } = req.params;
+      const currentWorkspace = req.currentWorkspace || req.userDomain;
       const query: any = {
         id,
         domain: req.userDomain, // Ensure user can only update reports from their domain
+        workspaceId: currentWorkspace,
       };
 
       // All workspace members can update reports in their workspace
@@ -501,9 +584,11 @@ export const reportController = {
 
   async delete(req: AuthRequest, res: Response) {
     try {
+      const currentWorkspace = req.currentWorkspace || req.userDomain;
       const query: any = {
         id: req.params.id,
         domain: req.userDomain, // Ensure user can only delete reports from their domain
+        workspaceId: currentWorkspace,
       };
 
       // Admins can delete all reports in their domain, regular users see only their own
@@ -542,7 +627,12 @@ export const reportController = {
   async downloadPdfFromHtml(req: AuthRequest, res: Response) {
     try {
       const { id } = req.params;
-      const report = await Report.findOne({ id });
+      const currentWorkspace = req.currentWorkspace || req.userDomain;
+      const report = await Report.findOne({
+        id,
+        workspaceId: currentWorkspace,
+        domain: req.userDomain,
+      });
       if (!report || !report.content) {
         return res.status(404).json({ error: "Report not found" });
       }

@@ -68,13 +68,28 @@ class PipelineOrchestrator:
                 progress_pct=90, 
                 current_stage="output_assembly"
             )
-            await self._assemble_outputs()
+            assembly_result = await self._assemble_outputs()
             
             # 6. Completion
+            if not assembly_result.get("ok"):
+                await self.ctx.update_status(
+                    status="completed_with_errors",
+                    progress_pct=100,
+                    current_stage="completed_with_errors",
+                    error_message="; ".join(assembly_result.get("errors", ["Output assembly failed"])),
+                )
+                logger.warning(
+                    "Pipeline completed with output errors",
+                    job_id=self.ctx.job_id,
+                    errors=assembly_result.get("errors", []),
+                )
+                return
+
             await self.ctx.update_status(
                 status="completed", 
                 progress_pct=100, 
-                current_stage="completed"
+                current_stage="completed",
+                output_urls=assembly_result.get("output_urls"),
             )
             logger.info("Pipeline run successfully completed", job_id=self.ctx.job_id)
 
@@ -213,25 +228,42 @@ class PipelineOrchestrator:
             
             # 2. Generate Docx
             docx_bytes = self.docx_builder.build(job_metadata, section_results)
+            if not docx_bytes:
+                raise RuntimeError("DOCX builder returned empty content")
             docx_key = f"outputs/{self.ctx.job_id}/{self.ctx.job_id}.docx"
-            await s3_service.upload_file(docx_bytes, docx_key, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+            docx_uploaded = await s3_service.upload_file(
+                docx_bytes,
+                docx_key,
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+            docx_exists = await s3_service.file_exists(docx_key)
+            if not docx_uploaded or not docx_exists:
+                raise RuntimeError("Failed to upload DOCX artifact")
             
             # 3. Generate Excel
             excel_bytes = self.excel_builder.build(job_metadata, section_results)
+            if not excel_bytes:
+                raise RuntimeError("Excel builder returned empty content")
             excel_key = f"outputs/{self.ctx.job_id}/{self.ctx.job_id}.xlsx"
-            await s3_service.upload_file(excel_bytes, excel_key, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            excel_uploaded = await s3_service.upload_file(
+                excel_bytes,
+                excel_key,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+            excel_exists = await s3_service.file_exists(excel_key)
+            if not excel_uploaded or not excel_exists:
+                raise RuntimeError("Failed to upload Excel artifact")
             
             logger.info("Outputs generated and uploaded", job_id=self.ctx.job_id)
-            
-            # Update job status with output URLs
-            await self.ctx.update_status(
-                output_urls={
-                    "docx": s3_service.get_public_url(docx_key),
-                    "excel": s3_service.get_public_url(excel_key)
-                }
-            )
-            
+
+            output_urls = {
+                "docx": s3_service.get_public_url(docx_key),
+                "excel": s3_service.get_public_url(excel_key),
+            }
+            if not output_urls["docx"] or not output_urls["excel"]:
+                raise RuntimeError("One or more output URLs are missing")
+
+            return {"ok": True, "output_urls": output_urls, "errors": []}
         except Exception as e:
-            logger.error("Output assembly failed", error=str(e))
-            # Non-blocking, the job results are still in MongoDB
-            pass
+            logger.error("Output assembly failed", error=str(e), job_id=self.ctx.job_id)
+            return {"ok": False, "output_urls": None, "errors": [str(e)]}

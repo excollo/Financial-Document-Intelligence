@@ -300,6 +300,8 @@ class IngestionPipeline:
                     status="failed",
                     namespace=filename,
                     document_id=document_id,
+                    workspace_id=metadata.get("workspaceId"),
+                    domain_id=metadata.get("domainId"),
                     error={"message": "No text extracted from document. Check if the PDF is non-searchable."}
                 )
                 
@@ -407,9 +409,11 @@ class IngestionPipeline:
             # 7. Notify backend
             backend_notifier.notify_status(
                 job_id=job_id,
-                status="success",  # Use "success" to trigger frontend close
+                status="completed",
                 namespace=filename,
                 document_id=metadata.get("documentId"),
+                workspace_id=metadata.get("workspaceId"),
+                domain_id=metadata.get("domainId"),
             )
 
             execution_time = time.time() - start_time
@@ -459,6 +463,8 @@ class IngestionPipeline:
                     status="failed",
                     namespace=filename,
                     document_id=document_id,
+                    workspace_id=metadata.get("workspaceId"),
+                    domain_id=metadata.get("domainId"),
                     error={"message": str(e)},
                 )
             else:

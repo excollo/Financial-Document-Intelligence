@@ -4,11 +4,16 @@ import { authMiddleware } from "../middleware/auth";
 import { domainAuthMiddleware } from "../middleware/domainAuth";
 import { rateLimitByWorkspace } from "../middleware/rateLimitByWorkspace";
 import { requireBodyDocumentPermission, requireSummaryPermission } from "../middleware/permissions";
+import { verifyInternalCallbackRequest } from "../middleware/internalRequestVerification";
 
 const router = express.Router();
 
 // POST /summary-status/update (for n8n to notify status) - Must be before auth middleware
-router.post("/summary-status/update", summaryController.summaryStatusUpdate);
+router.post(
+  "/summary-status/update",
+  verifyInternalCallbackRequest,
+  summaryController.summaryStatusUpdate
+);
 
 // Enable link access to summaries of shared documents
 import { linkAccess } from "../middleware/linkAccess";
