@@ -99,7 +99,8 @@ async def submit_pipeline_job(request: PipelineJobRequest) -> JobResponse:
         celery_app.send_task(
             "process_pipeline_job",
             args=[request.model_dump()],
-            task_id=request.job_id
+            task_id=request.job_id,
+            queue=settings.CELERY_TASK_DEFAULT_QUEUE,
         )
         
         return JobResponse(
@@ -134,7 +135,8 @@ async def submit_document_job(request: DocumentJobRequest):
         celery_app.send_task(
             "process_document",
             args=[request.file_url, request.file_type, job_id, request_metadata],
-            task_id=job_id
+            task_id=job_id,
+            queue=settings.CELERY_TASK_DEFAULT_QUEUE,
         )
         
         return {
@@ -237,7 +239,8 @@ async def submit_news_job(request: NewsJobRequest) -> JobResponse:
         celery_app.send_task(
             "process_news_article",
             args=[request.article_url, job_id, request.metadata],
-            task_id=job_id
+            task_id=job_id,
+            queue=settings.CELERY_TASK_DEFAULT_QUEUE,
         )
         
         return JobResponse(
@@ -288,7 +291,8 @@ async def submit_summary_job(request: SummaryJobRequest) -> JobResponse:
         celery_app.send_task(
             "generate_summary",
             args=[request.namespace, request.doc_type, job_id, task_metadata],
-            task_id=job_id
+            task_id=job_id,
+            queue=settings.CELERY_TASK_DEFAULT_QUEUE,
         )
         print("DEBUG: Celery task sent successfully!")
         
@@ -339,7 +343,8 @@ async def submit_comparison_job(request: ComparisonJobRequest) -> JobResponse:
         celery_app.send_task(
             "generate_comparison",
             args=[request.drhpNamespace, request.rhpNamespace, job_id, worker_metadata],
-            task_id=job_id
+            task_id=job_id,
+            queue=settings.CELERY_TASK_DEFAULT_QUEUE,
         )
         
         return JobResponse(

@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     CELERY_WORKER_CONCURRENCY: int = 1
     CELERY_WORKER_MAX_TASKS_PER_CHILD: int = 4
     CELERY_WORKER_MAX_MEMORY_PER_CHILD: int = 1200000
+    CELERY_TASK_DEFAULT_QUEUE: str = "celery"
+    CELERY_TASK_DEFAULT_EXCHANGE: str = "celery"
+    CELERY_TASK_DEFAULT_ROUTING_KEY: str = "celery"
     
     # Azure Application Insights (Logging & Monitoring)
     APPLICATIONINSIGHTS_CONNECTION_STRING: str = ""

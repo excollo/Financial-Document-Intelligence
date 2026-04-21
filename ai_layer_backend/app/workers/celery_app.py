@@ -57,6 +57,9 @@ celery_app.conf.update(
     task_track_started=True,
     task_time_limit=3600,
     task_soft_time_limit=3300,
+    task_default_queue=settings.CELERY_TASK_DEFAULT_QUEUE,
+    task_default_exchange=settings.CELERY_TASK_DEFAULT_EXCHANGE,
+    task_default_routing_key=settings.CELERY_TASK_DEFAULT_ROUTING_KEY,
 
     worker_concurrency=settings.CELERY_WORKER_CONCURRENCY,
     worker_prefetch_multiplier=1,
