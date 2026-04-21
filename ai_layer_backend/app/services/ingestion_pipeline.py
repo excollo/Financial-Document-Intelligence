@@ -23,6 +23,7 @@ from app.services.backend_notifier import backend_notifier
 from app.db.mongo import mongodb
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.core.memory import maybe_collect
 
 logger = get_logger(__name__)
 
@@ -123,6 +124,7 @@ class IngestionPipeline:
                     error=str(e),
                 )
                 raise
+        maybe_collect(stage="ingestion.section_upsert_complete", size_hint_mb=140.0)
 
         logger.info(
             "Section embedded and upserted",
@@ -263,11 +265,20 @@ class IngestionPipeline:
 
             # 3. Extract section-wise with real-time table streaming (using provided TOC)
             t_extract = time.time()
-            extraction_result = await self.extraction.extract_sections_from_pdf(
-                file_content, 
+            extraction_timeout = max(120, settings.INGESTION_EXTRACTION_TIMEOUT_SECONDS)
+            logger.info(
+                "Starting Step 3 extraction",
                 job_id=job_id,
-                table_callback=stream_tables_to_mongo,
-                provided_toc=toc_map
+                timeout_seconds=extraction_timeout,
+            )
+            extraction_result = await asyncio.wait_for(
+                self.extraction.extract_sections_from_pdf(
+                    file_content, 
+                    job_id=job_id,
+                    table_callback=stream_tables_to_mongo,
+                    provided_toc=toc_map
+                ),
+                timeout=extraction_timeout,
             )
             sections = extraction_result.get("sections", [])
             tables = extraction_result.get("tables", [])
@@ -324,7 +335,7 @@ class IngestionPipeline:
             # so we can run them concurrently with asyncio.gather().
             # We batch in groups of 5 to avoid overwhelming OpenAI rate limits.
             total_upserted = 0
-            PARALLEL_BATCH = 5  # sections processed concurrently
+            PARALLEL_BATCH = max(1, settings.INGESTION_PARALLEL_BATCH)
 
             # Pre-compute chunk offsets so vector IDs don't collide across sections
             # Estimate: each section produces ~(len(text)/3600) chunks on average
@@ -367,6 +378,11 @@ class IngestionPipeline:
                         logger.error("Section processing error", error=str(r))
                     else:
                         total_upserted += r
+                maybe_collect(
+                    stage="ingestion.section_batch_complete",
+                    batch_idx=(batch_start // PARALLEL_BATCH) + 1,
+                    size_hint_mb=180.0,
+                )
 
 
             # 6. MongoDB record
@@ -413,6 +429,20 @@ class IngestionPipeline:
                 "duration": execution_time,
             }
 
+        except asyncio.TimeoutError:
+            timeout_seconds = max(120, settings.INGESTION_EXTRACTION_TIMEOUT_SECONDS)
+            message = f"PDF extraction timed out after {timeout_seconds} seconds"
+            logger.error(message, job_id=job_id)
+            filename = metadata.get("filename", "document.pdf")
+            document_id = metadata.get("documentId")
+            backend_notifier.notify_status(
+                job_id=job_id,
+                status="failed",
+                namespace=filename,
+                document_id=document_id,
+                error={"message": message},
+            )
+            raise RuntimeError(message)
         except Exception as e:
             logger.error("Ingestion pipeline failed", error=str(e), job_id=job_id)
             filename = metadata.get("filename", "document.pdf")

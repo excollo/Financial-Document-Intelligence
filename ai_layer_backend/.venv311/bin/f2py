@@ -1,0 +1,6 @@
+#!/Users/excollodev/Desktop/Financial-Document-Intelligence/ai_layer_backend/.venv311/bin/python
+import sys
+from numpy.f2py.f2py2e import main
+if __name__ == '__main__':
+    sys.argv[0] = sys.argv[0].removesuffix('.exe')
+    sys.exit(main())

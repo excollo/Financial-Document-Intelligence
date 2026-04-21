@@ -29,6 +29,7 @@ from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 import multiprocessing
 from app.core.logging import get_logger
 from app.core.config import settings
+from app.core.memory import maybe_collect
 from app.services.s3 import s3_service
 
 logger = get_logger(__name__)
@@ -51,6 +52,17 @@ TOC_LINE_PATTERN = re.compile(r"^(.*?)(?:\s|\.){3,}\s*(\d+)$", re.MULTILINE)
 SECTION_PREFIX_PATTERN = re.compile(r"^(?:SECTION|PART)\s*[-\u2013\u2014]?\s*[IVXLCD0-9]+", re.IGNORECASE)
 SUBSECTION_PREFIX_PATTERN = re.compile(r"^[A-Z][a-z]+(?:\s[A-Z][a-z]+)*", re.UNICODE)
 TOC_DOT_LEADER_LINE_PATTERN = re.compile(r".{3,}\.{5,}\s*\d+\s*$")
+MAX_TABLE_MARKDOWN_CHARS = 12000
+
+
+def _truncate_table_markdown(md: str, max_chars: int = MAX_TABLE_MARKDOWN_CHARS) -> str:
+    """
+    Cap very large table markdown blocks to prevent OOM during section assembly.
+    Keeps leading rows so headers and key top rows survive.
+    """
+    if not md or len(md) <= max_chars:
+        return md
+    return md[:max_chars] + "\n\n[... table truncated for memory safety ...]"
 
 
 def _to_markdown_table(rows: List[List[str]]) -> str:
@@ -458,10 +470,32 @@ class ExtractionService:
                 toc_map = provided_toc or _extract_toc_mapping(pdf)
                 total_pages = len(pdf.pages)
                 toc_like_pages = set()
-                for p_idx in range(total_pages):
+                scan_max_pages = max(1, min(total_pages, settings.EXTRACTION_TOC_SCAN_MAX_PAGES))
+                logger.info(
+                    "TOC-like scan started",
+                    job_id=job_id,
+                    total_pages=total_pages,
+                    scan_pages=scan_max_pages,
+                )
+                for p_idx in range(scan_max_pages):
                     page_text = pdf.pages[p_idx].extract_text() or ""
                     if self._is_toc_like_page(page_text):
                         toc_like_pages.add(p_idx + 1)
+                    if (p_idx + 1) % 25 == 0 or (p_idx + 1) == scan_max_pages:
+                        logger.info(
+                            "TOC-like scan progress",
+                            job_id=job_id,
+                            scanned_pages=p_idx + 1,
+                            total_pages=scan_max_pages,
+                            toc_like_pages=len(toc_like_pages),
+                        )
+                if scan_max_pages < total_pages:
+                    logger.info(
+                        "TOC-like scan capped for performance",
+                        job_id=job_id,
+                        scanned_pages=scan_max_pages,
+                        skipped_pages=total_pages - scan_max_pages,
+                    )
             
             # Identify Priority Pages (OUR BUSINESS, CAPITAL STRUCTURE, FINANCIAL INFORMATION)
             priority_pages = set()
@@ -532,6 +566,7 @@ class ExtractionService:
             with executor:
                 loop = asyncio.get_event_loop()
                 futures = []
+                completed_batches = 0
                 
                 # Setup batches (40 pages each), excluding TOC/index-like pages.
                 step = 40
@@ -569,7 +604,15 @@ class ExtractionService:
                 
                 # Re-order: Priority batches first (Stable sort keeps chronological order within groups)
                 batches.sort(key=lambda x: x[2], reverse=True)
+                logger.info(
+                    "Prepared table extraction batches",
+                    job_id=job_id,
+                    batches=len(batches),
+                    max_workers=max_workers,
+                    mode="process" if use_process_pool else "thread",
+                )
                 
+                future_to_batch: Dict[asyncio.Future, Tuple[int, int]] = {}
                 for b_start, b_end, is_prio in batches:
                     pages_str = f"{b_start}-{b_end}"
                     if is_prio:
@@ -577,7 +620,7 @@ class ExtractionService:
                     else:
                         logger.info(f"Queuing Regular Camelot Batch: {pages_str}", job_id=job_id)
                     
-                    futures.append(loop.run_in_executor(
+                    future = loop.run_in_executor(
                         executor, 
                         _camelot_worker, 
                         temp_path, 
@@ -586,59 +629,96 @@ class ExtractionService:
                         100, 
                         b_start,
                         b_end
-                    ))
+                    )
+                    futures.append(future)
+                    future_to_batch[future] = (b_start, b_end)
 
                 # Collect and post-process
-                for future in asyncio.as_completed(futures):
-                    try:
-                        result = await future
-                        b_start = result.get("batch_start")
-                        b_end = result.get("batch_end")
-                        b_err = result.get("error")
-                        b_tables_data = result.get("tables", [])
+                pending_futures = set(futures)
+                progress_timeout = max(30, settings.EXTRACTION_BATCH_PROGRESS_TIMEOUT_SECONDS)
+                while pending_futures:
+                    done, pending_futures = await asyncio.wait(
+                        pending_futures,
+                        timeout=progress_timeout,
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    if not done:
+                        stalled = [future_to_batch.get(f, (-1, -1)) for f in pending_futures]
+                        logger.error(
+                            "Table extraction stalled: no batch completed within timeout; cancelling pending batches",
+                            job_id=job_id,
+                            timeout_seconds=progress_timeout,
+                            pending_batches=stalled,
+                        )
+                        for stuck in pending_futures:
+                            stuck.cancel()
+                        break
+
+                    for future in done:
+                        try:
+                            result = await future
+                            b_start = result.get("batch_start")
+                            b_end = result.get("batch_end")
+                            b_err = result.get("error")
+                            b_tables_data = result.get("tables", [])
                         
-                        if b_err:
-                            logger.warning(f"Batch {b_start} Camelot failed: {b_err}. Falling back to pdfplumber.")
-                            b_tables_data = self._pdfplumber_fallback(temp_path, b_start, b_end)
+                            if b_err:
+                                logger.warning(f"Batch {b_start} Camelot failed: {b_err}. Falling back to pdfplumber.")
+                                b_tables_data = self._pdfplumber_fallback(temp_path, b_start, b_end)
 
-                        batch_tables = []
-                        # Open pdfplumber once per batch for header lookup
-                        with pdfplumber.open(temp_path) as current_pdf:
-                            for t_data in b_tables_data:
-                                table_df_vals = t_data["df_values"]
-                                t_md = _to_markdown_table(table_df_vals)
-                                if not t_md or len(table_df_vals) < 2: continue
-                                
-                                global_p = b_start + t_data["local_page"] - 1
-                                if global_p > total_pages: continue
-                                
-                                # Create dummy object for header lookup
-                                class MockTable:
-                                    def __init__(self, bbox): self._bbox = bbox
-                                
-                                t_heading = self._get_table_heading(current_pdf.pages[global_p - 1], MockTable(t_data["bbox"]))
-                                sec, sub, r_str = self._find_toc_entry_for_page(global_p, toc_map)
-                                
-                                table_metadata = {
-                                    "table_id": str(uuid.uuid4()),
-                                    "section": sec or "General",
-                                    "subsection": sub or "",
-                                    "subsection_range": r_str,
-                                    "table_heading": t_heading,
-                                    "page": global_p,
-                                    "markdown": t_md,
-                                    "headers": table_df_vals[0] if table_df_vals else []
-                                }
-                                batch_tables.append(table_metadata)
+                            batch_tables = []
+                            # Open pdfplumber once per batch for header lookup
+                            with pdfplumber.open(temp_path) as current_pdf:
+                                for t_data in b_tables_data:
+                                    table_df_vals = t_data["df_values"]
+                                    t_md = _to_markdown_table(table_df_vals)
+                                    if not t_md or len(table_df_vals) < 2: continue
+                                    
+                                    global_p = b_start + t_data["local_page"] - 1
+                                    if global_p > total_pages: continue
+                                    
+                                    # Create dummy object for header lookup
+                                    class MockTable:
+                                        def __init__(self, bbox): self._bbox = bbox
+                                    
+                                    t_heading = self._get_table_heading(current_pdf.pages[global_p - 1], MockTable(t_data["bbox"]))
+                                    sec, sub, r_str = self._find_toc_entry_for_page(global_p, toc_map)
+                                    
+                                    table_metadata = {
+                                        "table_id": str(uuid.uuid4()),
+                                        "section": sec or "General",
+                                        "subsection": sub or "",
+                                        "subsection_range": r_str,
+                                        "table_heading": t_heading,
+                                        "page": global_p,
+                                        "markdown": _truncate_table_markdown(t_md),
+                                        "headers": table_df_vals[0] if table_df_vals else []
+                                    }
+                                    batch_tables.append(table_metadata)
 
-                        if table_callback and batch_tables:
-                            await table_callback(batch_tables)
-                            logger.info(f"Streamed {len(batch_tables)} tables for batch starting {b_start}")
-                        
-                        all_tables_storage.extend(batch_tables)
+                            if table_callback and batch_tables:
+                                await table_callback(batch_tables)
+                                logger.info(f"Streamed {len(batch_tables)} tables for batch starting {b_start}")
+                            
+                            all_tables_storage.extend(batch_tables)
+                            completed_batches += 1
+                            logger.info(
+                                "Batch extraction progress",
+                                job_id=job_id,
+                                completed_batches=completed_batches,
+                                total_batches=len(batches),
+                                batch_start=b_start,
+                                batch_end=b_end,
+                                extracted_tables=len(batch_tables),
+                            )
+                            maybe_collect(
+                                stage="extraction.batch_complete",
+                                batch_idx=completed_batches,
+                                size_hint_mb=120.0,
+                            )
 
-                    except Exception as e:
-                        logger.error(f"Error in parallel batch processing: {str(e)}", exc_info=True)
+                        except Exception as e:
+                            logger.error(f"Error in parallel batch processing: {str(e)}", exc_info=True)
 
             # --- 1b. Table Stitching ---
             if all_tables_storage:
@@ -657,20 +737,27 @@ class ExtractionService:
                         curr = next_t
                 stitched.append(curr)
                 all_tables_storage = stitched
+                maybe_collect(stage="extraction.post_stitch", size_hint_mb=120.0)
                 # If we stitched, we might want to re-save or update Mongo?
                 # For now, summary pipeline can handle it from these results.
 
             # --- 2. Text Extraction ---
             with pdfplumber.open(temp_path) as pdf:
                 processed_sections = []
-                for entry in toc_map:
+                tables_by_page: Dict[int, List[Dict[str, Any]]] = {}
+                for t in all_tables_storage:
+                    tables_by_page.setdefault(t["page"], []).append(t)
+                # Release duplicate reference to reduce peak memory before large text assembly.
+                all_tables_storage = []
+                total_entries = len(toc_map)
+                for entry_idx, entry in enumerate(toc_map, start=1):
                     sec_name = entry["name"]
                     start_p = entry["start_page"]
                     end_p = entry["end_page"]
                     is_sub = (entry["type"] == "subsection")
                     
                     section_text_parts = []
-                    tables_in_this_entry = []
+                    table_count_in_entry = 0
                     headings_in_this_entry = []
                     
                     for p_num in range(start_p, end_p + 1):
@@ -687,7 +774,7 @@ class ExtractionService:
                         # 2. Page Tables (High-Fidelity Markdown)
                         # Injecting tables immediately after their page text ensures they remain 
                         # in the same or adjacent chunks in Pinecone.
-                        for t in all_tables_storage:
+                        for t in tables_by_page.pop(p_num, []):
                             if t["page"] == p_num:
                                 # Apply subsection filters
                                 if is_sub and t.get("subsection") and t["subsection"] != sec_name:
@@ -696,21 +783,40 @@ class ExtractionService:
                                     continue
                                     
                                 section_text_parts.append(f"\n\n--- [Table: {t['table_heading']}] ---\n{t['markdown']}\n\n")
-                                tables_in_this_entry.append(t["table_id"])
+                                table_count_in_entry += 1
                                 if t["table_heading"]:
                                     headings_in_this_entry.append(t["table_heading"])
+                                # Drop heavy fields ASAP once consumed.
+                                t["markdown"] = ""
+                                t["headers"] = []
 
                     section_text = "\n".join(section_text_parts)
                     cleaned_section = _clean_text_preserving_tables(section_text)
+                    section_text_parts.clear()
                     if len(cleaned_section) > 50:
                         processed_sections.append({
                             "sectionName": sec_name,
                             "subsectionName": sec_name if is_sub else "",
                             "sectionStart&End": entry["range_str"],
                             "text": cleaned_section,
-                            "table_count": len(tables_in_this_entry),
+                            "table_count": table_count_in_entry,
                             "table_headings": ", ".join(headings_in_this_entry) if headings_in_this_entry else ""
                         })
+                    if entry_idx % 5 == 0:
+                        maybe_collect(
+                            stage="extraction.text_section_progress",
+                            batch_idx=entry_idx,
+                            size_hint_mb=120.0,
+                        )
+                    if entry_idx % 10 == 0 or entry_idx == total_entries:
+                        logger.info(
+                            "Text extraction progress",
+                            job_id=job_id,
+                            processed_entries=entry_idx,
+                            total_entries=total_entries,
+                            built_sections=len(processed_sections),
+                        )
+            maybe_collect(stage="extraction.post_text_extraction", size_hint_mb=100.0)
 
             return {
                 "sections": processed_sections,

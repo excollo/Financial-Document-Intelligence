@@ -22,6 +22,7 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.core.memory import maybe_collect
 from app.services.vector_store import vector_store_service
 from app.services.embedding import EmbeddingService
 from app.services.rerank import rerank_service
@@ -1100,6 +1101,7 @@ class SummaryPipeline:
                 sec11_12_task,
                 return_exceptions=True
             )
+            maybe_collect(stage="summary.phase1_parallel_complete", size_hint_mb=220.0)
             
             # Handle possible exceptions
             results = [section1_2_md, section4_5_md, section7_md, section8_9_md, section10_md, section11_12_md, section3_md]
@@ -1172,6 +1174,7 @@ class SummaryPipeline:
             
             # Final Post-processing
             final_markdown = self._post_process_final_markdown(combined_summary, doc_type)
+            maybe_collect(stage="summary.post_assembly", size_hint_mb=160.0)
             
             # Wrap with Timestamp
             dateTime = datetime.now().strftime("%d/%m/%Y, %I:%M:%S %p")

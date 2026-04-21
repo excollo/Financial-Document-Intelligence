@@ -118,7 +118,7 @@ python3 -m app.main
 
 **Terminal 2 - Start Celery Worker**
 ```bash
-celery -A app.workers.celery_app worker --loglevel=info
+celery -A app.workers.celery_app worker --loglevel=info --pool=prefork --concurrency=1 --prefetch-multiplier=1 --max-tasks-per-child=4 --max-memory-per-child=1200000
 ```
 
 #### Option 2: Docker
@@ -296,7 +296,7 @@ docker push <registry>/ai-platform-worker:latest
 
 ### Start Worker
 ```bash
-celery -A app.workers.celery_app worker --loglevel=info
+celery -A app.workers.celery_app worker --loglevel=info --pool=prefork --concurrency=1 --prefetch-multiplier=1 --max-tasks-per-child=4 --max-memory-per-child=1200000
 ```
 
 ### Monitor Tasks

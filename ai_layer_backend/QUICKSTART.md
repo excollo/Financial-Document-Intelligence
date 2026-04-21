@@ -26,7 +26,7 @@ python3 -m app.main
 
 **Terminal 2 - Workers (Asynchronous Layer - News/Summary)**
 ```bash
-celery -A app.workers.celery_app worker --loglevel=info --pool=solo
+celery -A app.workers.celery_app worker --loglevel=info --pool=prefork
 ```
 
 ### 3. Verify Setup

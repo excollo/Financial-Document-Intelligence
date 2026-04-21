@@ -44,7 +44,7 @@ if (Test-Path ".\venv\Scripts\activate.ps1") {
 # 3. Start Celery Worker (Background Update)
 Write-Host "Starting Celery Worker..." -ForegroundColor Cyan
 # Using python -m celery to avoid path issues
-Start-Process -FilePath "powershell" -ArgumentList "-NoExit", "-Command", "python -m celery -A app.workers.celery_app worker --loglevel=info --pool=solo"
+Start-Process -FilePath "powershell" -ArgumentList "-NoExit", "-Command", "python -m celery -A app.workers.celery_app worker --loglevel=info --pool=prefork --concurrency=1 --prefetch-multiplier=1 --max-tasks-per-child=4 --max-memory-per-child=1200000"
 Write-Host "Celery Worker process launched in new window." -ForegroundColor Green
 
 # 4. Start FastAPI Backend (Foreaound)

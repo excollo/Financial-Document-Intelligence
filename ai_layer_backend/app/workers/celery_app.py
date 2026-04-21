@@ -58,11 +58,15 @@ celery_app.conf.update(
     task_time_limit=3600,
     task_soft_time_limit=3300,
 
+    worker_concurrency=settings.CELERY_WORKER_CONCURRENCY,
     worker_prefetch_multiplier=1,
-    worker_max_tasks_per_child=100,
+    worker_max_tasks_per_child=settings.CELERY_WORKER_MAX_TASKS_PER_CHILD,
+    worker_max_memory_per_child=settings.CELERY_WORKER_MAX_MEMORY_PER_CHILD,
 
-    task_acks_late=True,
-    task_reject_on_worker_lost=True,
+    # Hotfix: avoid endless re-queue loop when worker is OOM-killed (SIGKILL).
+    # We'll fail the task instead of auto-replaying the same heavy job forever.
+    task_acks_late=False,
+    task_reject_on_worker_lost=False,
 
     # Connection and Transport Resilience
     broker_connection_retry_on_startup=True,

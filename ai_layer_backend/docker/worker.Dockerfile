@@ -43,5 +43,5 @@ COPY . .
 
 # Default Celery startup command
 # Note: In production, it is recommended to override this in Azure App Service 
-# Startup Command settings to use --pool=solo for better CPU/Memory stability.
-CMD ["celery", "-A", "app.workers.celery_app", "worker", "--loglevel=info", "--pool=solo", "--concurrency=1"]
+# Startup command keeps concurrency=1 and enables worker recycling limits.
+CMD ["celery", "-A", "app.workers.celery_app", "worker", "--loglevel=info", "--pool=prefork", "--concurrency=1", "--prefetch-multiplier=1", "--max-tasks-per-child=4", "--max-memory-per-child=1200000"]

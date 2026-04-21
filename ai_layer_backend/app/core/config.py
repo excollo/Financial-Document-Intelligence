@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     CELERY_ACCEPT_CONTENT: list = ["json"]
     CELERY_TIMEZONE: str = "Asia/Kolkata"
     CELERY_ENABLE_UTC: bool = False
+    CELERY_WORKER_CONCURRENCY: int = 1
+    CELERY_WORKER_MAX_TASKS_PER_CHILD: int = 4
+    CELERY_WORKER_MAX_MEMORY_PER_CHILD: int = 1200000
     
     # Azure Application Insights (Logging & Monitoring)
     APPLICATIONINSIGHTS_CONNECTION_STRING: str = ""
@@ -67,7 +70,14 @@ class Settings(BaseSettings):
     EMBEDDING_DIMENSION: int = 3072  # text-embedding-3-large
     EMBEDDING_MODEL: str = "text-embedding-3-large"
     EXTRACTION_EXECUTOR_MODE: Literal["auto", "thread", "process"] = "auto"
-    EXTRACTION_MAX_WORKERS: int = 2
+    EXTRACTION_MAX_WORKERS: int = 1
+    EXTRACTION_TOC_SCAN_MAX_PAGES: int = 200
+    EXTRACTION_BATCH_PROGRESS_TIMEOUT_SECONDS: int = 180
+    INGESTION_PARALLEL_BATCH: int = 1
+    INGESTION_EXTRACTION_TIMEOUT_SECONDS: int = 1800
+    ENABLE_MANUAL_GC: bool = True
+    GC_EVERY_N_BATCHES: int = 2
+    GC_MIN_LARGE_OBJECT_MB: float = 100.0
     
     # OpenAI
     OPENAI_API_KEY: str = ""

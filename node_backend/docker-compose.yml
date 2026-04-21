@@ -1,4 +1,3 @@
-version: '3.8'
 services:
   node-backend:
     platform: linux/amd64
@@ -7,9 +6,14 @@ services:
       - "5000:5000"
     env_file:
       - .env
+    environment:
+      REDIS_URL: redis://host.docker.internal:6379/0
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     # Node backend usually needs MongoDB
     depends_on:
-      - mongo
+      mongo:
+        condition: service_healthy
 
   mongo:
     image: mongo:latest
@@ -17,6 +21,11 @@ services:
       - "27017:27017"
     volumes:
       - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
 volumes:
   mongo-data:

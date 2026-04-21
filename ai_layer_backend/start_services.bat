@@ -27,7 +27,7 @@ if exist "venv\Scripts\activate.bat" (
 
 :: 3. Start Celery Worker (in new window)
 echo Starting Celery Worker...
-start "Celery Worker" cmd /k "python -m celery -A app.workers.celery_app worker --loglevel=info --pool=solo"
+start "Celery Worker" cmd /k "python -m celery -A app.workers.celery_app worker --loglevel=info --pool=prefork --concurrency=1 --prefetch-multiplier=1 --max-tasks-per-child=4 --max-memory-per-child=1200000"
 
 :: 4. Start FastAPI Server
 echo Starting FastAPI Server...
