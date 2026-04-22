@@ -12,7 +12,7 @@ import sys
 import os
 import asyncio
 import warnings
-from typing import Dict, Any, List, Optional, Tuple, Callable
+from typing import Dict, Any, List, Optional, Tuple, Callable, Union
 
 # --- MULTIPROCESSING PATH FIX ---
 # On macOS ('spawn' mode), child processes don't inherit the parent's sys.path.
@@ -429,23 +429,28 @@ class ExtractionService:
                 break
         return best_section, best_subsection, range_str
 
-    async def get_toc(self, file_content: bytes) -> List[Dict[str, Any]]:
+    async def get_toc(self, file_content: Union[bytes, str]) -> List[Dict[str, Any]]:
         """Public method to extract TOC only."""
         temp_path = None
+        should_cleanup = False
         try:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-                tmp.write(file_content)
-                temp_path = tmp.name
+            if isinstance(file_content, str):
+                temp_path = file_content
+            else:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+                    tmp.write(file_content)
+                    temp_path = tmp.name
+                    should_cleanup = True
             
             with pdfplumber.open(temp_path) as pdf:
                 return _extract_toc_mapping(pdf)
         finally:
-            if temp_path and os.path.exists(temp_path):
+            if should_cleanup and temp_path and os.path.exists(temp_path):
                 os.remove(temp_path)
 
     async def extract_sections_from_pdf(
         self, 
-        file_content: bytes, 
+        file_content: Union[bytes, str], 
         job_id: str = None, 
         table_callback: Optional[Callable] = None,
         provided_toc: Optional[List[Dict[str, Any]]] = None
@@ -457,10 +462,15 @@ class ExtractionService:
         """
         job_id = job_id or str(uuid.uuid4())
         temp_path = None
+        should_cleanup = False
         try:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-                tmp.write(file_content)
-                temp_path = tmp.name
+            if isinstance(file_content, str):
+                temp_path = file_content
+            else:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+                    tmp.write(file_content)
+                    temp_path = tmp.name
+                    should_cleanup = True
 
             all_tables_storage = []
             
@@ -827,7 +837,7 @@ class ExtractionService:
             logger.error("Multi-Engine extraction failed", error=str(e), exc_info=True)
             raise
         finally:
-            if temp_path and os.path.exists(temp_path):
+            if should_cleanup and temp_path and os.path.exists(temp_path):
                 os.remove(temp_path)
 
     @staticmethod

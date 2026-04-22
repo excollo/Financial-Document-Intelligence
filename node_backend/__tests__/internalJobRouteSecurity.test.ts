@@ -21,6 +21,9 @@ describe("internal job route security", () => {
 
   beforeEach(() => {
     jest.spyOn(Job, "findOneAndUpdate").mockResolvedValue(null as any);
+    jest.spyOn(Job, "findOne").mockReturnValue({
+      lean: jest.fn().mockResolvedValue(null),
+    } as any);
   });
 
   afterEach(() => {

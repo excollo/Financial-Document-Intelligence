@@ -209,7 +209,20 @@ app.use(
   express.json({
     limit: "50mb",
     verify: (req: any, _res, buf) => {
-      req.rawBody = Buffer.from(buf);
+      const path = String(req.originalUrl || req.url || "").split("?")[0];
+      const needsRawBody =
+        path === "/api/jobs/internal/status" ||
+        path === "/api/jobs/internal/section-result" ||
+        path === "/api/jobs/internal/adverse-finding" ||
+        path === "/api/jobs/internal/queue-health" ||
+        path === "/api/documents/upload-status/update" ||
+        /^\/api\/documents\/internal\/[^/]+$/.test(path) ||
+        path === "/api/summaries/summary-status/update" ||
+        path === "/api/reports/report-status/update" ||
+        path === "/api/chats/chat-status/update";
+      if (needsRawBody) {
+        req.rawBody = Buffer.from(buf);
+      }
     },
   })
 );

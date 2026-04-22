@@ -3,6 +3,7 @@ Azure Blob Storage Service for Python backend.
 Replaces the old S3/R2 implementation.
 """
 import os
+import tempfile
 from azure.storage.blob import BlobServiceClient, generate_blob_sas, BlobSasPermissions
 from datetime import datetime, timedelta
 from typing import Optional
@@ -41,6 +42,29 @@ class AzureStorageService:
             return download_stream.readall()
         except Exception as e:
             logger.error(f"Azure download failed key={key}", error=str(e))
+            return None
+
+    async def download_file_to_path(self, key: str) -> Optional[str]:
+        """Stream a blob to a temp file and return path."""
+        path: Optional[str] = None
+        try:
+            if not self.blob_service_client:
+                return None
+            blob_client = self.blob_service_client.get_blob_client(container=self.container_name, blob=key)
+            download_stream = blob_client.download_blob()
+            fd, path = tempfile.mkstemp(suffix=".pdf")
+            os.close(fd)
+            with open(path, "wb") as f:
+                for chunk in download_stream.chunks():
+                    f.write(chunk)
+            return path
+        except Exception as e:
+            if path and os.path.exists(path):
+                try:
+                    os.remove(path)
+                except Exception:
+                    pass
+            logger.error(f"Azure stream download failed key={key}", error=str(e))
             return None
 
     async def upload_file(self, content: bytes, key: str, content_type: str = "application/octet-stream") -> bool:

@@ -12,6 +12,8 @@ Replicates the n8n embedding workflow exactly:
 """
 import time
 import asyncio
+import os
+import tempfile
 from typing import Dict, Any, Optional, List
 import requests
 
@@ -33,6 +35,18 @@ class IngestionPipeline:
         self.extraction = ExtractionService()
         self.chunking = ChunkingService()
         self.embedding = EmbeddingService()
+
+    def _compute_section_offsets(self, sections: List[Dict[str, Any]]) -> List[int]:
+        """Compute exact chunk offsets to avoid vector-id collisions."""
+        offsets: List[int] = []
+        running_offset = 0
+        for section in sections:
+            offsets.append(running_offset)
+            section_text = str(section.get("text", "") or "").strip()
+            if len(section_text) < 20:
+                continue
+            running_offset += len(self.chunking.split_text(section_text))
+        return offsets
 
     # ----------------------------------------------------------------------- #
     # Internal: process one section's text into Pinecone chunks
@@ -78,41 +92,37 @@ class IngestionPipeline:
         for i, chunk in enumerate(chunks):
             chunk["chunk_index"] = section_offset + i
 
-        # Embed
-        chunks_with_embeddings = await self.embedding.embed_chunks(chunks)
-
         # Build Pinecone vectors with hierarchy and table context
         index = vector_store_service.get_index(index_name, host=host)
-        vectors = []
-        for chunk in chunks_with_embeddings:
-            meta = chunk.get("metadata", {})
-            vector_id = f"{namespace}_{chunk['chunk_index']}"
-            vectors.append(
-                {
-                    "id": vector_id,
-                    "values": chunk["embedding"],
-                    "metadata": {
-                        "text": chunk["chunk_text"],
-                        "chunk_index": chunk["chunk_index"],
-                        "documentName": meta.get("documentName", namespace),
-                        "documentId": meta.get("documentId", ""),
-                        "domain": meta.get("domain", ""),
-                        "domainId": meta.get("domainId", ""),
-                        "type": meta.get("type", "DRHP"),
-                        "sectionName": meta.get("sectionName", ""),
-                        "subsectionName": meta.get("subsectionName", ""),
-                        "subsectionRange": meta.get("subsectionRange", ""),
-                        "tableCount": meta.get("tableCount", 0),
-                        "tableHeading": meta.get("tableHeading", "")
-                    },
-                }
-            )
-
-        # Upsert in batches of 50 (matches n8n embeddingBatchSize: 50)
-        batch_size = 60
+        batch_size = self.embedding.get_batch_size()
         total_upserted = 0
-        for i in range(0, len(vectors), batch_size):
-            batch = vectors[i : i + batch_size]
+        for i in range(0, len(chunks), batch_size):
+            chunk_batch = chunks[i : i + batch_size]
+            chunks_with_embeddings = await self.embedding.embed_chunks(chunk_batch)
+            batch = []
+            for chunk in chunks_with_embeddings:
+                meta = chunk.get("metadata", {})
+                vector_id = f"{namespace}_{chunk['chunk_index']}"
+                batch.append(
+                    {
+                        "id": vector_id,
+                        "values": chunk["embedding"],
+                        "metadata": {
+                            "text": chunk["chunk_text"],
+                            "chunk_index": chunk["chunk_index"],
+                            "documentName": meta.get("documentName", namespace),
+                            "documentId": meta.get("documentId", ""),
+                            "domain": meta.get("domain", ""),
+                            "domainId": meta.get("domainId", ""),
+                            "type": meta.get("type", "DRHP"),
+                            "sectionName": meta.get("sectionName", ""),
+                            "subsectionName": meta.get("subsectionName", ""),
+                            "subsectionRange": meta.get("subsectionRange", ""),
+                            "tableCount": meta.get("tableCount", 0),
+                            "tableHeading": meta.get("tableHeading", "")
+                        },
+                    }
+                )
             try:
                 resp = index.upsert(vectors=batch, namespace="")
                 total_upserted += getattr(resp, "upserted_count", len(batch))
@@ -129,9 +139,10 @@ class IngestionPipeline:
         logger.info(
             "Section embedded and upserted",
             section=section_name,
-            chunks=len(vectors),
+            chunks=len(chunks),
             upserted=total_upserted,
         )
+        del chunks
         return total_upserted
 
     # ----------------------------------------------------------------------- #
@@ -173,13 +184,25 @@ class IngestionPipeline:
             # This handles the case where the Celery queue delay exceeds the
             # 1-hour presigned URL expiry.
             t_download = time.time()
-            file_content = None
+            download_path = None
             download_method = "presigned_url"
 
             try:
-                resp = requests.get(file_url, timeout=60)
-                resp.raise_for_status()
-                file_content = resp.content
+                with requests.get(file_url, timeout=60, stream=True) as resp:
+                    resp.raise_for_status()
+                    fd, path = tempfile.mkstemp(suffix=".pdf")
+                    os.close(fd)
+                    download_path = path
+                    try:
+                        with open(download_path, "wb") as f:
+                            for chunk in resp.iter_content(chunk_size=1024 * 1024):
+                                if chunk:
+                                    f.write(chunk)
+                    except Exception:
+                        if download_path and os.path.exists(download_path):
+                            os.remove(download_path)
+                        download_path = None
+                        raise
             except requests.exceptions.HTTPError as download_err:
                 status_code = download_err.response.status_code if download_err.response is not None else 0
                 if status_code == 403:
@@ -192,9 +215,9 @@ class IngestionPipeline:
                             file_key=file_key
                         )
                         from app.services.s3 import s3_service
-                        file_content = await s3_service.download_file(file_key)
+                        download_path = await s3_service.download_file_to_path(file_key)
                         download_method = "azure_blob_direct"
-                        if not file_content:
+                        if not download_path:
                             raise RuntimeError(f"Azure Blob Storage direct download also failed for key: {file_key}")
                     else:
                         logger.error("Presigned URL expired and no fileKey in metadata for Azure Blob Storage fallback", job_id=job_id)
@@ -205,7 +228,7 @@ class IngestionPipeline:
             logger.info(
                 "[TIMING] Step 1: Document downloaded",
                 seconds=round(time.time() - t_download, 2),
-                size_mb=round(len(file_content) / 1_048_576, 2),
+                size_mb=round((os.path.getsize(download_path) if download_path else 0) / 1_048_576, 2),
                 method=download_method,
                 job_id=job_id
             )
@@ -233,7 +256,7 @@ class IngestionPipeline:
 
             # 2. Extract TOC First (Robust 1st check)
             t_toc = time.time()
-            toc_map = await self.extraction.get_toc(file_content)
+            toc_map = await self.extraction.get_toc(download_path)
             logger.info(
                 "[TIMING] Step 2: TOC extracted",
                 seconds=round(time.time() - t_toc, 2),
@@ -273,7 +296,7 @@ class IngestionPipeline:
             )
             extraction_result = await asyncio.wait_for(
                 self.extraction.extract_sections_from_pdf(
-                    file_content, 
+                    download_path,
                     job_id=job_id,
                     table_callback=stream_tables_to_mongo,
                     provided_toc=toc_map
@@ -331,6 +354,7 @@ class IngestionPipeline:
             # 4. Pinecone index
             index_name = settings.PINECONE_INDEX
             host = settings.PINECONE_INDEX_HOST
+            vector_write_stage_started = False
 
             # 5. Chunk → embed → upsert each section — PARALLELIZED
             # Each section's pipeline (chunk→embed→upsert) is fully independent,
@@ -339,15 +363,8 @@ class IngestionPipeline:
             total_upserted = 0
             PARALLEL_BATCH = max(1, settings.INGESTION_PARALLEL_BATCH)
 
-            # Pre-compute chunk offsets so vector IDs don't collide across sections
-            # Estimate: each section produces ~(len(text)/3600) chunks on average
-            chunk_estimates = []
-            running_offset = 0
-            for section in sections:
-                chunk_estimates.append(running_offset)
-                # Rough estimate of output chunks (4800 char size, 800 overlap)
-                approx_chunks = max(1, len(section.get("text", "")) // 3600)
-                running_offset += approx_chunks + 5  # +5 safety buffer
+            # Pre-compute exact chunk offsets so vector IDs do not collide.
+            chunk_offsets = self._compute_section_offsets(sections)
 
             async def process_section_with_offset(section, offset):
                 return await self._process_section(
@@ -360,8 +377,12 @@ class IngestionPipeline:
                 )
 
             for batch_start in range(0, len(sections), PARALLEL_BATCH):
+                # Consistency policy:
+                # if any later section fails after we started vector writes,
+                # we compensate by deleting vectors for this document/job attempt.
+                vector_write_stage_started = True
                 batch = sections[batch_start: batch_start + PARALLEL_BATCH]
-                offsets = chunk_estimates[batch_start: batch_start + PARALLEL_BATCH]
+                offsets = chunk_offsets[batch_start: batch_start + PARALLEL_BATCH]
 
                 logger.info(
                     "Processing section batch",
@@ -370,21 +391,31 @@ class IngestionPipeline:
                     sections_total=len(sections)
                 )
 
-                results = await asyncio.gather(
-                    *[process_section_with_offset(sec, off) for sec, off in zip(batch, offsets)],
-                    return_exceptions=True
-                )
+                section_tasks = [
+                    asyncio.create_task(process_section_with_offset(sec, off))
+                    for sec, off in zip(batch, offsets)
+                ]
+                await asyncio.wait(section_tasks, return_when=asyncio.ALL_COMPLETED)
 
-                for r in results:
-                    if isinstance(r, Exception):
-                        logger.error("Section processing error", error=str(r))
-                    else:
-                        total_upserted += r
-                maybe_collect(
-                    stage="ingestion.section_batch_complete",
-                    batch_idx=(batch_start // PARALLEL_BATCH) + 1,
-                    size_hint_mb=180.0,
-                )
+                failed_sections: List[Dict[str, str]] = []
+                for task, section in zip(section_tasks, batch):
+                    try:
+                        total_upserted += task.result()
+                    except Exception as section_err:
+                        section_name = str(section.get("sectionName") or "unknown")
+                        failed_sections.append(
+                            {"section": section_name, "error": str(section_err)}
+                        )
+                        logger.error(
+                            "Section processing error",
+                            section=section_name,
+                            error=str(section_err),
+                        )
+
+                if failed_sections:
+                    raise RuntimeError(
+                        f"Section processing failed for {len(failed_sections)} sections: {failed_sections}"
+                    )
 
 
             # 6. MongoDB record
@@ -451,6 +482,36 @@ class IngestionPipeline:
             logger.error("Ingestion pipeline failed", error=str(e), job_id=job_id)
             filename = metadata.get("filename", "document.pdf")
             document_id = metadata.get("documentId")
+            cleanup_error = None
+
+            if (
+                "vector_write_stage_started" in locals()
+                and vector_write_stage_started
+                and "index_name" in locals()
+                and "host" in locals()
+            ):
+                try:
+                    vector_store_service.delete_vectors(
+                        index_name=index_name,
+                        namespace=filename,
+                        host=host,
+                        document_id=str(document_id or ""),
+                    )
+                    logger.warning(
+                        "Compensating vector cleanup applied after ingestion failure",
+                        job_id=job_id,
+                        document_id=document_id,
+                        namespace=filename,
+                    )
+                except Exception as cleanup_exc:
+                    cleanup_error = str(cleanup_exc)
+                    logger.error(
+                        "Compensating vector cleanup failed",
+                        job_id=job_id,
+                        document_id=document_id,
+                        namespace=filename,
+                        error=cleanup_error,
+                    )
 
             current_retry = int(metadata.get("_celery_current_retry", 0))
             max_retries = int(metadata.get("_celery_max_retries", 0))
@@ -465,7 +526,10 @@ class IngestionPipeline:
                     document_id=document_id,
                     workspace_id=metadata.get("workspaceId"),
                     domain_id=metadata.get("domainId"),
-                    error={"message": str(e)},
+                    error={
+                        "message": str(e),
+                        "vector_cleanup_error": cleanup_error,
+                    } if cleanup_error else {"message": str(e)},
                 )
             else:
                 logger.warning(
@@ -479,6 +543,12 @@ class IngestionPipeline:
             # so the user can see the error message in their document list.
             
             raise
+        finally:
+            if "download_path" in locals() and download_path and os.path.exists(download_path):
+                try:
+                    os.remove(download_path)
+                except Exception:
+                    pass
 
 
 ingestion_pipeline = IngestionPipeline()

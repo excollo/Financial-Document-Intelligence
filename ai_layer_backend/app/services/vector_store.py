@@ -125,7 +125,13 @@ class VectorStoreService:
             "index": index_name
         }
 
-    def delete_vectors(self, index_name: str, namespace: str, host: str = ""):
+    def delete_vectors(
+        self,
+        index_name: str,
+        namespace: str,
+        host: str = "",
+        document_id: str = "",
+    ):
         """
         Delete all vectors in a namespace.
         """
@@ -138,11 +144,17 @@ class VectorStoreService:
         )
         
         try:
-            # Delete vectors using metadata filter on default namespace
-            # Pinecone requires namespace="" for default
+            # Delete vectors using metadata filter on default namespace.
+            # Prefer documentId-scoped cleanup when available; fallback to documentName.
+            filter_payload: Dict[str, Any]
+            if document_id:
+                filter_payload = {"documentId": document_id}
+            else:
+                filter_payload = {"documentName": namespace}
+
             response = index.delete(
                 namespace="",
-                filter={"documentName": namespace}
+                filter=filter_payload
             )
             
             logger.info("Deletion request sent (filtered by documentName)", index=index_name, namespace=namespace)
