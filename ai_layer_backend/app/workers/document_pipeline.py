@@ -1,6 +1,8 @@
 import asyncio
 import time
 import traceback
+import threading
+import os
 from typing import Dict, Any, Optional
 from celery import Task
 
@@ -13,8 +15,45 @@ from app.services.backend_notifier import backend_notifier
 from app.db.mongo import mongodb
 from app.core.config import settings
 from app.core.logging import get_logger, log_job_start, log_job_complete, log_job_error
+from app.services.metrics import metrics
+from app.services.execution_claim import execution_claim_service
+from app.services.job_state_guard import is_terminal_job
 
 logger = get_logger(__name__)
+
+
+def _start_claim_heartbeat(task_name: str, job_id: str, claim_id: str, scope: str):
+    lease_seconds = int(os.environ.get("EXECUTION_CLAIM_LEASE_SECONDS", "3600"))
+    interval = int(max(5, min(60, lease_seconds / 3)))
+    stop_event = threading.Event()
+
+    def _runner():
+        while not stop_event.wait(interval):
+            try:
+                renewed = asyncio.run(
+                    execution_claim_service.renew_claim(task_name, job_id, claim_id, scope=scope)
+                )
+                if not renewed:
+                    logger.warning(
+                        "Execution claim heartbeat failed; claim not renewed",
+                        task_name=task_name,
+                        job_id=job_id,
+                        scope=scope,
+                    )
+                    return
+            except Exception as exc:
+                logger.warning(
+                    "Execution claim heartbeat error",
+                    task_name=task_name,
+                    job_id=job_id,
+                    scope=scope,
+                    error=str(exc),
+                )
+                return
+
+    thread = threading.Thread(target=_runner, daemon=True)
+    thread.start()
+    return stop_event
 
 
 @celery_app.task(bind=True, name="process_document", autoretry_for=(Exception,), retry_backoff=True, max_retries=3)
@@ -32,8 +71,21 @@ def process_document(
     from app.services.ingestion_pipeline import ingestion_pipeline
     import asyncio
     
-    logger.info("Celery: Starting document ingestion task", job_id=job_id)
+    logger.info("Celery: Starting document ingestion task", job_id=job_id, trace_id=job_id)
+    metrics.emit_worker_memory({"job_id": job_id, "task": "process_document"})
     metadata = metadata or {}
+    domain_scope = str(metadata.get("domainId") or "global")
+    if asyncio.run(is_terminal_job(job_id, metadata.get("domainId"))):
+        logger.warning("Skipping process_document because job already terminal", job_id=job_id, scope=domain_scope)
+        return {"status": "duplicate_ignored", "job_id": job_id}
+    claimed, claim_id = asyncio.run(
+        execution_claim_service.try_claim("process_document", job_id, scope=domain_scope)
+    )
+    if not claimed:
+        logger.warning("Skipping duplicate process_document execution", job_id=job_id, scope=domain_scope)
+        return {"status": "duplicate_ignored", "job_id": job_id}
+    heartbeat = _start_claim_heartbeat("process_document", job_id, claim_id, domain_scope)
+    started = time.time()
     
     try:
         # Run the async pipeline service in the sync Celery worker
@@ -51,6 +103,7 @@ def process_document(
         ))
         
         logger.info("Celery: Document ingestion task successful", job_id=job_id)
+        metrics.emit("job_runtime_ms", int((time.time() - started) * 1000), {"job_id": job_id, "task": "process_document"})
         return result
     
     except Exception as e:
@@ -74,7 +127,22 @@ def process_document(
                 current_retry=current_retry,
                 max_retries=self.max_retries,
             )
+        metrics.emit(
+            "retry_count",
+            current_retry,
+            {"job_id": job_id, "classification": metrics.classify_error(e), "task": "process_document"},
+        )
         raise
+    finally:
+        heartbeat.set()
+        asyncio.run(
+            execution_claim_service.release_claim(
+                "process_document",
+                job_id,
+                claim_id,
+                scope=domain_scope,
+            )
+        )
 
 
 @celery_app.task(name="process_news_article")
@@ -131,6 +199,19 @@ def generate_summary(
     from app.services.summarization.pipeline import summary_pipeline
     
     start_time = time.time()
+    metrics.emit_worker_memory({"job_id": job_id, "task": "generate_summary"})
+    metadata = metadata or {}
+    domain_scope = str((metadata or {}).get("domainId") or "global")
+    if asyncio.run(is_terminal_job(job_id, (metadata or {}).get("domainId"))):
+        logger.warning("Skipping generate_summary because job already terminal", job_id=job_id, scope=domain_scope)
+        return {"status": "duplicate_ignored", "job_id": job_id}
+    claimed, claim_id = asyncio.run(
+        execution_claim_service.try_claim("generate_summary", job_id, scope=domain_scope)
+    )
+    if not claimed:
+        logger.warning("Skipping duplicate generate_summary execution", job_id=job_id, scope=domain_scope)
+        return {"status": "duplicate_ignored", "job_id": job_id}
+    heartbeat = _start_claim_heartbeat("generate_summary", job_id, claim_id, domain_scope)
     bound_logger = log_job_start(
         logger,
         job_id,
@@ -197,6 +278,8 @@ def generate_summary(
         )
         
         execution_time = time.time() - start_time
+        metrics.emit("stage_duration_ms", int(execution_time * 1000), {"job_id": job_id, "stage_name": "summary", "status": "success"})
+        metrics.emit("job_runtime_ms", int(execution_time * 1000), {"job_id": job_id, "task": "generate_summary"})
         
         # Extract usage metrics
         usage = result.get("usage", {})
@@ -223,6 +306,7 @@ def generate_summary(
     
     except Exception as e:
         execution_time = time.time() - start_time
+        metrics.emit("stage_duration_ms", int(execution_time * 1000), {"job_id": job_id, "stage_name": "summary", "status": "failed"})
         log_job_error(bound_logger, job_id, e, execution_time)
         
         # Notify Backend of Failure
@@ -236,6 +320,16 @@ def generate_summary(
             domain_id=metadata.get("domainId", ""),
         )
         raise
+    finally:
+        heartbeat.set()
+        asyncio.run(
+            execution_claim_service.release_claim(
+                "generate_summary",
+                job_id,
+                claim_id,
+                scope=domain_scope,
+            )
+        )
 @celery_app.task(name="generate_comparison", bind=True)
 def generate_comparison(
     self,
@@ -250,7 +344,19 @@ def generate_comparison(
     from app.services.comparison.pipeline import comparison_pipeline
     
     start_time = time.time()
+    metrics.emit_worker_memory({"job_id": job_id, "task": "generate_comparison"})
     metadata = metadata or {}
+    domain_scope = str(metadata.get("domainId") or "global")
+    if asyncio.run(is_terminal_job(job_id, metadata.get("domainId"))):
+        logger.warning("Skipping generate_comparison because job already terminal", job_id=job_id, scope=domain_scope)
+        return {"status": "duplicate_ignored", "job_id": job_id}
+    claimed, claim_id = asyncio.run(
+        execution_claim_service.try_claim("generate_comparison", job_id, scope=domain_scope)
+    )
+    if not claimed:
+        logger.warning("Skipping duplicate generate_comparison execution", job_id=job_id, scope=domain_scope)
+        return {"status": "duplicate_ignored", "job_id": job_id}
+    heartbeat = _start_claim_heartbeat("generate_comparison", job_id, claim_id, domain_scope)
     authorization = metadata.get("authorization", "")
     session_id = metadata.get("sessionId", "")
     drhp_id = metadata.get("drhpDocumentId", "")
@@ -313,6 +419,8 @@ def generate_comparison(
             raise Exception(result.get("message", "Comparison failed"))
 
         execution_time = time.time() - start_time
+        metrics.emit("stage_duration_ms", int(execution_time * 1000), {"job_id": job_id, "stage_name": "comparison", "status": "success"})
+        metrics.emit("job_runtime_ms", int(execution_time * 1000), {"job_id": job_id, "task": "generate_comparison"})
         log_job_complete(bound_logger, job_id, execution_time)
         
         return {
@@ -326,6 +434,7 @@ def generate_comparison(
     
     except Exception as e:
         execution_time = time.time() - start_time
+        metrics.emit("stage_duration_ms", int(execution_time * 1000), {"job_id": job_id, "stage_name": "comparison", "status": "failed"})
         log_job_error(bound_logger, job_id, e, execution_time)
         
         # Notify Backend of Failure
@@ -339,3 +448,13 @@ def generate_comparison(
             domain_id=domain_id,
         )
         raise
+    finally:
+        heartbeat.set()
+        asyncio.run(
+            execution_claim_service.release_claim(
+                "generate_comparison",
+                job_id,
+                claim_id,
+                scope=domain_scope,
+            )
+        )

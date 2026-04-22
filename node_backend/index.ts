@@ -34,6 +34,8 @@ import { testSmtpConnection } from "./services/emailService";
 import { HealthService } from "./services/healthService";
 import { checkPandocAvailable } from "./services/docxService";
 import { emitToWorkspace } from "./services/realtimeEmitter";
+import { requestMetricsMiddleware } from "./middleware/requestMetrics";
+import { brokerQueueTelemetryService } from "./services/brokerQueueTelemetryService";
 
 dotenv.config();
 
@@ -212,6 +214,7 @@ app.use(
   })
 );
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
+app.use(requestMetricsMiddleware);
 app.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
   next();
@@ -373,6 +376,14 @@ if (process.env.NODE_ENV !== 'test') {
         console.warn("⚠️ Pandoc startup check failed:", err?.message || err);
       });
   });
+}
+
+if (process.env.NODE_ENV !== "test") {
+  setInterval(() => {
+    brokerQueueTelemetryService.emitBrokerQueueMetrics().catch((err) => {
+      console.warn("broker telemetry collection failed", err?.message || err);
+    });
+  }, Number(process.env.BROKER_TELEMETRY_POLL_MS || "10000")).unref();
 }
 
 // ============================================================================

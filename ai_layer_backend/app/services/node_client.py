@@ -57,6 +57,7 @@ class NodeBackendClient:
             "X-Timestamp": timestamp,
             "X-Nonce": nonce,
             "X-Signature": signature,
+            "X-Trace-Id": str(payload.get("job_id") or payload.get("trace_id") or ""),
         }
         return {"headers": headers, "body": body}
 
@@ -69,6 +70,8 @@ class NodeBackendClient:
         current_stage: Optional[str] = None,
         error_message: Optional[str] = None,
         output_urls: Optional[Dict[str, Any]] = None,
+        retry_count: Optional[int] = None,
+        stage_event: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Update the job status on the Node backend."""
         self._check_secret()
@@ -85,6 +88,10 @@ class NodeBackendClient:
             payload["error_message"] = error_message
         if output_urls:
             payload["output_urls"] = output_urls
+        if retry_count is not None:
+            payload["retry_count"] = retry_count
+        if stage_event:
+            payload["stage_event"] = stage_event
 
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:

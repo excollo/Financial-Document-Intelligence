@@ -36,14 +36,35 @@ const jobSchema = new mongoose.Schema(
     // Progress tracking
     status: {
       type: String,
-      enum: ["queued", "processing", "completed", "completed_with_errors", "failed"],
+      enum: ["queued", "queued_with_delay", "processing", "completed", "completed_with_errors", "failed"],
       default: "queued",
       index: true,
     },
     progress_pct: { type: Number, default: 0, min: 0, max: 100 },
     current_stage: { type: String, default: null }, // e.g. "extraction", "gpt_processing", "output_assembly"
     error_message: { type: String, default: null },
+    error_reason: { type: String, default: null },
+    started_at: { type: Date, default: null },
     completed_at: { type: Date, default: null },
+    trace_id: { type: String, default: null, index: true },
+    queue_name: { type: String, default: "heavy_jobs", index: true },
+    queued_with_delay: { type: Boolean, default: false },
+    idempotency_key: { type: String, default: null, index: true },
+    retry_count: { type: Number, default: 0, min: 0 },
+    execution_claimed_at: { type: Number, default: null },
+    execution_claimed_by: { type: String, default: null },
+    claim_expires_at: { type: Number, default: null },
+    stages: [
+      {
+        stage_name: { type: String, required: true },
+        stage_event_key: { type: String, default: null },
+        start_time: { type: Date, default: null },
+        end_time: { type: Date, default: null },
+        duration_ms: { type: Number, default: 0 },
+        status: { type: String, enum: ["success", "failed"], default: "success" },
+        error_reason: { type: String, default: null },
+      },
+    ],
 
     // Celery task tracking
     celery_task_id: { type: String, default: null },
@@ -60,5 +81,6 @@ const jobSchema = new mongoose.Schema(
 jobSchema.index({ tenant_id: 1, status: 1 });
 jobSchema.index({ tenant_id: 1, createdAt: -1 });
 jobSchema.index({ workspace_id: 1, createdAt: -1 });
+jobSchema.index({ tenant_id: 1, idempotency_key: 1, createdAt: -1 });
 
 export const Job = mongoose.model("Job", jobSchema);

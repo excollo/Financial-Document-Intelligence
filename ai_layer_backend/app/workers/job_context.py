@@ -7,6 +7,7 @@ import asyncio
 from typing import Optional, Dict, Any, List
 from app.services.node_client import node_client
 from app.core.logging import get_logger
+from app.services.metrics import metrics
 
 logger = get_logger(__name__)
 
@@ -59,6 +60,8 @@ class JobContext:
         current_stage: Optional[str] = None,
         error_message: Optional[str] = None,
         output_urls: Optional[Dict[str, Any]] = None,
+        retry_count: Optional[int] = None,
+        stage_event: Optional[Dict[str, Any]] = None,
     ):
         """Update internal state and notify the Node backend."""
         async with self._lock:
@@ -74,7 +77,15 @@ class JobContext:
                 current_stage=self.current_stage,
                 error_message=error_message,
                 output_urls=output_urls,
+                retry_count=retry_count,
+                stage_event=stage_event,
             )
+            if stage_event and stage_event.get("duration_ms") is not None:
+                metrics.emit("stage_duration_ms", float(stage_event.get("duration_ms", 0)), {
+                    "job_id": self.job_id,
+                    "stage_name": stage_event.get("stage_name", "unknown"),
+                    "status": stage_event.get("status", "success"),
+                })
 
     async def submit_section_result(
         self,

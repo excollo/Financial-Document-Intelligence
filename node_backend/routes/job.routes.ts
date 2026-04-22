@@ -13,6 +13,7 @@ import {
   updateJobStatus,
   submitSectionResult,
   submitAdverseFinding,
+  getBrokerQueueHealth,
 } from "../controllers/jobController";
 
 const router = Router();
@@ -65,6 +66,11 @@ router.post(
   verifyInternalCallbackRequest,
   tenantIsolation,
   submitAdverseFinding
+);
+router.get(
+  "/internal/queue-health",
+  verifyInternalCallbackRequest,
+  getBrokerQueueHealth
 );
 
 export default router;

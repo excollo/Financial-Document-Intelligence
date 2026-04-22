@@ -9,6 +9,10 @@ import { generateDocxBuffer } from "../services/docxService";
 import { v4 as uuidv4 } from "uuid";
 import { emitToTenant, emitToWorkspace } from "../services/realtimeEmitter";
 import { Job } from "../models/Job";
+import crypto from "crypto";
+import { jobAdmissionService } from "../services/jobAdmissionService";
+import { metricsService } from "../services/metricsService";
+import { brokerQueueTelemetryService } from "../services/brokerQueueTelemetryService";
 
 interface AuthRequest extends Request {
   user?: any;
@@ -20,6 +24,7 @@ const INTERNAL_SECRET = process.env.INTERNAL_SECRET || "";
 
 export const summaryController = {
   async triggerSummary(req: AuthRequest, res: Response) {
+    let createdJobId: string | null = null;
     try {
       const { documentId, namespace, docType, metadata } = req.body;
 
@@ -39,10 +44,59 @@ export const summaryController = {
 
       console.log(`Triggering Python Summary for: ${namespace} (${docType}) at ${pythonApiUrl}/jobs/summary`);
 
+      const tenantId = domainId || domain;
+      if (!tenantId) {
+        return res.status(400).json({ error: "Unable to resolve tenant/domain for summary job" });
+      }
+      const queueName = "light_jobs";
+      const userId = req.user?._id?.toString?.() || "anonymous";
+      const operationDocumentId = `${documentId || namespace}:${docType.toLowerCase()}`;
+      const idempotencyKey = crypto
+        .createHash("sha256")
+        .update(`${userId}:${operationDocumentId}:summary`)
+        .digest("hex");
+      const admission = await jobAdmissionService.check(tenantId, queueName);
+      if (admission.telemetryStatus === "UNAVAILABLE") {
+        metricsService.emit("telemetry_unavailable", 1, {
+          tenant_id: tenantId,
+          queue_name: queueName,
+        });
+      }
+      metricsService.emit("queue_depth", admission.queueDepth, {
+        tenant_id: tenantId,
+        queue_name: queueName,
+      });
+      metricsService.emit("queue_age_seconds", admission.queueAgeSeconds, {
+        tenant_id: tenantId,
+        queue_name: queueName,
+      });
+      if (!admission.allow) {
+        return res.status(429).json({
+          error: "Queue overloaded, retry later",
+          code: admission.reason || "QUEUE_OVERLOADED",
+        });
+      }
+      const existing = await Job.findOne({
+        tenant_id: tenantId,
+        idempotency_key: idempotencyKey,
+        status: { $in: ["queued", "queued_with_delay", "processing"] },
+      })
+        .sort({ createdAt: -1 })
+        .lean();
+      if (existing) {
+        return res.status(200).json({
+          status: existing.status,
+          job_id: existing.id,
+          message: "Summary generation job already in progress",
+          idempotent: true,
+        });
+      }
       const payload = {
         job_id: uuidv4(),
         namespace,
         doc_type: docType.toLowerCase(),
+        trace_id: "",
+        queue_name: queueName,
         metadata: {
           ...metadata,
           documentId,
@@ -52,17 +106,23 @@ export const summaryController = {
           authorization: req.headers.authorization
         }
       };
+      payload.trace_id = payload.job_id;
 
+      createdJobId = payload.job_id;
       await Job.create({
         id: payload.job_id,
-        tenant_id: domainId || domain,
+        tenant_id: tenantId,
         job_type: "extraction",
-        status: "processing",
+        status: admission.status,
         current_stage: "summary",
         progress_pct: 0,
         workspace_id: req.currentWorkspace || domain,
         created_by: req.user?._id?.toString?.() || null,
         document_name: namespace,
+        idempotency_key: idempotencyKey,
+        trace_id: payload.job_id,
+        queue_name: queueName,
+        queued_with_delay: admission.status === "queued_with_delay",
       });
 
       console.log(`[DEBUG] About to call Python API: ${pythonApiUrl}/jobs/summary`);
@@ -71,14 +131,17 @@ export const summaryController = {
       const pythonResponse = await axios.post(`${pythonApiUrl}/jobs/summary`, payload, {
         headers: {
           "X-Internal-Secret": process.env.INTERNAL_SECRET,
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
+          "X-Trace-Id": payload.job_id,
         },
         timeout: 30000
       });
 
       if (pythonResponse.data && pythonResponse.data.status === "accepted") {
+        await metricsService.emitQueueMetrics(tenantId, queueName);
+        await brokerQueueTelemetryService.emitBrokerQueueMetrics();
         return res.json({
-          status: "processing",
+          status: admission.status,
           job_id: pythonResponse.data.job_id || payload.job_id,
           message: "Summary generation job started"
         });
@@ -86,8 +149,36 @@ export const summaryController = {
 
       res.status(500).json({ error: "Failed to start summary job", details: pythonResponse.data });
     } catch (error: any) {
-      console.error("Error in triggerSummary:", error.message);
-      res.status(500).json({ error: "Summary trigger failed", message: error.message });
+      if (createdJobId) {
+        await Job.updateOne(
+          { id: createdJobId },
+          {
+            $set: {
+              status: "failed",
+              error_reason: `Failed to dispatch summary job: ${String(error?.message || "unknown")}`,
+              error_message: `Failed to dispatch summary job: ${String(error?.message || "unknown")}`,
+              completed_at: new Date(),
+            },
+          }
+        );
+      }
+      const upstreamMessage =
+        error?.response?.data?.detail ||
+        error?.response?.data?.message ||
+        error?.response?.data?.error ||
+        error?.message ||
+        "Unknown upstream error";
+      console.error("Error in triggerSummary:", upstreamMessage);
+
+      if (error?.code === "ECONNABORTED" || /timeout/i.test(String(upstreamMessage))) {
+        return res.status(504).json({
+          error: "Summary trigger timed out",
+          message: "Summary service took too long to acknowledge. Please retry.",
+          details: upstreamMessage,
+        });
+      }
+
+      return res.status(500).json({ error: "Summary trigger failed", message: upstreamMessage });
     }
   },
 
@@ -548,6 +639,13 @@ export const summaryController = {
       const { jobId, status, error, workspaceId, domainId } = req.body;
       console.log("Summary status update received from backend worker:", { jobId, status, error });
 
+      if (!workspaceId || !domainId) {
+        return res.status(400).json({
+          message: "Missing required scoped callback metadata",
+          required: ["workspaceId", "domainId"],
+        });
+      }
+
       if (!jobId || !status) {
         console.error("Missing jobId or status in summary status update:", { jobId, status });
         return res.status(400).json({ message: "Missing jobId or status" });
@@ -568,7 +666,7 @@ export const summaryController = {
         console.warn("summaryStatusUpdate rejected: unknown jobId", { jobId });
         return res.status(404).json({ message: "Unknown jobId" });
       }
-      if (workspaceId && String(workspaceId) !== String(job.workspace_id)) {
+      if (String(workspaceId) !== String(job.workspace_id)) {
         console.warn("summaryStatusUpdate rejected: workspace mismatch", {
           jobId,
           callbackWorkspaceId: workspaceId,
@@ -576,7 +674,7 @@ export const summaryController = {
         });
         return res.status(409).json({ message: "Workspace mismatch for callback" });
       }
-      if (domainId && String(domainId) !== String(job.tenant_id)) {
+      if (String(domainId) !== String(job.tenant_id)) {
         console.warn("summaryStatusUpdate rejected: tenant/domain mismatch", {
           jobId,
           callbackDomainId: domainId,
@@ -599,8 +697,24 @@ export const summaryController = {
       );
 
       const eventData = { jobId, status: mappedStatus, error };
-      emitToWorkspace(job.workspace_id, "summary_status", eventData);
-      emitToTenant(job.tenant_id, "summary_status", eventData);
+      try {
+        await Promise.all([
+          emitToWorkspace(job.workspace_id, "summary_status", eventData),
+          emitToTenant(job.tenant_id, "summary_status", eventData),
+        ]);
+      } catch (emitError: any) {
+        console.error("summaryStatusUpdate emit failure", {
+          jobId,
+          workspaceId: job.workspace_id,
+          tenantId: job.tenant_id,
+          error: emitError?.message || String(emitError),
+        });
+        return res.status(500).json({
+          message: "Status persisted but realtime emit failed",
+          code: "SUMMARY_EMIT_FAILED",
+          jobId,
+        });
+      }
 
       // Log if there's an error
       if (error) {

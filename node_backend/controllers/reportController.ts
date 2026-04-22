@@ -7,6 +7,10 @@ import { generateDocxBuffer } from "../services/docxService";
 import { v4 as uuidv4 } from "uuid";
 import { emitToTenant, emitToWorkspace } from "../services/realtimeEmitter";
 import { Job } from "../models/Job";
+import crypto from "crypto";
+import { jobAdmissionService } from "../services/jobAdmissionService";
+import { metricsService } from "../services/metricsService";
+import { brokerQueueTelemetryService } from "../services/brokerQueueTelemetryService";
 
 interface AuthRequest extends Request {
   user?: any;
@@ -18,6 +22,7 @@ const INTERNAL_SECRET = process.env.INTERNAL_SECRET || "";
 
 export const reportController = {
   async compareDocuments(req: AuthRequest, res: Response) {
+    let createdJobId: string | null = null;
     try {
       const { drhpNamespace, rhpNamespace, sessionId, prompt } = req.body;
 
@@ -44,6 +49,50 @@ export const reportController = {
 
       console.log(`Triggering Python Comparison: ${drhpNamespace} vs ${rhpNamespace}`);
 
+      const tenantId = domainId || domain;
+      if (!tenantId) {
+        return res.status(400).json({ error: "Unable to resolve tenant/domain for comparison job" });
+      }
+      const queueName = "light_jobs";
+      const userId = req.user?._id?.toString?.() || "anonymous";
+      const idempotencyKey = crypto
+        .createHash("sha256")
+        .update(`${userId}:${drhpId}:${rhpId}:comparison`)
+        .digest("hex");
+      const admission = await jobAdmissionService.check(tenantId, queueName);
+      if (admission.telemetryStatus === "UNAVAILABLE") {
+        metricsService.emit("telemetry_unavailable", 1, {
+          tenant_id: tenantId,
+          queue_name: queueName,
+        });
+      }
+      metricsService.emit("queue_depth", admission.queueDepth, { tenant_id: tenantId, queue_name: queueName });
+      metricsService.emit("queue_age_seconds", admission.queueAgeSeconds, {
+        tenant_id: tenantId,
+        queue_name: queueName,
+      });
+      if (!admission.allow) {
+        return res.status(429).json({
+          error: "Queue overloaded, retry later",
+          code: admission.reason || "QUEUE_OVERLOADED",
+        });
+      }
+      const existing = await Job.findOne({
+        tenant_id: tenantId,
+        idempotency_key: idempotencyKey,
+        status: { $in: ["queued", "queued_with_delay", "processing"] },
+      })
+        .sort({ createdAt: -1 })
+        .lean();
+      if (existing) {
+        return res.status(200).json({
+          status: existing.status,
+          job_id: existing.id,
+          message: "Comparison job already in progress",
+          idempotent: true,
+        });
+      }
+
       const payload = {
         job_id: uuidv4(),
         drhpNamespace,
@@ -54,18 +103,22 @@ export const reportController = {
         domain: domain,
         domainId: domainId,
         authorization: req.headers.authorization,
+        trace_id: "",
+        queue_name: queueName,
         metadata: {
           workspaceId: req.currentWorkspace || domain,
           triggeredBy: req.user?._id
         }
       };
       payload.sessionId = payload.job_id;
+      payload.trace_id = payload.job_id;
 
+      createdJobId = payload.job_id;
       await Job.create({
         id: payload.job_id,
-        tenant_id: domainId || domain,
+        tenant_id: tenantId,
         job_type: "comparison",
-        status: "processing",
+        status: admission.status,
         current_stage: "comparison",
         progress_pct: 0,
         workspace_id: req.currentWorkspace || domain,
@@ -73,18 +126,25 @@ export const reportController = {
         drhp_id: drhpId,
         rhp_id: rhpId,
         title: `${drhpNamespace} vs ${rhpNamespace}`,
+        idempotency_key: idempotencyKey,
+        trace_id: payload.job_id,
+        queue_name: queueName,
+        queued_with_delay: admission.status === "queued_with_delay",
       });
 
       const pythonResponse = await axios.post(`${pythonApiUrl}/jobs/comparison`, payload, {
         headers: {
-          "X-Internal-Secret": INTERNAL_SECRET
+          "X-Internal-Secret": INTERNAL_SECRET,
+          "X-Trace-Id": payload.job_id,
         },
         timeout: 30000
       });
 
       if (pythonResponse.data && pythonResponse.data.status === "accepted") {
+        await metricsService.emitQueueMetrics(tenantId, queueName);
+        await brokerQueueTelemetryService.emitBrokerQueueMetrics();
         return res.json({
-          status: "processing",
+          status: admission.status,
           job_id: pythonResponse.data.job_id || payload.job_id,
           message: "Comparison job started successfully"
         });
@@ -92,6 +152,19 @@ export const reportController = {
 
       res.status(500).json({ error: "Failed to start comparison job", details: pythonResponse.data });
     } catch (error: any) {
+      if (createdJobId) {
+        await Job.updateOne(
+          { id: createdJobId },
+          {
+            $set: {
+              status: "failed",
+              error_reason: `Failed to dispatch comparison job: ${String(error?.message || "unknown")}`,
+              error_message: `Failed to dispatch comparison job: ${String(error?.message || "unknown")}`,
+              completed_at: new Date(),
+            },
+          }
+        );
+      }
       console.error("Error in compareDocuments:", error.message);
       res.status(500).json({ error: "Comparison trigger failed", message: error.message });
     }
@@ -449,6 +522,12 @@ export const reportController = {
   async reportStatusUpdate(req: Request, res: Response) {
     try {
       const { jobId, status, error, workspaceId, domainId } = req.body;
+      if (!workspaceId || !domainId) {
+        return res.status(400).json({
+          message: "Missing required scoped callback metadata",
+          required: ["workspaceId", "domainId"],
+        });
+      }
       if (!jobId || !status) {
         return res.status(400).json({ message: "Missing jobId or status" });
       }
@@ -469,7 +548,7 @@ export const reportController = {
         console.warn("reportStatusUpdate rejected: unknown comparison jobId", { jobId });
         return res.status(404).json({ message: "Unknown jobId" });
       }
-      if (workspaceId && String(workspaceId) !== String(job.workspace_id)) {
+      if (String(workspaceId) !== String(job.workspace_id)) {
         console.warn("reportStatusUpdate rejected: workspace mismatch", {
           jobId,
           callbackWorkspaceId: workspaceId,
@@ -477,7 +556,7 @@ export const reportController = {
         });
         return res.status(409).json({ message: "Workspace mismatch for callback" });
       }
-      if (domainId && String(domainId) !== String(job.tenant_id)) {
+      if (String(domainId) !== String(job.tenant_id)) {
         console.warn("reportStatusUpdate rejected: tenant mismatch", {
           jobId,
           callbackDomainId: domainId,
@@ -500,8 +579,24 @@ export const reportController = {
       );
 
       const eventData = { jobId, status: mappedStatus, error };
-      emitToWorkspace(job.workspace_id, "compare_status", eventData);
-      emitToTenant(job.tenant_id, "compare_status", eventData);
+      try {
+        await Promise.all([
+          emitToWorkspace(job.workspace_id, "compare_status", eventData),
+          emitToTenant(job.tenant_id, "compare_status", eventData),
+        ]);
+      } catch (emitError: any) {
+        console.error("reportStatusUpdate emit failure", {
+          jobId,
+          workspaceId: job.workspace_id,
+          tenantId: job.tenant_id,
+          error: emitError?.message || String(emitError),
+        });
+        return res.status(500).json({
+          message: "Status persisted but realtime emit failed",
+          code: "REPORT_EMIT_FAILED",
+          jobId,
+        });
+      }
       res
         .status(200)
         .json({ message: "Status update emitted", jobId, status: mappedStatus, error });

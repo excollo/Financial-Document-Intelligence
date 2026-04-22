@@ -5,6 +5,8 @@ Driven by the SopConfig provided in the JobContext.
 import asyncio
 import traceback
 import time
+import os
+import hashlib
 from typing import Dict, Any, List, Optional
 from app.workers.job_context import JobContext
 from app.services.s3 import s3_service
@@ -16,6 +18,7 @@ from app.workers.docx_builder import DocxBuilder
 from app.workers.excel_builder import ExcelBuilder
 from app.db.mongo import mongodb
 from app.core.logging import get_logger
+from app.services.checkpoint_store import checkpoint_store
 
 logger = get_logger(__name__)
 
@@ -55,20 +58,20 @@ class PipelineOrchestrator:
                 progress_pct=10, 
                 current_stage="preparation"
             )
-            await self._prepare_document()
+            await self._run_stage("ingestion", self._prepare_document, stage_label="preparation")
             
             # 3. Core Section Extraction
-            await self._process_sections()
+            await self._run_stage("extraction", self._process_sections, stage_label="extracting_sections")
             
             # 4. Special Processors (Adverse Findings, Research)
-            await self._run_special_processors()
+            await self._run_stage("summary", self._run_special_processors, stage_label="running_adverse_research")
             
             # 5. Final Output Assembly
             await self.ctx.update_status(
                 progress_pct=90, 
                 current_stage="output_assembly"
             )
-            assembly_result = await self._assemble_outputs()
+            assembly_result = await self._run_stage("upload", self._assemble_outputs, stage_label="output_assembly")
             
             # 6. Completion
             if not assembly_result.get("ok"):
@@ -107,6 +110,92 @@ class PipelineOrchestrator:
                 error_message=str(e)
             )
             raise e
+
+    async def _run_stage(self, stage_name: str, fn, stage_label: Optional[str] = None):
+        checkpoint = await checkpoint_store.get_checkpoint(self.ctx.job_id, stage_name)
+        if checkpoint and checkpoint.get("status") == "completed":
+            verified = await self._verify_checkpoint_artifacts(stage_name, checkpoint)
+            if verified:
+                resumable = checkpoint.get("resumable_metadata") or {}
+                if stage_name == "ingestion" and resumable.get("pdf_sections"):
+                    self.pdf_sections = resumable.get("pdf_sections")
+                logger.info("Skipping stage using verified checkpoint", job_id=self.ctx.job_id, stage_name=stage_name)
+                return {"resumed": True}
+            logger.warning("Checkpoint verification failed; rerunning stage", job_id=self.ctx.job_id, stage_name=stage_name)
+
+        started = time.time()
+        if stage_label:
+            await self.ctx.update_status(current_stage=stage_label)
+        try:
+            result = await fn()
+            ended = time.time()
+            await self.ctx.update_status(
+                stage_event={
+                    "stage_name": stage_name,
+                    "start_time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(started)),
+                    "end_time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(ended)),
+                    "duration_ms": int((ended - started) * 1000),
+                    "status": "success",
+                }
+            )
+            metadata: Dict[str, Any] = {}
+            if stage_name == "ingestion":
+                metadata["input_key"] = self.ctx.s3_input_key
+                metadata["document_name"] = self.ctx.document_name
+                metadata["ingestion_fingerprint"] = self._ingestion_fingerprint()
+            if stage_name == "extraction":
+                metadata["expected_section_count"] = len(self.ctx.sop_config.get("sections", []) if self.ctx.sop_config else [])
+            await checkpoint_store.mark_completed(self.ctx.job_id, stage_name, metadata=metadata)
+            return result
+        except Exception as exc:
+            ended = time.time()
+            await self.ctx.update_status(
+                stage_event={
+                    "stage_name": stage_name,
+                    "start_time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(started)),
+                    "end_time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(ended)),
+                    "duration_ms": int((ended - started) * 1000),
+                    "status": "failed",
+                    "error_reason": str(exc),
+                }
+            )
+            await checkpoint_store.mark_failed(
+                self.ctx.job_id,
+                stage_name,
+                metadata={"error_reason": str(exc)},
+            )
+            raise
+
+    async def _verify_checkpoint_artifacts(self, stage_name: str, checkpoint: Dict[str, Any]) -> bool:
+        metadata = checkpoint.get("resumable_metadata") or {}
+        if stage_name == "ingestion":
+            return (
+                metadata.get("input_key") == self.ctx.s3_input_key
+                and metadata.get("document_name") == self.ctx.document_name
+                and metadata.get("ingestion_fingerprint") == self._ingestion_fingerprint()
+            )
+        if stage_name == "extraction":
+            db = mongodb.db
+            if db is None:
+                return False
+            coll = db.get_collection("sectionresults")
+            expected = int(metadata.get("expected_section_count") or 0)
+            if expected <= 0:
+                return False
+            count = await coll.count_documents({"job_id": self.ctx.job_id, "status": {"$in": ["completed", "skipped"]}})
+            return count >= expected
+        if stage_name == "upload":
+            docx_key = f"outputs/{self.ctx.job_id}/{self.ctx.job_id}.docx"
+            excel_key = f"outputs/{self.ctx.job_id}/{self.ctx.job_id}.xlsx"
+            return await s3_service.file_exists(docx_key) and await s3_service.file_exists(excel_key)
+        if stage_name == "summary":
+            # No reliable durable artifact contract yet; rerun for correctness.
+            return False
+        return False
+
+    def _ingestion_fingerprint(self) -> str:
+        payload = f"{self.ctx.job_id}:{self.ctx.s3_input_key or ''}:{self.ctx.document_name or ''}"
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
     async def _prepare_document(self):
         """Download document from Azure Blob Storage and perform initial text extraction."""
@@ -161,12 +250,24 @@ class PipelineOrchestrator:
 
         sop_sections = self.ctx.sop_config.get('sections', [])
         
+        chunking_started = time.time()
         # 1. Map PDF segments to SOP sections
         logger.info("Mapping PDF segments to SOP sections", job_id=self.ctx.job_id)
         section_mapping = SectionSegmenter.map_pdf_to_sop(self.pdf_sections, self.ctx.sop_config)
+        chunking_ended = time.time()
+        await self.ctx.update_status(
+            stage_event={
+                "stage_name": "chunking",
+                "start_time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(chunking_started)),
+                "end_time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(chunking_ended)),
+                "duration_ms": int((chunking_ended - chunking_started) * 1000),
+                "status": "success",
+            }
+        )
 
         # 2. Concurrently process sections (with concurrency limit)
-        semaphore = asyncio.Semaphore(5) # Limit to 5 at a time to protect OpenAI rate limits
+        max_embedding_concurrency = int(os.environ.get("MAX_CONCURRENT_EMBEDDING_TASKS", "5"))
+        semaphore = asyncio.Semaphore(max_embedding_concurrency) # protect model/vector capacity
         
         async def process_with_limit(section_def):
             async with semaphore:
@@ -196,7 +297,20 @@ class PipelineOrchestrator:
 
         # Dispatch all sections
         logger.info(f"Dispatching extraction for {len(sop_sections)} sections", job_id=self.ctx.job_id)
+        embedding_started = time.time()
         await asyncio.gather(*(process_with_limit(sec) for sec in sop_sections))
+        embedding_ended = time.time()
+        duration_ms = int((embedding_ended - embedding_started) * 1000)
+        for stage_name in ("embedding", "vector_upsert"):
+            await self.ctx.update_status(
+                stage_event={
+                    "stage_name": stage_name,
+                    "start_time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(embedding_started)),
+                    "end_time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(embedding_ended)),
+                    "duration_ms": duration_ms,
+                    "status": "success",
+                }
+            )
 
     async def _run_special_processors(self):
         """Run processors like adverse findings that aren't strictly section-based."""

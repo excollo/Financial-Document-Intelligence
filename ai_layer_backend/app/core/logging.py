@@ -6,7 +6,10 @@ import sys
 import logging
 from typing import Any, Optional
 import structlog
-from pythonjsonlogger import jsonlogger
+try:
+    from pythonjsonlogger import jsonlogger  # type: ignore # optional at runtime
+except Exception:  # pragma: no cover
+    jsonlogger = None
 
 from app.core.config import settings
 

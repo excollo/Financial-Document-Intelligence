@@ -11,7 +11,12 @@ import { publishEvent } from "../lib/events";
 import { Summary } from "../models/Summary";
 import { Report } from "../models/Report";
 import { Chat } from "../models/Chat";
+import { Job } from "../models/Job";
 import { emitToTenant, emitToWorkspace } from "../services/realtimeEmitter";
+import { jobAdmissionService } from "../services/jobAdmissionService";
+import { metricsService } from "../services/metricsService";
+import { brokerQueueTelemetryService } from "../services/brokerQueueTelemetryService";
+import crypto from "crypto";
 const INTERNAL_SECRET = process.env.INTERNAL_SECRET || "";
 
 interface AuthRequest extends Request {
@@ -1013,7 +1018,33 @@ export const documentController = {
       if (!userWithDomain?.domainId) {
         return res.status(400).json({ error: "User domainId not found. Please contact administrator." });
       }
-
+      const tenantId = String(userWithDomain.domainId);
+      const queueName = "heavy_jobs";
+      const userId = user?._id?.toString?.() || "anonymous";
+      const admission = await jobAdmissionService.check(tenantId, queueName);
+      if (admission.telemetryStatus === "UNAVAILABLE") {
+        metricsService.emit("telemetry_unavailable", 1, {
+          tenant_id: tenantId,
+          queue_name: queueName,
+        });
+      }
+      metricsService.emit("queue_depth", admission.queueDepth, {
+        tenant_id: tenantId,
+        queue_name: queueName,
+      });
+      metricsService.emit("queue_age_seconds", admission.queueAgeSeconds, {
+        tenant_id: tenantId,
+        queue_name: queueName,
+      });
+      if (!admission.allow) {
+        try {
+          await storageService.deleteFile(fileKey);
+        } catch {}
+        return res.status(429).json({
+          error: "Queue overloaded, retry later",
+          code: admission.reason || "QUEUE_OVERLOADED",
+        });
+      }
       // Determine document type from request body, default to DRHP
       let documentType = req.body.type || "DRHP"; // Accept type from frontend, default to DRHP
 
@@ -1082,6 +1113,30 @@ export const documentController = {
         docData.microsoftId = user.microsoftId;
       } else if (user?._id) {
         docData.userId = user._id.toString();
+      }
+      const idempotencyKey = crypto
+        .createHash("sha256")
+        .update(`${userId}:${docData.id}:document_upload`)
+        .digest("hex");
+      const existingInFlightJob = await Job.findOne({
+        tenant_id: tenantId,
+        idempotency_key: idempotencyKey,
+        status: { $in: ["queued", "queued_with_delay", "processing"] },
+      })
+        .sort({ createdAt: -1 })
+        .lean();
+      if (existingInFlightJob) {
+        const existingDoc = await Document.findOne({ id: existingInFlightJob.id }).lean();
+        if (existingDoc) {
+          try {
+            await storageService.deleteFile(fileKey);
+          } catch {}
+          return res.status(200).json({
+            message: "Upload already in progress",
+            document: existingDoc,
+            idempotent: true,
+          });
+        }
       }
 
       // --- VALIDATION START ---
@@ -1159,6 +1214,22 @@ export const documentController = {
 
       const document = new Document(docData);
       await document.save();
+      await Job.create({
+        id: document.id,
+        tenant_id: tenantId,
+        workspace_id: document.workspaceId,
+        created_by: userId,
+        job_type: "extraction",
+        status: admission.status,
+        current_stage: "document_upload",
+        progress_pct: 0,
+        document_name: document.name,
+        s3_input_key: fileKey,
+        queue_name: queueName,
+        queued_with_delay: admission.status === "queued_with_delay",
+        idempotency_key: idempotencyKey,
+        trace_id: document.id,
+      });
 
       // NEW: Update directory statistics (use the actual directory ID that was used)
       if (finalDirectoryId) {
@@ -1208,17 +1279,33 @@ export const documentController = {
             domainId: document.domainId || userWithDomain.domainId,
             workspaceId: document.workspaceId || workspaceId,
             directoryId: finalDirectoryId,
-            fileKey: fileKey  // So Python can download directly from R2 if presigned URL expires
+            fileKey: fileKey,  // So Python can download directly from R2 if presigned URL expires
+            trace_id: document.id,
+            queue_name: queueName,
           }
         }, {
           headers: {
-            "X-Internal-Secret": INTERNAL_SECRET
+            "X-Internal-Secret": INTERNAL_SECRET,
+            "X-Trace-Id": document.id,
           },
           timeout: 300000 // 5 minute timeout to accommodate large PDF processing
         });
 
         if (pythonResponse.data && (pythonResponse.data.status === "success" || pythonResponse.data.status === "accepted")) {
           console.log(`✅ Document ${document.id} successfully enqueued/sent to Python API`);
+          await Job.updateOne(
+            { id: document.id, tenant_id: tenantId },
+            {
+              $set: {
+                status: "processing",
+                current_stage: "ingestion",
+                celery_task_id: pythonResponse.data?.job_id || pythonResponse.data?.celery_task_id || null,
+                started_at: new Date(),
+              },
+            }
+          );
+          await metricsService.emitQueueMetrics(tenantId, queueName);
+          await brokerQueueTelemetryService.emitBrokerQueueMetrics();
           // Note: Python API is now asynchronous and returns "accepted" immediately.
           // If it finished synchronously (rare), we can update status.
           if (pythonResponse.data.status === "success" || pythonResponse.data.details?.success) {
@@ -1228,6 +1315,17 @@ export const documentController = {
         }
       } catch (pythonErr: any) {
         console.error("Failed to call Python Ingestion API:", pythonErr.message);
+        await Job.updateOne(
+          { id: document.id, tenant_id: tenantId },
+          {
+            $set: {
+              status: "failed",
+              error_reason: `Failed to dispatch document ingestion: ${pythonErr.message}`,
+              error_message: `Failed to dispatch document ingestion: ${pythonErr.message}`,
+              completed_at: new Date(),
+            },
+          }
+        );
 
         // ROLLBACK: Delete document if ingestion fails
         try {
@@ -1463,11 +1561,54 @@ export const documentController = {
           } else {
             console.log(`ℹ️ Document ${document.id} (type: ${document.type}) status unchanged: "${oldStatus}"`);
           }
+          const jobStatus =
+            newStatus === "completed"
+              ? "completed"
+              : newStatus === "failed"
+              ? "failed"
+              : "processing";
+          await Job.updateOne(
+            { id: document.id, tenant_id: String(document.domainId) },
+            {
+              $set: {
+                status: jobStatus,
+                current_stage: "document_callback",
+                ...(jobStatus === "completed" || jobStatus === "failed"
+                  ? { completed_at: new Date() }
+                  : {}),
+                ...(jobStatus === "failed" && error
+                  ? {
+                      error_message:
+                        typeof error === "string" ? error : JSON.stringify(error),
+                      error_reason:
+                        typeof error === "string" ? error : JSON.stringify(error),
+                    }
+                  : {}),
+              },
+            }
+          );
 
           const actualJobId = document.id;
           const payload = { jobId: actualJobId, status: newStatus, error };
-          emitToWorkspace(document.workspaceId, "upload_status", payload);
-          emitToTenant(document.domainId, "upload_status", payload);
+          try {
+            await Promise.all([
+              emitToWorkspace(document.workspaceId, "upload_status", payload),
+              emitToTenant(document.domainId, "upload_status", payload),
+            ]);
+          } catch (emitError: any) {
+            console.error("uploadStatusUpdate emit failure", {
+              jobId: actualJobId,
+              workspaceId: document.workspaceId,
+              tenantId: document.domainId,
+              error: emitError?.message || String(emitError),
+            });
+            return res.status(500).json({
+              message: "Status persisted but realtime emit failed",
+              code: "DOCUMENT_EMIT_FAILED",
+              jobId: actualJobId,
+              documentId: document.id,
+            });
+          }
 
           res.status(200).json({
             message: "Upload status update processed",
@@ -1548,6 +1689,33 @@ export const documentController = {
       if (!userWithDomain?.domainId) {
         return res.status(400).json({ error: "User domainId not found. Please contact administrator." });
       }
+      const tenantId = String(userWithDomain.domainId);
+      const queueName = "heavy_jobs";
+      const userId = user?._id?.toString?.() || "anonymous";
+      const admission = await jobAdmissionService.check(tenantId, queueName);
+      if (admission.telemetryStatus === "UNAVAILABLE") {
+        metricsService.emit("telemetry_unavailable", 1, {
+          tenant_id: tenantId,
+          queue_name: queueName,
+        });
+      }
+      metricsService.emit("queue_depth", admission.queueDepth, {
+        tenant_id: tenantId,
+        queue_name: queueName,
+      });
+      metricsService.emit("queue_age_seconds", admission.queueAgeSeconds, {
+        tenant_id: tenantId,
+        queue_name: queueName,
+      });
+      if (!admission.allow) {
+        try {
+          await storageService.deleteFile(fileKey);
+        } catch {}
+        return res.status(429).json({
+          error: "Queue overloaded, retry later",
+          code: admission.reason || "QUEUE_OVERLOADED",
+        });
+      }
 
       // Fetch full domain config
       const domainConfig = await Domain.findOne({ domainId: userWithDomain.domainId });
@@ -1571,6 +1739,30 @@ export const documentController = {
         rhpDocData.microsoftId = user.microsoftId;
       } else if (user?._id) {
         rhpDocData.userId = user._id.toString();
+      }
+      const idempotencyKey = crypto
+        .createHash("sha256")
+        .update(`${userId}:${rhpDocData.id}:document_upload`)
+        .digest("hex");
+      const existingInFlightJob = await Job.findOne({
+        tenant_id: tenantId,
+        idempotency_key: idempotencyKey,
+        status: { $in: ["queued", "queued_with_delay", "processing"] },
+      })
+        .sort({ createdAt: -1 })
+        .lean();
+      if (existingInFlightJob) {
+        const existingDoc = await Document.findOne({ id: existingInFlightJob.id }).lean();
+        if (existingDoc) {
+          try {
+            await storageService.deleteFile(fileKey);
+          } catch {}
+          return res.status(200).json({
+            message: "Upload already in progress",
+            document: existingDoc,
+            idempotent: true,
+          });
+        }
       }
 
       // --- VALIDATION START FOR RHP ---
@@ -1623,6 +1815,22 @@ export const documentController = {
 
       const rhpDoc = new Document(rhpDocData);
       await rhpDoc.save();
+      await Job.create({
+        id: rhpDoc.id,
+        tenant_id: tenantId,
+        workspace_id: rhpDoc.workspaceId,
+        created_by: userId,
+        job_type: "extraction",
+        status: admission.status,
+        current_stage: "document_upload",
+        progress_pct: 0,
+        document_name: rhpDoc.name,
+        s3_input_key: fileKey,
+        queue_name: queueName,
+        queued_with_delay: admission.status === "queued_with_delay",
+        idempotency_key: idempotencyKey,
+        trace_id: rhpDoc.id,
+      });
 
       drhp.relatedRhpId = rhpDoc.id;
       await drhp.save();
@@ -1652,16 +1860,33 @@ export const documentController = {
             investor_match_only: domainConfig?.investor_match_only ?? true,
             valuation_matching: domainConfig?.valuation_matching ?? true,
             adverse_finding: domainConfig?.adverse_finding ?? true
+            ,
+            trace_id: rhpDoc.id,
+            queue_name: queueName
           }
         }, {
           headers: {
-            "X-Internal-Secret": INTERNAL_SECRET
+            "X-Internal-Secret": INTERNAL_SECRET,
+            "X-Trace-Id": rhpDoc.id,
           },
           timeout: 300000 // 5 minute timeout for PDF ingestion
         });
 
         if (pythonResponse.data && pythonResponse.data.status === "success") {
           console.log(`✅ RHP Document ${rhpDoc.id} successfully sent to Python API`);
+          await Job.updateOne(
+            { id: rhpDoc.id, tenant_id: tenantId },
+            {
+              $set: {
+                status: "processing",
+                current_stage: "ingestion",
+                celery_task_id: pythonResponse.data?.job_id || pythonResponse.data?.celery_task_id || null,
+                started_at: new Date(),
+              },
+            }
+          );
+          await metricsService.emitQueueMetrics(tenantId, queueName);
+          await brokerQueueTelemetryService.emitBrokerQueueMetrics();
           if (pythonResponse.data.details?.success) {
             rhpDoc.status = "completed";
             await rhpDoc.save();
@@ -1670,6 +1895,17 @@ export const documentController = {
         }
       } catch (pythonErr: any) {
         console.error("Failed to call Python Ingestion API for RHP:", pythonErr.message);
+        await Job.updateOne(
+          { id: rhpDoc.id, tenant_id: tenantId },
+          {
+            $set: {
+              status: "failed",
+              error_reason: `Failed to dispatch document ingestion: ${pythonErr.message}`,
+              error_message: `Failed to dispatch document ingestion: ${pythonErr.message}`,
+              completed_at: new Date(),
+            },
+          }
+        );
 
         // ROLLBACK: Delete RHP document if ingestion fails
         try {

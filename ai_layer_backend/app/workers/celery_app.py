@@ -5,9 +5,13 @@ Production-ready config with ENV fallback + debug logging.
 
 import os
 import time
+import ssl
+from typing import Optional
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 from celery import Celery
 from celery.signals import task_prerun, task_postrun, task_failure
 from celery.schedules import crontab
+from kombu import Queue
 
 from app.core.logging import get_logger
 
@@ -15,9 +19,45 @@ logger = get_logger(__name__)
 
 from app.core.config import settings
 
-# ✅ Use settings (loads from .env automatically via Pydantic)
-BROKER_URL = settings.CELERY_BROKER_URL
-RESULT_BACKEND = settings.CELERY_RESULT_BACKEND
+# Handle accidental "KEY=value" strings in env var values.
+def _strip_env_assignment_prefix(url: Optional[str]) -> Optional[str]:
+    if not url:
+        return url
+    value = url.strip()
+    for prefix in ("CELERY_BROKER_URL=", "CELERY_RESULT_BACKEND=", "REDIS_URL="):
+        if value.startswith(prefix):
+            logger.warning("Detected malformed Redis/Celery URL with assignment prefix; normalizing value")
+            return value[len(prefix):].strip()
+    return value
+
+
+# Ensure rediss URLs include ssl_cert_reqs so Celery/redis backend can initialize.
+def _normalize_rediss_url(url: Optional[str]) -> Optional[str]:
+    if not url:
+        return url
+
+    url = _strip_env_assignment_prefix(url)
+    if not url or not url.startswith("rediss://"):
+        return url
+
+    parsed = urlparse(url)
+    query = parse_qs(parsed.query, keep_blank_values=True)
+    if "ssl_cert_reqs" in query:
+        return url
+
+    query["ssl_cert_reqs"] = ["CERT_NONE"]
+    normalized = urlunparse(parsed._replace(query=urlencode(query, doseq=True)))
+    logger.warning(
+        "REDIS_URL is rediss without ssl_cert_reqs; appending ssl_cert_reqs=CERT_NONE for Celery compatibility"
+    )
+    return normalized
+
+
+_raw_broker = (settings.CELERY_BROKER_URL or "").strip() or os.getenv("CELERY_BROKER_URL") or os.getenv("REDIS_URL")
+_raw_backend = (settings.CELERY_RESULT_BACKEND or "").strip() or os.getenv("CELERY_RESULT_BACKEND") or _raw_broker
+
+BROKER_URL = _normalize_rediss_url(_raw_broker or None)
+RESULT_BACKEND = _normalize_rediss_url(_raw_backend or None)
 
 if not BROKER_URL:
     raise ValueError("❌ CELERY_BROKER_URL or REDIS_URL is not set in settings!")
@@ -79,6 +119,18 @@ celery_app.conf.update(
         "socket_connect_timeout": 5, # Timeout for initial connection
         "visibility_timeout": 3600,  # 1 hour
         "retry_on_timeout": True,
+    },
+    task_default_queue="heavy_jobs",
+    task_queues=(
+        Queue("heavy_jobs"),
+        Queue("light_jobs"),
+    ),
+    task_routes={
+        "process_pipeline_job": {"queue": "heavy_jobs"},
+        "process_document": {"queue": "heavy_jobs"},
+        "generate_summary": {"queue": "light_jobs"},
+        "generate_comparison": {"queue": "light_jobs"},
+        "process_news_article": {"queue": "light_jobs"},
     },
 )
 

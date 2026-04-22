@@ -16,6 +16,7 @@ from app.db.mongo import mongodb
 from app.services.s3 import s3_service
 from app.services.vector_store import vector_store_service
 from app.core.config import settings
+from app.services.queue_telemetry import queue_telemetry_service
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/jobs", tags=["jobs"], dependencies=[Depends(require_internal_secret)])
@@ -29,6 +30,8 @@ class PipelineJobRequest(BaseModel):
     document_name: str = Field(..., description="Original name of the document")
     s3_input_key: str = Field(..., description="Path to input PDF in Azure Blob Storage")
     sop_config_id: Optional[str] = Field(default=None, description="Optional SOP config ID to use")
+    trace_id: Optional[str] = Field(default=None, description="Trace id propagated from Node")
+    queue_name: Optional[str] = Field(default="heavy_jobs", description="Target Celery queue")
 
 
 class DocumentJobRequest(BaseModel):
@@ -102,8 +105,9 @@ async def submit_pipeline_job(request: PipelineJobRequest) -> JobResponse:
             "process_pipeline_job",
             args=[request.model_dump()],
             task_id=request.job_id,
-            queue=settings.CELERY_TASK_DEFAULT_QUEUE,
+            queue=request.queue_name or "heavy_jobs",
         )
+        queue_telemetry_service.mark_enqueued(request.queue_name or "heavy_jobs", request.job_id)
         
         return JobResponse(
             job_id=request.job_id,
@@ -138,8 +142,9 @@ async def submit_document_job(request: DocumentJobRequest):
             "process_document",
             args=[request.file_url, request.file_type, job_id, request_metadata],
             task_id=job_id,
-            queue=settings.CELERY_TASK_DEFAULT_QUEUE,
+            queue="heavy_jobs",
         )
+        queue_telemetry_service.mark_enqueued("heavy_jobs", job_id)
         
         return {
             "job_id": job_id,
@@ -242,8 +247,9 @@ async def submit_news_job(request: NewsJobRequest) -> JobResponse:
             "process_news_article",
             args=[request.article_url, job_id, request.metadata],
             task_id=job_id,
-            queue=settings.CELERY_TASK_DEFAULT_QUEUE,
+            queue="light_jobs",
         )
+        queue_telemetry_service.mark_enqueued("light_jobs", job_id)
         
         return JobResponse(
             job_id=job_id,
@@ -294,8 +300,9 @@ async def submit_summary_job(request: SummaryJobRequest) -> JobResponse:
             "generate_summary",
             args=[request.namespace, request.doc_type, job_id, task_metadata],
             task_id=job_id,
-            queue=settings.CELERY_TASK_DEFAULT_QUEUE,
+            queue="light_jobs",
         )
+        queue_telemetry_service.mark_enqueued("light_jobs", job_id)
         print("DEBUG: Celery task sent successfully!")
         
         return JobResponse(
@@ -346,8 +353,9 @@ async def submit_comparison_job(request: ComparisonJobRequest) -> JobResponse:
             "generate_comparison",
             args=[request.drhpNamespace, request.rhpNamespace, job_id, worker_metadata],
             task_id=job_id,
-            queue=settings.CELERY_TASK_DEFAULT_QUEUE,
+            queue="light_jobs",
         )
+        queue_telemetry_service.mark_enqueued("light_jobs", job_id)
         
         return JobResponse(
             job_id=job_id,

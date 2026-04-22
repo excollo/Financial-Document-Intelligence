@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { v4 as uuidv4 } from "uuid";
+import crypto from "crypto";
 
 /**
  * AdverseFinding — stores individual adverse research findings for a job.
@@ -45,6 +46,7 @@ const adverseFindingSchema = new mongoose.Schema(
     source_url: { type: String, default: null },
     source_name: { type: String, default: null },
     published_date: { type: Date, default: null },
+    dedupe_key: { type: String, default: null, index: true },
 
     // Status and confidence
     confidence_score: { type: Number, default: null, min: 0, max: 1 },
@@ -72,6 +74,15 @@ const adverseFindingSchema = new mongoose.Schema(
 // Indexes
 adverseFindingSchema.index({ job_id: 1, severity: 1 });
 adverseFindingSchema.index({ tenant_id: 1, entity_name: 1 });
+adverseFindingSchema.index({ tenant_id: 1, job_id: 1, dedupe_key: 1 }, { unique: true, sparse: true });
+
+adverseFindingSchema.pre("validate", function (next) {
+  if (!this.dedupe_key) {
+    const stable = `${this.tenant_id || ""}:${this.job_id || ""}:${this.title || ""}:${this.source_url || ""}:${this.entity_name || ""}`;
+    this.dedupe_key = crypto.createHash("sha256").update(stable).digest("hex");
+  }
+  next();
+});
 
 export const AdverseFinding = mongoose.model(
   "AdverseFinding",

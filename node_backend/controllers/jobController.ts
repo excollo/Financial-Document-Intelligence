@@ -4,6 +4,11 @@ import { SectionResult } from "../models/SectionResult";
 import { AdverseFinding } from "../models/AdverseFinding";
 import { SopConfig } from "../models/SopConfig";
 import axios from "axios";
+import crypto from "crypto";
+import { jobAdmissionService } from "../services/jobAdmissionService";
+import { metricsService } from "../services/metricsService";
+import { brokerQueueTelemetryService } from "../services/brokerQueueTelemetryService";
+import { realtimeEventControlService } from "../services/realtimeEventControlService";
 
 const PYTHON_API_URL = process.env.PYTHON_API_URL || "http://localhost:8000";
 const INTERNAL_SECRET = process.env.INTERNAL_SECRET || "";
@@ -58,14 +63,70 @@ export const createJob = async (req: AuthRequest, res: Response) => {
       if (activeConfig) resolvedSopConfigId = activeConfig.id;
     }
 
+    const userId = (req as any).user?._id?.toString() || "anonymous";
+    const operationType = isComparison ? "comparison" : "extraction";
+    const operationDocumentId = isComparison ? `${drhpId}:${rhpId}` : s3_input_key;
+    const idempotency_key = crypto
+      .createHash("sha256")
+      .update(`${userId}:${operationDocumentId}:${operationType}`)
+      .digest("hex");
+
+    const existing = await Job.findOne({
+      tenant_id: req.tenantId,
+      idempotency_key,
+      status: { $in: ["queued", "queued_with_delay", "processing"] },
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+    if (existing) {
+      return res.status(200).json({ data: { id: existing.id, status: existing.status, idempotent: true } });
+    }
+
+    const queueName = isComparison ? "light_jobs" : "heavy_jobs";
+    const admission = await jobAdmissionService.check(req.tenantId!, queueName);
+    if (admission.telemetryStatus === "UNAVAILABLE") {
+      metricsService.emit("telemetry_unavailable", 1, {
+        tenant_id: req.tenantId!,
+        queue_name: queueName,
+      });
+    }
+    metricsService.emit("queue_depth", admission.queueDepth, { tenant_id: req.tenantId!, queue_name: queueName });
+    metricsService.emit("queue_age_seconds", admission.queueAgeSeconds, { tenant_id: req.tenantId!, queue_name: queueName });
+    if (jobAdmissionService.shouldWarnQueueAge(admission.queueAgeSeconds)) {
+      console.warn(
+        JSON.stringify({
+          event: "queue_age_threshold_exceeded",
+          tenant_id: req.tenantId,
+          queue_name: queueName,
+          queue_age_seconds: admission.queueAgeSeconds,
+        })
+      );
+    }
+    if (!admission.allow) {
+      return res.status(429).json({
+        error: "Queue overloaded, retry later",
+        code: admission.reason || "QUEUE_OVERLOADED",
+      });
+    }
+    metricsService.emit("backpressure_state", admission.loadState === "healthy" ? 0 : admission.loadState === "degraded" ? 1 : 2, {
+      tenant_id: req.tenantId!,
+      queue_name: queueName,
+      load_state: admission.loadState,
+      decision: admission.status,
+    });
+
     // Prepare job record
     const jobData: any = {
       tenant_id: req.tenantId,
       sop_config_id: resolvedSopConfigId || null,
       workspace_id: workspace_id || (req as any).currentWorkspace || null,
-      created_by: (req as any).user?._id?.toString() || null,
-      status: "queued",
+      created_by: userId,
+      status: admission.status,
       job_type: isComparison ? "comparison" : "extraction",
+      idempotency_key,
+      trace_id: null,
+      queue_name: queueName,
+      queued_with_delay: admission.status === "queued_with_delay",
     };
 
     let drhpDoc: any = null;
@@ -95,6 +156,8 @@ export const createJob = async (req: AuthRequest, res: Response) => {
 
     // Create the job in MongoDB
     const job = await Job.create(jobData);
+    job.trace_id = job.id;
+    await job.save();
 
     // Dispatch to Python
     try {
@@ -103,6 +166,8 @@ export const createJob = async (req: AuthRequest, res: Response) => {
         job_id: job.id,
         tenant_id: req.tenantId,
         sop_config_id: resolvedSopConfigId || null,
+        trace_id: job.id,
+        queue_name: queueName,
       };
 
       if (isComparison) {
@@ -132,6 +197,7 @@ export const createJob = async (req: AuthRequest, res: Response) => {
         headers: {
           "X-Internal-Secret": INTERNAL_SECRET,
           "Content-Type": "application/json",
+          "X-Trace-Id": job.id,
         },
         timeout: 15000,
       });
@@ -140,6 +206,9 @@ export const createJob = async (req: AuthRequest, res: Response) => {
         job.celery_task_id = pythonResponse.data.celery_task_id || pythonResponse.data.job_id;
         await job.save();
       }
+
+      await metricsService.emitQueueMetrics(req.tenantId!, queueName);
+      await brokerQueueTelemetryService.emitBrokerQueueMetrics();
     } catch (dispatchError: any) {
       console.error("Pipeline dispatch error:", dispatchError.message);
       job.status = "failed";
@@ -241,7 +310,17 @@ export const getJob = async (req: AuthRequest, res: Response) => {
 // POST /api/jobs/internal/status — Update job status from pipeline
 export const updateJobStatus = async (req: AuthRequest, res: Response) => {
   try {
-    const { job_id, tenant_id, status, progress_pct, current_stage, error_message, output_urls } =
+    const {
+      job_id,
+      tenant_id,
+      status,
+      progress_pct,
+      current_stage,
+      error_message,
+      output_urls,
+      retry_count,
+      stage_event,
+    } =
       req.body;
 
     if (!job_id || !tenant_id) {
@@ -253,6 +332,7 @@ export const updateJobStatus = async (req: AuthRequest, res: Response) => {
 
     const allowedStatuses = new Set([
       "queued",
+      "queued_with_delay",
       "processing",
       "completed",
       "completed_with_errors",
@@ -269,38 +349,120 @@ export const updateJobStatus = async (req: AuthRequest, res: Response) => {
       });
     }
 
+    const existingJob = await Job.findOne({ id: job_id, tenant_id }).lean();
+    if (!existingJob) {
+      return res.status(404).json({ error: "Job not found", code: "JOB_NOT_FOUND" });
+    }
+    const isTerminal = existingJob.status === "completed" || existingJob.status === "completed_with_errors" || existingJob.status === "failed";
+    const duplicateTerminalUpdate =
+      isTerminal &&
+      normalizedStatus &&
+      normalizedStatus === existingJob.status &&
+      !stage_event &&
+      progress_pct === existingJob.progress_pct &&
+      current_stage === existingJob.current_stage;
+    if (duplicateTerminalUpdate) {
+      return res.json({ message: "Duplicate status ignored", data: { id: existingJob.id, status: existingJob.status } });
+    }
+
     const updateFields: Record<string, any> = {};
     if (normalizedStatus) updateFields.status = normalizedStatus;
     if (progress_pct !== undefined) updateFields.progress_pct = progress_pct;
     if (current_stage) updateFields.current_stage = current_stage;
     if (error_message) updateFields.error_message = error_message;
+    if (error_message) updateFields.error_reason = error_message;
     if (output_urls) updateFields.output_urls = output_urls;
+    if (retry_count !== undefined) updateFields.retry_count = Number(retry_count) || 0;
+    if (normalizedStatus === "processing") {
+      updateFields.started_at = new Date();
+    }
     if (normalizedStatus === "completed" || normalizedStatus === "completed_with_errors") {
       updateFields.completed_at = new Date();
     }
 
+    let stagePush: any = null;
+    let stageEventKey: string | null = null;
+    if (stage_event?.stage_name) {
+      stageEventKey = crypto
+        .createHash("sha256")
+        .update(
+          `${job_id}:${stage_event.stage_name}:${stage_event.status || "success"}:${stage_event.start_time || ""}:${stage_event.end_time || ""}:${stage_event.error_reason || ""}`
+        )
+        .digest("hex");
+      const alreadyHasStage =
+        Array.isArray(existingJob.stages) &&
+        existingJob.stages.some((s: any) => s?.stage_event_key && s.stage_event_key === stageEventKey);
+      if (alreadyHasStage) {
+        stagePush = null;
+      } else {
+      const safeDuration =
+        stage_event.duration_ms !== undefined
+          ? Number(stage_event.duration_ms)
+          : stage_event.start_time && stage_event.end_time
+          ? Math.max(0, new Date(stage_event.end_time).getTime() - new Date(stage_event.start_time).getTime())
+          : 0;
+      stagePush = {
+        stages: {
+          stage_name: stage_event.stage_name,
+          stage_event_key: stageEventKey,
+          start_time: stage_event.start_time ? new Date(stage_event.start_time) : null,
+          end_time: stage_event.end_time ? new Date(stage_event.end_time) : null,
+          duration_ms: safeDuration,
+          status: stage_event.status || "success",
+          error_reason: stage_event.error_reason || null,
+        },
+      };
+      }
+    }
+
+    const stageFilter =
+      stagePush && stageEventKey
+        ? { id: job_id, tenant_id, "stages.stage_event_key": { $ne: stageEventKey } }
+        : { id: job_id, tenant_id };
     const job = await Job.findOneAndUpdate(
-      { id: job_id, tenant_id },
-      { $set: updateFields },
+      stageFilter,
+      stagePush ? { $set: updateFields, $push: stagePush } : { $set: updateFields },
       { new: true, runValidators: true }
     );
-
     if (!job) {
+      if (stagePush && stageEventKey) {
+        const duplicate = await Job.findOne({ id: job_id, tenant_id }).lean();
+        if (duplicate) {
+          return res.json({
+            message: "Duplicate stage event ignored",
+            data: { id: duplicate.id, status: duplicate.status },
+          });
+        }
+      }
       return res.status(404).json({ error: "Job not found", code: "JOB_NOT_FOUND" });
     }
+
+    if (retry_count !== undefined) {
+      metricsService.emit("retry_count", Number(retry_count) || 0, { job_id, tenant_id });
+    }
+    if (job.queue_name) {
+      await metricsService.emitQueueMetrics(tenant_id, job.queue_name);
+    }
+    await brokerQueueTelemetryService.emitBrokerQueueMetrics();
 
     // Emit socket event for real-time UI updates
     const { io } = await import("../index");
     if (job.job_type === "comparison") {
-      io.to(`tenant_${tenant_id}`).emit("compare_status", {
+      const eventPayload = {
         jobId: job.id,
         status: job.status,
         progress: job.progress_pct,
         stage: job.current_stage,
         error: job.error_message,
-        // If completed, the Python side should have already called the report creation,
-        // but we emit here to tell the frontend to refresh reports if needed.
-      });
+      };
+      const shouldEmit = await realtimeEventControlService.shouldEmit(
+        "compare_status",
+        `tenant_${tenant_id}`,
+        eventPayload
+      );
+      if (shouldEmit) {
+        io.to(`tenant_${tenant_id}`).emit("compare_status", eventPayload);
+      }
     }
 
     return res.json({ message: "Status updated", data: { id: job.id, status: job.status } });
@@ -341,32 +503,43 @@ export const submitSectionResult = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    // Upsert: update existing or create new
-    const result = await SectionResult.findOneAndUpdate(
-      { job_id, tenant_id, section_id },
-      {
-        $set: {
-          status: status || "completed",
-          markdown,
-          raw_json,
-          tables: tables || [],
-          screenshots: screenshots || [],
-          gpt_model,
-          gpt_input_tokens: gpt_input_tokens || 0,
-          gpt_output_tokens: gpt_output_tokens || 0,
-          duration_ms: duration_ms || 0,
-          sop_compliance_score,
-          sop_compliance_notes,
-          error_message,
+    let result: any;
+    try {
+      result = await SectionResult.findOneAndUpdate(
+        { job_id, tenant_id, section_id },
+        {
+          $set: {
+            status: status || "completed",
+            markdown,
+            raw_json,
+            tables: tables || [],
+            screenshots: screenshots || [],
+            gpt_model,
+            gpt_input_tokens: gpt_input_tokens || 0,
+            gpt_output_tokens: gpt_output_tokens || 0,
+            duration_ms: duration_ms || 0,
+            sop_compliance_score,
+            sop_compliance_notes,
+            error_message,
+          },
+          $setOnInsert: {
+            tenant_id,
+            job_id,
+            section_id,
+          },
         },
-        $setOnInsert: {
-          tenant_id,
-          job_id,
-          section_id,
-        },
-      },
-      { upsert: true, new: true }
-    );
+        { upsert: true, new: true }
+      );
+    } catch (error: any) {
+      if (error?.code === 11000) {
+        const duplicate = await SectionResult.findOne({ job_id, tenant_id, section_id }).lean();
+        return res.json({
+          message: "Duplicate section result ignored",
+          data: { id: duplicate?.id || null, section_id, status: duplicate?.status || status || "completed" },
+        });
+      }
+      throw error;
+    }
 
     return res.json({
       message: "Section result saved",
@@ -393,7 +566,34 @@ export const submitAdverseFinding = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    const created = await AdverseFinding.create(finding);
+    const dedupeKey = crypto
+      .createHash("sha256")
+      .update(
+        `${finding.tenant_id || ""}:${finding.job_id || ""}:${finding.title || ""}:${finding.source_url || ""}:${finding.entity_name || ""}`
+      )
+      .digest("hex");
+    finding.dedupe_key = dedupeKey;
+    let created: any;
+    try {
+      created = await AdverseFinding.findOneAndUpdate(
+        { tenant_id: finding.tenant_id, job_id: finding.job_id, dedupe_key: dedupeKey },
+        { $setOnInsert: finding },
+        { new: true, upsert: true }
+      );
+    } catch (error: any) {
+      if (error?.code === 11000) {
+        const existing = await AdverseFinding.findOne({
+          tenant_id: finding.tenant_id,
+          job_id: finding.job_id,
+          dedupe_key: dedupeKey,
+        }).lean();
+        return res.status(200).json({
+          message: "Duplicate adverse finding ignored",
+          data: { id: existing?.id || null },
+        });
+      }
+      throw error;
+    }
 
     return res.status(201).json({
       message: "Adverse finding saved",
@@ -441,6 +641,19 @@ export const deleteJob = async (req: AuthRequest, res: Response) => {
     return res.status(500).json({
       error: "Failed to delete job",
       code: "DELETE_JOB_FAILED",
+    });
+  }
+};
+
+export const getBrokerQueueHealth = async (_req: AuthRequest, res: Response) => {
+  try {
+    const snapshot = await brokerQueueTelemetryService.emitBrokerQueueMetrics();
+    return res.json({ data: snapshot });
+  } catch (error: any) {
+    return res.status(500).json({
+      error: "Failed to get broker queue health",
+      code: "BROKER_QUEUE_HEALTH_FAILED",
+      details: error?.message,
     });
   }
 };

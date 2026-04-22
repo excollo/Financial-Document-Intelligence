@@ -64,6 +64,7 @@ const sectionResultSchema = new mongoose.Schema(
 
 // Compound indexes
 sectionResultSchema.index({ job_id: 1, section_id: 1 }, { unique: true });
+sectionResultSchema.index({ tenant_id: 1, job_id: 1, section_id: 1 }, { unique: true });
 sectionResultSchema.index({ tenant_id: 1, job_id: 1 });
 
 export const SectionResult = mongoose.model("SectionResult", sectionResultSchema);
