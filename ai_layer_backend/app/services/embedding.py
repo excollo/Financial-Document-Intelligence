@@ -109,6 +109,11 @@ class EmbeddingService:
             embedding_seconds=round(elapsed, 2),
             tokens_approx=token_approx
         )
+
+        if len(embeddings) != len(chunks):
+            raise RuntimeError(
+                f"Embedding count mismatch: expected {len(chunks)}, got {len(embeddings)}"
+            )
         
         for chunk, embedding in zip(chunks, embeddings):
             chunk["embedding"] = embedding

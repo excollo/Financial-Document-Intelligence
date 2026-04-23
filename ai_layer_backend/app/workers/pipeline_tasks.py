@@ -122,6 +122,8 @@ async def _run_orchestrator(job_data: Dict[str, Any]):
     ctx = JobContext(
         job_id=job_id,
         tenant_id=tenant_id,
+        workspace_id=str(job_data.get("workspace_id") or job_data.get("workspaceId") or ""),
+        domain_id=str(job_data.get("domain_id") or job_data.get("domainId") or tenant_id),
         sop_config=sop_config,
         document_name=job_data.get('document_name'),
         s3_input_key=job_data.get('s3_input_key')

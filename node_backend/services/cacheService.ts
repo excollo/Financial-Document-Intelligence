@@ -1,116 +1,123 @@
 import Redis from "ioredis";
 
-// Centralized Redis instance
-let redisClient: Redis | null = null;
-let isConnected = false;
+class CacheService {
+  private client: Redis | null = null;
+  private initialized = false;
 
-// Create and configure the Redis client
-export const getRedisClient = (): Redis | null => {
-  if (process.env.NODE_ENV === "test") {
-    return null;
-  }
-
-  if (!redisClient && process.env.REDIS_URL) {
+  private init() {
+    if (this.initialized) return;
+    this.initialized = true;
+    const redisUrl = process.env.REDIS_URL;
+    if (!redisUrl) return;
     try {
-      console.log(`[Cache] Initializing Redis connection...`);
-      redisClient = new Redis(process.env.REDIS_URL, {
-        maxRetriesPerRequest: 3,
-        retryStrategy(times) {
-          const delay = Math.min(times * 50, 2000);
-          return delay;
-        },
-        enableReadyCheck: true,
+      this.client = new Redis(redisUrl, {
+        lazyConnect: true,
+        maxRetriesPerRequest: 1,
+        enableReadyCheck: false,
       });
-
-      redisClient.on("connect", () => {
-        isConnected = true;
-        console.log(`✅ [Cache] Subsystem Connected successfully`);
+      this.client.on("error", () => {
+        // Non-fatal, cache should degrade gracefully.
       });
-
-      redisClient.on("error", (err) => {
-        isConnected = false;
-        console.error(`❌ [Cache] Connection Error:`, err.message);
-      });
-    } catch (err: any) {
-      console.error(`❌ [Cache] Initialization failed: ${err.message}`);
+    } catch {
+      this.client = null;
     }
-  } else if (!redisClient && !process.env.REDIS_URL && process.env.NODE_ENV !== "test") {
-    console.warn("⚠️ REDIS_URL not set. Caching disabled.");
-  }
-  return isConnected ? redisClient : null;
-};
-
-// Start connection gracefully
-if (process.env.NODE_ENV !== "test") {
-  getRedisClient();
-}
-
-/**
- * Cache wrapper for database queries
- * @param key Unique cache string
- * @param ttl Time To Live in seconds (Default: 3600 = 1 hour)
- * @param fetcher Async function to fetch data if cache misses
- */
-export const withCache = async <T>(key: string, fetcher: () => Promise<T>, ttl: number = 3600): Promise<T> => {
-  const client = getRedisClient();
-  if (!client) {
-    // Fallback to direct DB call if Redis is disconnected or unconfigured
-    return await fetcher();
   }
 
-  try {
-    const cached = await client.get(key);
-    if (cached) {
-      return JSON.parse(cached) as T;
-    }
-  } catch (err) {
-    console.warn(`[Cache] GET Error for key ${key}:`, err);
-  }
-
-  // Cache MISS - Call the DB
-  const freshData = await fetcher();
-
-  // Don't cache nulls/undefined unless necessary
-  if (freshData !== null && freshData !== undefined) {
+  private async getClient(): Promise<Redis | null> {
+    this.init();
+    if (!this.client) return null;
     try {
-      await client.setex(key, ttl, JSON.stringify(freshData));
-    } catch (err) {
-      console.warn(`[Cache] SET Error for key ${key}:`, err);
+      if (this.client.status === "wait") {
+        await this.client.connect();
+      }
+      return this.client;
+    } catch {
+      return null;
     }
   }
 
-  return freshData;
-};
+  async getRawClient(): Promise<Redis | null> {
+    return this.getClient();
+  }
 
-/**
- * Delete specific keys (use this in POST/PUT/DELETE routes)
- * @param pattern Key pattern to delete (e.g. "directories:W-123*")
- */
-export const invalidateCache = async (pattern: string): Promise<void> => {
-  const client = getRedisClient();
-  if (!client) return;
+  getRawClientSync(): Redis | null {
+    this.init();
+    return this.client;
+  }
 
-  try {
-    // If it doesn't have a wildcard, just delete the exact key
-    if (!pattern.includes("*")) {
-      await client.del(pattern);
+  async getJson<T>(key: string): Promise<T | null> {
+    const client = await this.getClient();
+    if (!client) return null;
+    try {
+      const value = await client.get(key);
+      if (!value) return null;
+      return JSON.parse(value) as T;
+    } catch {
+      return null;
+    }
+  }
+
+  async setJson(key: string, value: unknown, ttlSeconds: number): Promise<void> {
+    const client = await this.getClient();
+    if (!client) return;
+    try {
+      await client.set(key, JSON.stringify(value), "EX", Math.max(1, ttlSeconds));
+    } catch {
       return;
     }
-
-    // Pattern matching deletion using SCAN (prevent blocking)
-    let cursor = "0";
-    do {
-      const result = await client.scan(cursor, "MATCH", pattern, "COUNT", 100);
-      cursor = result[0];
-      const keys = result[1];
-      
-      if (keys.length > 0) {
-        await client.del(...keys);
-      }
-    } while (cursor !== "0");
-    
-    console.log(`[Cache] Invalidated keys matching: ${pattern}`);
-  } catch (err) {
-    console.error(`[Cache] Invalidation Error [${pattern}]:`, err);
   }
+
+  async del(key: string): Promise<void> {
+    const client = await this.getClient();
+    if (!client) return;
+    try {
+      await client.del(key);
+    } catch {
+      return;
+    }
+  }
+
+  async delByPrefix(prefix: string, batchSize = 100): Promise<void> {
+    const client = await this.getClient();
+    if (!client) return;
+    try {
+      let cursor = "0";
+      do {
+        const [nextCursor, keys] = await client.scan(cursor, "MATCH", `${prefix}*`, "COUNT", batchSize);
+        cursor = nextCursor;
+        if (keys.length > 0) {
+          await client.del(...keys);
+        }
+      } while (cursor !== "0");
+    } catch {
+      return;
+    }
+  }
+}
+
+export const cacheService = new CacheService();
+
+export const getRedisClient = (): Redis | null => cacheService.getRawClientSync();
+
+export const withCache = async <T>(
+  key: string,
+  fetcher: () => Promise<T>,
+  ttl = 3600
+): Promise<T> => {
+  const cached = await cacheService.getJson<T>(key);
+  if (cached !== null) return cached;
+  const fresh = await fetcher();
+  if (fresh !== null && fresh !== undefined) {
+    await cacheService.setJson(key, fresh, ttl);
+  }
+  return fresh;
+};
+
+export const invalidateCache = async (pattern: string): Promise<void> => {
+  if (pattern.includes("*")) {
+    const prefix = pattern.replace(/\*+$/, "");
+    await cacheService.delByPrefix(prefix);
+    return;
+  }
+  await cacheService.del(pattern);
 };

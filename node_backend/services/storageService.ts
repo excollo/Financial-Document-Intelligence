@@ -71,6 +71,16 @@ export const storageService = {
   },
 
   /**
+   * Returns blob size in bytes.
+   * @param blobName The name of the blob
+   */
+  async getFileSize(blobName: string): Promise<number> {
+    const blobClient = containerClient.getBlobClient(blobName);
+    const props = await blobClient.getProperties();
+    return Number(props.contentLength || 0);
+  },
+
+  /**
    * Deletes a blob from storage
    * @param blobName The name of the blob to delete
    */

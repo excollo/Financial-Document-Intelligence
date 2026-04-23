@@ -1,4 +1,6 @@
 import pytest
+import asyncio
+from pymongo.errors import DuplicateKeyError
 
 from app.services.execution_claim import ExecutionClaimService
 
@@ -24,6 +26,9 @@ class FakeCollection:
         self.doc.update(update["$set"])
         return dict(self.doc)
 
+    async def create_index(self, _keys, unique=False, name=None):
+        return name or "idx"
+
     async def update_one(self, query, update):
         class Result:
             def __init__(self, modified_count):
@@ -39,6 +44,17 @@ class FakeCollection:
         for k in update.get("$unset", {}).keys():
             self.doc[k] = None
         return Result(1)
+
+    async def find_one(self, query, projection=None):
+        if (
+            self.doc.get("task_name") == query.get("task_name")
+            and self.doc.get("job_id") == query.get("job_id")
+            and self.doc.get("scope") == query.get("scope")
+        ):
+            if projection and "execution_claimed_by" in projection:
+                return {"execution_claimed_by": self.doc.get("execution_claimed_by")}
+            return dict(self.doc)
+        return None
 
 
 @pytest.mark.asyncio
@@ -101,4 +117,41 @@ async def test_owner_can_renew_lease_and_non_owner_cannot():
 
     renewed_by_other = await svc.renew_claim("task", "job-1", "other-worker", scope="tenant-1")
     assert renewed_by_other is False
+    monkeypatch.undo()
+
+
+@pytest.mark.asyncio
+async def test_parallel_claim_attempts_only_one_succeeds():
+    svc = ExecutionClaimService()
+    coll = FakeCollection()
+    from app.services import execution_claim as module
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(module.mongodb, "get_collection", lambda _: coll)
+
+    a, b = await asyncio.gather(
+        svc.try_claim("task", "job-1", scope="tenant-1"),
+        svc.try_claim("task", "job-1", scope="tenant-1"),
+    )
+    assert int(a[0]) + int(b[0]) == 1
+    monkeypatch.undo()
+
+
+@pytest.mark.asyncio
+async def test_duplicate_key_claim_path_returns_safe_loser():
+    svc = ExecutionClaimService()
+    coll = FakeCollection()
+    from app.services import execution_claim as module
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(module.mongodb, "get_collection", lambda _: coll)
+
+    won, claim_id = await svc.try_claim("task", "job-1", scope="tenant-1")
+    assert won is True
+
+    async def duplicate_key(*_args, **_kwargs):
+        raise DuplicateKeyError("duplicate")
+
+    coll.find_one_and_update = duplicate_key
+    lost, owner = await svc.try_claim("task", "job-1", scope="tenant-1")
+    assert lost is False
+    assert owner == claim_id
     monkeypatch.undo()

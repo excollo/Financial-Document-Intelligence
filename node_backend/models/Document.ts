@@ -28,6 +28,7 @@ documentSchema.index(
 
 // Index for common time-bucket queries within workspace
 documentSchema.index({ workspaceId: 1, uploadedAt: -1 });
+documentSchema.index({ workspaceId: 1, status: 1, uploadedAt: -1 });
 
 // Index to quickly list documents inside a directory within workspace
 documentSchema.index({ workspaceId: 1, directoryId: 1, name: 1 });

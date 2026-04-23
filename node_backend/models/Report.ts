@@ -16,4 +16,11 @@ const reportSchema = new mongoose.Schema({
   userId: { type: String }, // Optional: for tracking who created it
 });
 
+reportSchema.index({ domain: 1, workspaceId: 1, updatedAt: -1 });
+reportSchema.index({ workspaceId: 1, drhpId: 1, rhpId: 1, updatedAt: -1 });
+reportSchema.index(
+  { domainId: 1, workspaceId: 1, drhpNamespace: 1, rhpNamespace: 1 },
+  { unique: true, name: "uniq_report_pair_per_workspace" }
+);
+
 export const Report = mongoose.model("Report", reportSchema);

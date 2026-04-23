@@ -36,6 +36,7 @@ import { checkPandocAvailable } from "./services/docxService";
 import { emitToWorkspace } from "./services/realtimeEmitter";
 import { requestMetricsMiddleware } from "./middleware/requestMetrics";
 import { brokerQueueTelemetryService } from "./services/brokerQueueTelemetryService";
+import { buildSignedInternalRawRequest } from "./services/internalRequestSigning";
 
 dotenv.config();
 
@@ -137,14 +138,20 @@ io.on("connection", async (socket) => {
     }
 
     socket.join(`user_${user._id.toString()}`);
-    if (user.domainId) {
-      socket.join(`tenant_${user.domainId}`);
-    }
 
     const workspaceIds = await resolveAuthorizedWorkspaceIds(
       user._id.toString(),
       user.currentWorkspace
     );
+    if (
+      user.currentWorkspace &&
+      !workspaceIds.includes(String(user.currentWorkspace))
+    ) {
+      console.warn("[socket-auth] rejected non-membership currentWorkspace join", {
+        userId: user._id.toString(),
+        requestedWorkspaceId: String(user.currentWorkspace),
+      });
+    }
     for (const workspaceId of workspaceIds) {
       socket.join(`workspace_${workspaceId}`);
     }
@@ -434,8 +441,10 @@ async function recoverStaleDocuments() {
 
         try {
           // Check if Celery has a job for this document's id (job_id may equal documentId due to our fix)
-          const jobRes = await axios.get(`${pythonApiUrl}/jobs/${doc.id}`, {
-            headers: { "X-Internal-Secret": process.env.INTERNAL_SECRET || "" },
+          const statusUrl = `${pythonApiUrl}/jobs/${doc.id}`;
+          const signed = buildSignedInternalRawRequest("GET", statusUrl, "");
+          const jobRes = await axios.get(statusUrl, {
+            headers: signed.headers,
             timeout: 5000,
           });
 

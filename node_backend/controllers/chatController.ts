@@ -1,14 +1,40 @@
 import { Request, Response } from "express";
 import { Chat } from "../models/Chat";
+import { ChatMessage } from "../models/ChatMessage";
 import { Document } from "../models/Document";
 import { User } from "../models/User";
 import axios from "axios";
+import { buildSignedInternalJsonRequest } from "../services/internalRequestSigning";
+import { metricsService } from "../services/metricsService";
+import { cacheService } from "../services/cacheService";
 
 interface AuthRequest extends Request {
   user?: any;
   userDomain?: string;
   currentWorkspace?: string;
 }
+
+const parsePagination = (query: any) => {
+  const limitRaw = Number(query?.limit ?? query?.pageSize ?? 50);
+  const offsetRaw = Number(query?.offset ?? ((Number(query?.page || 1) - 1) * limitRaw));
+  const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 200) : 50;
+  const offset = Number.isFinite(offsetRaw) ? Math.max(offsetRaw, 0) : 0;
+  return { limit, offset };
+};
+
+const normalizeMessage = (m: any) => ({
+  id: m?.id || m?.messageId || null,
+  content: m?.content,
+  isUser: !!m?.isUser,
+  timestamp: new Date(m?.timestamp || Date.now()),
+});
+
+const messageDedupeKey = (m: any) => {
+  if (m.id) return `id:${m.id}`;
+  return `fallback:${m.content || ""}:${m.isUser ? 1 : 0}:${new Date(m.timestamp).toISOString()}`;
+};
+
+const REPAIR_FLAG_TTL_SECONDS = 24 * 60 * 60;
 
 export const chatController = {
   async sendMessage(req: AuthRequest, res: Response) {
@@ -20,7 +46,7 @@ export const chatController = {
       }
 
       const pythonApiUrl = process.env.PYTHON_API_URL || "http://localhost:8000";
-      const INTERNAL_SECRET = process.env.INTERNAL_SECRET || "";
+      const CHAT_TIMEOUT_MS = Number(process.env.CHAT_TIMEOUT_MS || 240000);
 
       console.log(`Forwarding chat query to Python: ${namespace}`);
 
@@ -33,12 +59,11 @@ export const chatController = {
         sessionId: sessionId
       };
 
-      const pythonResponse = await axios.post(`${pythonApiUrl}/chats/query`, payload, {
-        headers: {
-          "X-Internal-Secret": INTERNAL_SECRET,
-          "Content-Type": "application/json",
-        },
-        timeout: 90000 // Chat might take a while, increased to 90s
+      const chatUrl = `${pythonApiUrl}/chats/query`;
+      const signed = buildSignedInternalJsonRequest("POST", chatUrl, payload);
+      const pythonResponse = await axios.post(chatUrl, signed.data, {
+        headers: signed.headers,
+        timeout: Number.isFinite(CHAT_TIMEOUT_MS) && CHAT_TIMEOUT_MS > 0 ? CHAT_TIMEOUT_MS : 240000,
       });
 
       if (pythonResponse.data && pythonResponse.data.status === "success") {
@@ -76,7 +101,13 @@ export const chatController = {
         return res.status(400).json({ error: "No user identifier found" });
       }
 
-      const chats = await Chat.find(query).sort({ updatedAt: -1 });
+      const { limit, offset } = parsePagination(req.query);
+      const chats = await Chat.find(query)
+        .sort({ updatedAt: -1 })
+        .skip(offset)
+        .limit(limit)
+        .select("id title updatedAt documentId domain domainId workspaceId microsoftId userId")
+        .lean();
       res.json(chats);
     } catch (error) {
       console.error("Error fetching chats:", error);
@@ -109,7 +140,13 @@ export const chatController = {
         }
       }
 
-      const chats = await Chat.find(query).sort({ updatedAt: -1 });
+      const { limit, offset } = parsePagination(req.query);
+      const chats = await Chat.find(query)
+        .sort({ updatedAt: -1 })
+        .skip(offset)
+        .limit(limit)
+        .select("id title updatedAt documentId domain domainId workspaceId microsoftId userId")
+        .lean();
       res.json(chats);
     } catch (error) {
       console.error("Error fetching chats:", error);
@@ -159,6 +196,35 @@ export const chatController = {
         : [req.body.messages];
       const chat = new Chat(chatData);
       await chat.save();
+
+      // Dual-write chat messages to the scalable message collection.
+      if (Array.isArray(chatData.messages) && chatData.messages.length > 0) {
+        const messageDocs = chatData.messages
+          .filter((m: any) => !!m?.id && !!m?.content)
+          .map((m: any) => ({
+            chatId: chatData.id,
+            messageId: m.id,
+            documentId: chatData.documentId,
+            domain: chatData.domain,
+            workspaceId: chatData.workspaceId,
+            microsoftId: chatData.microsoftId || null,
+            userId: chatData.userId || null,
+            content: m.content,
+            isUser: !!m.isUser,
+            timestamp: new Date(m.timestamp || Date.now()),
+          }));
+        if (messageDocs.length > 0) {
+          try {
+            await ChatMessage.insertMany(messageDocs, { ordered: false });
+          } catch (dualWriteError) {
+            await Chat.deleteOne({ _id: (chat as any)._id }).catch(() => undefined);
+            return res.status(500).json({
+              error: "Failed to persist chat messages",
+              code: "CHAT_MESSAGE_DUAL_WRITE_FAILED",
+            });
+          }
+        }
+      }
       res.status(201).json(chat);
     } catch (error) {
       console.error("Error creating chat:", error);
@@ -188,13 +254,116 @@ export const chatController = {
       if (!chat) {
         return res.status(404).json({ error: "Chat not found" });
       }
+      if (!req.body?.id || !req.body?.content) {
+        return res.status(400).json({
+          error: "Message id and content are required",
+          code: "INVALID_CHAT_MESSAGE",
+        });
+      }
       const message = {
         ...req.body,
         timestamp: new Date(req.body.timestamp || Date.now()),
       };
+      const existingMessage = await ChatMessage.findOne({
+        chatId: chat.id,
+        messageId: message.id,
+      })
+        .select("content isUser timestamp")
+        .lean();
+      try {
+        await ChatMessage.updateOne(
+          { chatId: chat.id, messageId: message.id },
+          {
+            $setOnInsert: {
+              chatId: chat.id,
+              messageId: message.id,
+              documentId: chat.documentId,
+              domain: chat.domain,
+              workspaceId: chat.workspaceId,
+              microsoftId: chat.microsoftId || null,
+              userId: chat.userId || null,
+            },
+            $set: {
+              content: message.content,
+              isUser: !!message.isUser,
+              timestamp: new Date(message.timestamp || Date.now()),
+            },
+          },
+          { upsert: true }
+        );
+      } catch (error) {
+        return res.status(500).json({
+          error: "Failed to persist chat message",
+          code: "CHAT_MESSAGE_DUAL_WRITE_FAILED",
+        });
+      }
       chat.messages.push(message);
       chat.updatedAt = new Date();
-      await chat.save();
+      try {
+        await chat.save();
+      } catch (error) {
+        let rollbackError: any = null;
+        try {
+          if (existingMessage) {
+            await ChatMessage.updateOne(
+              { chatId: chat.id, messageId: message.id },
+              {
+                $set: {
+                  content: existingMessage.content,
+                  isUser: !!existingMessage.isUser,
+                  timestamp: new Date(existingMessage.timestamp),
+                },
+              }
+            );
+          } else {
+            await ChatMessage.deleteOne({ chatId: chat.id, messageId: message.id });
+          }
+        } catch (rollbackFailure: any) {
+          rollbackError = rollbackFailure;
+        }
+        if (rollbackError) {
+          console.error(
+            JSON.stringify({
+              event: "chat_compensation_failed",
+              code: "CHAT_COMPENSATION_FAILED",
+              chatId: chat.id,
+              messageId: message.id,
+              workspaceId: chat.workspaceId || null,
+              domain: chat.domain || null,
+              rollbackError: rollbackError?.message || String(rollbackError),
+            })
+          );
+          metricsService.emit("COMPENSATION_FAILURE", 1, {
+            component: "chat_add_message",
+            chat_id: chat.id,
+            message_id: message.id,
+            workspace_id: chat.workspaceId || "unknown",
+            domain: chat.domain || "unknown",
+          });
+          await cacheService
+            .setJson(
+              `repair:chat:${chat.id}:${message.id}`,
+              {
+                code: "CHAT_COMPENSATION_FAILED",
+                chatId: chat.id,
+                messageId: message.id,
+                workspaceId: chat.workspaceId || null,
+                domain: chat.domain || null,
+                createdAt: new Date().toISOString(),
+              },
+              REPAIR_FLAG_TTL_SECONDS
+            )
+            .catch(() => undefined);
+          return res.status(500).json({
+            error: "Failed to compensate chat write",
+            code: "CHAT_COMPENSATION_FAILED",
+          });
+        }
+        return res.status(500).json({
+          error: "Failed to persist chat",
+          code: "CHAT_WRITE_FAILED",
+        });
+      }
       res.json(chat);
     } catch (error) {
       console.error("Error adding message:", error);
@@ -204,6 +373,12 @@ export const chatController = {
 
   async update(req: AuthRequest, res: Response) {
     try {
+      if (Object.prototype.hasOwnProperty.call(req.body || {}, "messages")) {
+        return res.status(400).json({
+          error: "Updating messages via chat update is not supported. Use addMessage endpoint.",
+          code: "CHAT_MESSAGES_IMMUTABLE",
+        });
+      }
       const currentWorkspace = req.currentWorkspace || req.userDomain;
       const query: any = {
         id: req.params.id,
@@ -223,10 +398,9 @@ export const chatController = {
       const chat = await Chat.findOneAndUpdate(
         query,
         {
-          ...req.body,
-          messages: Array.isArray(req.body.messages)
-            ? req.body.messages
-            : req.body.messages,
+          ...Object.fromEntries(
+            Object.entries(req.body || {}).filter(([key]) => key !== "messages")
+          ),
           updatedAt: new Date(),
         },
         { new: true }
@@ -259,10 +433,12 @@ export const chatController = {
         return res.status(400).json({ error: "No user identifier found" });
       }
 
-      const chat = await Chat.findOneAndDelete(query);
+      const deleted: any = await Chat.findOneAndDelete(query);
+      const chat = deleted?.value || deleted;
       if (!chat) {
         return res.status(404).json({ error: "Chat not found" });
       }
+      await ChatMessage.deleteMany({ chatId: chat.id });
       res.json({ message: "Chat deleted successfully" });
     } catch (error) {
       console.error("Error deleting chat:", error);
@@ -309,7 +485,13 @@ export const chatController = {
         domain: req.user?.domain || req.userDomain, // Filter by user's domain
       };
 
-      const chats = await Chat.find(query).sort({ updatedAt: -1 });
+      const { limit, offset } = parsePagination(req.query);
+      const chats = await Chat.find(query)
+        .sort({ updatedAt: -1 })
+        .skip(offset)
+        .limit(limit)
+        .select("id title updatedAt documentId domain domainId workspaceId microsoftId userId")
+        .lean();
       res.json(chats);
     } catch (error) {
       console.error("Error fetching all chats:", error);
@@ -331,7 +513,7 @@ export const chatController = {
       const chat = await Chat.findOne({
         id: chatId,
         domain,
-      });
+      }).select("id title updatedAt documentId domain workspaceId microsoftId userId");
 
       if (!chat) {
         return res.status(404).json({ error: "Chat not found" });
@@ -353,6 +535,11 @@ export const chatController = {
         );
       }
 
+      const { limit, offset } = parsePagination(req.query);
+      const pagedMessages = await chatController.fetchMessages(chat.id, limit, offset, {
+        includeLegacy: true,
+      });
+
       return res.json({
         chat,
         document: document
@@ -372,6 +559,7 @@ export const chatController = {
               microsoftId: chatUser.microsoftId || null,
             }
           : null,
+        messages: pagedMessages,
       });
     } catch (error) {
       console.error("Error fetching admin chat detail:", error);
@@ -453,17 +641,137 @@ export const chatController = {
       }
 
       const domain = req.user?.domain || req.userDomain;
-      const chat = await Chat.findOneAndDelete({
+      const deleted: any = await Chat.findOneAndDelete({
         id: req.params.id,
         domain, // Ensure admin can only delete chats from their domain
       });
+      const chat = deleted?.value || deleted;
       if (!chat) {
         return res.status(404).json({ error: "Chat not found" });
       }
+      await ChatMessage.deleteMany({ chatId: chat.id });
       res.json({ message: "Chat deleted successfully" });
     } catch (error) {
       console.error("Error deleting chat:", error);
       res.status(500).json({ error: "Failed to delete chat" });
     }
+  },
+
+  async getMessages(req: AuthRequest, res: Response) {
+    try {
+      const currentWorkspace = req.currentWorkspace || req.userDomain;
+      const chatId = req.params.chatId;
+      const query: any = {
+        id: chatId,
+        domain: req.userDomain,
+        workspaceId: currentWorkspace,
+      };
+
+      if (req.user?.microsoftId) {
+        query.microsoftId = req.user.microsoftId;
+      } else if (req.user?._id) {
+        query.userId = req.user._id.toString();
+      } else {
+        return res.status(400).json({ error: "No user identifier found" });
+      }
+
+      const chat = await Chat.findOne(query).select("id").lean();
+      if (!chat) {
+        return res.status(404).json({ error: "Chat not found" });
+      }
+      const { limit, offset } = parsePagination(req.query);
+      const messages = await chatController.fetchMessages(chat.id, limit, offset, {
+        includeLegacy: true,
+      });
+      res.json(messages);
+    } catch (error) {
+      console.error("Error fetching chat messages:", error);
+      res.status(500).json({ error: "Failed to fetch chat messages" });
+    }
+  },
+
+  async fetchMessages(
+    chatId: string,
+    limit: number,
+    offset: number,
+    options: { includeLegacy?: boolean } = {}
+  ) {
+    if (!options.includeLegacy) {
+      const rows = await ChatMessage.find({ chatId })
+        .sort({ timestamp: -1 })
+        .skip(offset)
+        .limit(limit)
+        .select("messageId content isUser timestamp -_id")
+        .lean();
+      return rows
+        .map((m: any) => ({
+          id: m.messageId,
+          content: m.content,
+          isUser: m.isUser,
+          timestamp: m.timestamp,
+        }))
+        .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    }
+
+    const merged = new Map<string, any>();
+    const targetSize = offset + limit;
+    const batchSize = Math.min(Math.max(limit + offset, 50), 200);
+    const maxIterations = Math.min(50, Math.max(5, Math.ceil((targetSize + 1) / batchSize) + 5));
+    let messageOffset = 0;
+    let legacyOffset = 0;
+    let messageDone = false;
+    let legacyDone = false;
+    let iteration = 0;
+
+    while (
+      iteration < maxIterations &&
+      (!messageDone || !legacyDone) &&
+      merged.size < targetSize + batchSize
+    ) {
+      iteration += 1;
+      if (!messageDone) {
+        const rows = await ChatMessage.find({ chatId })
+          .sort({ timestamp: 1 })
+          .skip(messageOffset)
+          .limit(batchSize)
+          .select("messageId content isUser timestamp -_id")
+          .lean();
+        messageOffset += rows.length;
+        if (rows.length < batchSize) {
+          messageDone = true;
+        }
+        for (const row of rows) {
+          const normalized = normalizeMessage(row);
+          merged.set(messageDedupeKey(normalized), normalized);
+        }
+      }
+      if (!legacyDone) {
+        const legacyChat = await Chat.findOne({ id: chatId })
+          .select({
+            messages: { $slice: [legacyOffset, batchSize] },
+          })
+          .lean();
+        const legacyMessages = Array.isArray((legacyChat as any)?.messages)
+          ? (legacyChat as any).messages
+          : [];
+        legacyOffset += legacyMessages.length;
+        if (legacyMessages.length < batchSize) {
+          legacyDone = true;
+        }
+        for (const row of legacyMessages) {
+          const normalized = normalizeMessage(row);
+          if (!normalized.content) continue;
+          const key = messageDedupeKey(normalized);
+          if (!merged.has(key)) {
+            merged.set(key, normalized);
+          }
+        }
+      }
+    }
+
+    const ordered = Array.from(merged.values()).sort(
+      (a: any, b: any) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
+    return ordered.slice(offset, offset + limit);
   },
 };

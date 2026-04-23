@@ -163,47 +163,97 @@ async def submit_document_job(request: DocumentJobRequest):
 @router.delete("/document", status_code=status.HTTP_200_OK)
 async def delete_document(
     namespace: str,  # The filename/documentName
-    doc_type: str = "drhp"
+    doc_type: str = "drhp",
+    document_id: Optional[str] = None,
+    workspace_id: Optional[str] = None,
+    domain_id: Optional[str] = None,
 ):
     """
     Comprehensive document cleanup: deletes Pinecone vectors, MongoDB results, and Azure Blob visuals.
     """
     try:
         logger.info("Starting cascading deletion", filename=namespace)
+        scoped_document_id = str(document_id or "").strip()
+        scoped_workspace_id = str(workspace_id or "").strip()
+        scoped_domain_id = str(domain_id or "").strip()
+        missing_scope_fields = []
+        if not scoped_document_id:
+            missing_scope_fields.append("document_id")
+        if not scoped_workspace_id:
+            missing_scope_fields.append("workspace_id")
+        if not scoped_domain_id:
+            missing_scope_fields.append("domain_id")
+        if missing_scope_fields:
+            logger.error(
+                "cleanup failed due to missing required vector-delete scope",
+                namespace=namespace,
+                missing_fields=missing_scope_fields,
+            )
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "status": "failed",
+                    "message": "cleanup failed due to missing required scope fields",
+                    "missing_fields": missing_scope_fields,
+                },
+            )
         
         # 1. MongoDB Cleanup
         # Identify the job_id from metadata if possible for S3 cleanup
         job_id = None
         try:
             if mongodb.db is None: await mongodb.connect()
+            cleanup_filter = {
+                "document_id": scoped_document_id,
+                "workspace_id": scoped_workspace_id,
+                "domain_id": scoped_domain_id,
+            }
             
             # --- Collection: document_metadata (TOC) ---
             meta_coll = mongodb.get_collection("document_metadata")
-            doc_meta = await meta_coll.find_one({"filename": namespace})
+            doc_meta = await meta_coll.find_one(cleanup_filter)
             if doc_meta:
                 job_id = doc_meta.get("job_id")
-                await meta_coll.delete_one({"filename": namespace})
-                logger.info("Deleted document_metadata", filename=namespace)
+            meta_delete = await meta_coll.delete_many(cleanup_filter)
+            logger.info(
+                "Deleted document_metadata",
+                document_id=scoped_document_id,
+                count=meta_delete.deleted_count,
+            )
 
             # --- Collection: extraction_results (Camelot tables) ---
             results_coll = mongodb.get_collection("extraction_results")
-            res_delete = await results_coll.delete_many({"filename": namespace})
-            logger.info("Deleted extraction_results", count=res_delete.deleted_count)
+            res_delete = await results_coll.delete_many(cleanup_filter)
+            logger.info(
+                "Deleted extraction_results",
+                document_id=scoped_document_id,
+                count=res_delete.deleted_count,
+            )
 
             # --- Collection: document_processing (Ingestion status/log) ---
             proc_coll = mongodb.get_collection("document_processing")
-            await proc_coll.delete_many({"filename": namespace})
-            logger.info("Deleted document_processing logs")
+            proc_doc = await proc_coll.find_one(cleanup_filter)
+            if not job_id and proc_doc:
+                job_id = proc_doc.get("job_id")
+            proc_delete = await proc_coll.delete_many(cleanup_filter)
+            logger.info(
+                "Deleted document_processing logs",
+                document_id=scoped_document_id,
+                count=proc_delete.deleted_count,
+            )
             
         except Exception as mongo_err:
             logger.warning("MongoDB cleanup encountered issues", error=str(mongo_err))
 
         # 2. Pinecone Vector Deletion
         try:
-            vector_store_service.delete_vectors(
+            delete_result = vector_store_service.delete_vectors(
                 settings.PINECONE_INDEX, 
                 namespace, 
-                host=settings.PINECONE_INDEX_HOST
+                host=settings.PINECONE_INDEX_HOST,
+                document_id=scoped_document_id,
+                workspace_id=scoped_workspace_id,
+                domain_id=scoped_domain_id,
             )
             logger.info("Deleted vectors from Pinecone", namespace=namespace)
         except Exception as pc_err:
@@ -224,6 +274,8 @@ async def delete_document(
             "job_id_used": job_id
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error("Cascading deletion failed", error=str(e), filename=namespace)
         raise HTTPException(status_code=500, detail=str(e))

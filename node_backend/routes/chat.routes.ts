@@ -57,6 +57,7 @@ router.post(
 
 // Add message to chat
 router.post("/:chatId/messages", chatController.addMessage);
+router.get("/:chatId/messages", chatController.getMessages);
 
 // Update chat
 router.put("/:id", chatController.update);

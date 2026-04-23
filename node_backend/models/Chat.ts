@@ -29,5 +29,9 @@ chatSchema.pre("validate", function (next) {
 });
 // Index for sorting chats by date
 chatSchema.index({ updatedAt: -1 });
+chatSchema.index({ domain: 1, workspaceId: 1, updatedAt: -1 });
+chatSchema.index({ domain: 1, workspaceId: 1, documentId: 1, updatedAt: -1 });
+chatSchema.index({ workspaceId: 1, microsoftId: 1, updatedAt: -1 });
+chatSchema.index({ workspaceId: 1, userId: 1, updatedAt: -1 });
 
 export const Chat = mongoose.model("Chat", chatSchema);

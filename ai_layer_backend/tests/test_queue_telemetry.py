@@ -26,6 +26,13 @@ class FakeRedis:
             return [ordered[0]]
         return [ordered[0][0]]
 
+    def zremrangebyscore(self, key, min_score, max_score):
+        values = self.zsets.get(key, {})
+        removable = [member for member, score in values.items() if min_score <= score <= max_score]
+        for member in removable:
+            values.pop(member, None)
+        return len(removable)
+
 
 def test_queue_telemetry_mark_and_snapshot(monkeypatch):
     fake = FakeRedis()
@@ -40,3 +47,50 @@ def test_queue_telemetry_mark_and_snapshot(monkeypatch):
 
     svc.mark_dequeued("heavy_jobs", "job-1")
     assert "job-1" not in fake.zsets.get("celery:queue:enqueued_at:heavy_jobs", {})
+
+
+def test_queue_telemetry_worker_start_removes_light_queue_age_entry(monkeypatch):
+    fake = FakeRedis()
+    svc = queue_telemetry.QueueTelemetryService()
+    monkeypatch.setattr(svc, "_client", lambda: fake)
+
+    svc.mark_enqueued("light_jobs", "job-2")
+    assert "job-2" in fake.zsets.get("celery:queue:enqueued_at:light_jobs", {})
+
+    # Worker start path should dequeue from age tracking.
+    svc.mark_dequeued("light_jobs", "job-2")
+    assert "job-2" not in fake.zsets.get("celery:queue:enqueued_at:light_jobs", {})
+
+
+def test_queue_telemetry_failure_path_removes_entry_for_each_task_family(monkeypatch):
+    fake = FakeRedis()
+    svc = queue_telemetry.QueueTelemetryService()
+    monkeypatch.setattr(svc, "_client", lambda: fake)
+
+    # process_document -> heavy_jobs
+    svc.mark_enqueued("heavy_jobs", "doc-job-1")
+    svc.mark_dequeued("heavy_jobs", "doc-job-1")
+    assert "doc-job-1" not in fake.zsets.get("celery:queue:enqueued_at:heavy_jobs", {})
+
+    # generate_summary / generate_comparison / process_news_article -> light_jobs
+    for job_id in ("summary-job-1", "comparison-job-1", "news-job-1"):
+        svc.mark_enqueued("light_jobs", job_id)
+        svc.mark_dequeued("light_jobs", job_id)
+        assert job_id not in fake.zsets.get("celery:queue:enqueued_at:light_jobs", {})
+
+
+def test_queue_telemetry_stale_entry_expires_without_dequeue(monkeypatch):
+    fake = FakeRedis()
+    svc = queue_telemetry.QueueTelemetryService()
+    monkeypatch.setattr(svc, "_client", lambda: fake)
+    monkeypatch.setattr(queue_telemetry, "ENTRY_TTL_SECONDS", 1)
+
+    now = [1_700_000_000.0]
+    monkeypatch.setattr(queue_telemetry.time, "time", lambda: now[0])
+
+    svc.mark_enqueued("heavy_jobs", "stale-job")
+    assert "stale-job" in fake.zsets.get("celery:queue:enqueued_at:heavy_jobs", {})
+
+    now[0] += 2.0
+    svc.snapshot("heavy_jobs")
+    assert "stale-job" not in fake.zsets.get("celery:queue:enqueued_at:heavy_jobs", {})

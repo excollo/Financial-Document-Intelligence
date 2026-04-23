@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     REDIS_DB: int = 0
     REDIS_PASSWORD: str = ""
     REDIS_URL: Optional[str] = None # Added for external providers like Upstash
+    REDIS_TLS_CA_BUNDLE: Optional[str] = None
     
     # Celery Configuration
     CELERY_BROKER_URL: str = ""
@@ -109,6 +110,9 @@ class Settings(BaseSettings):
     # Internal authentication (Node <-> Python)
     INTERNAL_SECRET: str = ""  # Shared secret for internal API calls
     INTERNAL_CALLBACK_SIGNING_SECRET: Optional[str] = None
+    INTERNAL_CALLBACK_NONCE_TTL_SECONDS: int = 300
+    INTERNAL_CALLBACK_TIMESTAMP_TOLERANCE_SECONDS: int = 300
+    INTERNAL_CALLBACK_SIGNATURE_REQUIRED: bool = True
     NODE_BACKEND_URL: str = ""  # Node.js backend base URL
     
     # Backend callback URLs (Properties to ensure they are always derived from NODE_BACKEND_URL)

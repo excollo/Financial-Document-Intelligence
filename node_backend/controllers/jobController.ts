@@ -9,9 +9,14 @@ import { jobAdmissionService } from "../services/jobAdmissionService";
 import { metricsService } from "../services/metricsService";
 import { brokerQueueTelemetryService } from "../services/brokerQueueTelemetryService";
 import { realtimeEventControlService } from "../services/realtimeEventControlService";
+import { cacheService } from "../services/cacheService";
+import { idempotencyLockService } from "../services/idempotencyLockService";
+import { applyCanonicalInternalJobStatusUpdate } from "../services/jobLifecycleService";
+import { buildSignedInternalJsonRequest } from "../services/internalRequestSigning";
 
 const PYTHON_API_URL = process.env.PYTHON_API_URL || "http://localhost:8000";
-const INTERNAL_SECRET = process.env.INTERNAL_SECRET || "";
+const JOB_CACHE_TTL_SECONDS = Number(process.env.JOB_CACHE_TTL_SECONDS || "15");
+const getJobCacheKey = (tenantId: string, jobId: string) => `job:status:${tenantId}:${jobId}`;
 
 interface AuthRequest extends Request {
   user?: any;
@@ -65,22 +70,27 @@ export const createJob = async (req: AuthRequest, res: Response) => {
 
     const userId = (req as any).user?._id?.toString() || "anonymous";
     const operationType = isComparison ? "comparison" : "extraction";
-    const operationDocumentId = isComparison ? `${drhpId}:${rhpId}` : s3_input_key;
+    const normalizedDocumentName = String(document_name || "").trim().toLowerCase();
+    const clientRequestId = String((req.body as any)?.request_id || (req.body as any)?.requestId || "")
+      .trim()
+      .toLowerCase();
+    const stableOperationIdentity = isComparison
+      ? `${String(drhpId || "").trim()}:${String(rhpId || "").trim()}`
+      : `${clientRequestId || normalizedDocumentName}:${String(directoryId || "")}`;
     const idempotency_key = crypto
       .createHash("sha256")
-      .update(`${userId}:${operationDocumentId}:${operationType}`)
+      .update(
+        [
+          String(req.tenantId || ""),
+          String(workspace_id || (req as any).currentWorkspace || ""),
+          userId,
+          operationType,
+          stableOperationIdentity,
+        ].join(":")
+      )
       .digest("hex");
 
-    const existing = await Job.findOne({
-      tenant_id: req.tenantId,
-      idempotency_key,
-      status: { $in: ["queued", "queued_with_delay", "processing"] },
-    })
-      .sort({ createdAt: -1 })
-      .lean();
-    if (existing) {
-      return res.status(200).json({ data: { id: existing.id, status: existing.status, idempotent: true } });
-    }
+    const idempotencyOwner = crypto.randomUUID();
 
     const queueName = isComparison ? "light_jobs" : "heavy_jobs";
     const admission = await jobAdmissionService.check(req.tenantId!, queueName);
@@ -108,6 +118,27 @@ export const createJob = async (req: AuthRequest, res: Response) => {
         code: admission.reason || "QUEUE_OVERLOADED",
       });
     }
+    const lock = await idempotencyLockService.acquire({
+      tenantId: String(req.tenantId),
+      idempotencyKey: idempotency_key,
+      ownerId: idempotencyOwner,
+    });
+    if (!lock.acquired) {
+      if (lock.existingJob) {
+        return res.status(200).json({
+          data: { id: lock.existingJob.id, status: lock.existingJob.status, idempotent: true },
+        });
+      }
+      return res.status(202).json({
+        data: {
+          id: null,
+          status: "queued",
+          idempotent: true,
+          pending: true,
+          retry_after_seconds: lock.retryAfterSeconds,
+        },
+      });
+    }
     metricsService.emit("backpressure_state", admission.loadState === "healthy" ? 0 : admission.loadState === "degraded" ? 1 : 2, {
       tenant_id: req.tenantId!,
       queue_name: queueName,
@@ -133,8 +164,43 @@ export const createJob = async (req: AuthRequest, res: Response) => {
     let rhpDoc: any = null;
 
     if (isComparison) {
-      drhpDoc = await Document.findOne({ id: drhpId }).lean();
-      rhpDoc = await Document.findOne({ id: rhpId }).lean();
+      if (!jobData.workspace_id) {
+        return res.status(400).json({
+          error: "workspace_id is required for comparison jobs",
+          code: "WORKSPACE_REQUIRED",
+        });
+      }
+
+      const scopedDocumentQuery = {
+        workspaceId: String(jobData.workspace_id),
+        domainId: String(req.tenantId),
+      };
+      drhpDoc = await Document.findOne({ id: drhpId, ...scopedDocumentQuery }).lean();
+      rhpDoc = await Document.findOne({ id: rhpId, ...scopedDocumentQuery }).lean();
+
+      if (!drhpDoc || !rhpDoc) {
+        const tenantScopedDrhp = await Document.findOne({
+          id: drhpId,
+          domainId: String(req.tenantId),
+        })
+          .select("id workspaceId")
+          .lean();
+        const tenantScopedRhp = await Document.findOne({
+          id: rhpId,
+          domainId: String(req.tenantId),
+        })
+          .select("id workspaceId")
+          .lean();
+        const hasWorkspaceMismatch =
+          (!!tenantScopedDrhp && String(tenantScopedDrhp.workspaceId) !== String(jobData.workspace_id)) ||
+          (!!tenantScopedRhp && String(tenantScopedRhp.workspaceId) !== String(jobData.workspace_id));
+        if (hasWorkspaceMismatch) {
+          return res.status(409).json({
+            error: "Comparison documents must belong to the active workspace scope",
+            code: "DOCUMENT_SCOPE_MISMATCH",
+          });
+        }
+      }
 
       if (!drhpDoc || !rhpDoc) {
         return res.status(404).json({
@@ -156,6 +222,12 @@ export const createJob = async (req: AuthRequest, res: Response) => {
 
     // Create the job in MongoDB
     const job = await Job.create(jobData);
+    await idempotencyLockService.bindJob({
+      tenantId: String(req.tenantId),
+      idempotencyKey: idempotency_key,
+      ownerId: idempotencyOwner,
+      jobId: String(job.id),
+    });
     job.trace_id = job.id;
     await job.save();
 
@@ -193,12 +265,11 @@ export const createJob = async (req: AuthRequest, res: Response) => {
         payload.s3_input_key = jobData.s3_input_key;
       }
 
-      const pythonResponse = await axios.post(dispatchUrl, payload, {
-        headers: {
-          "X-Internal-Secret": INTERNAL_SECRET,
-          "Content-Type": "application/json",
-          "X-Trace-Id": job.id,
-        },
+      const signed = buildSignedInternalJsonRequest("POST", dispatchUrl, payload, {
+        "X-Trace-Id": job.id,
+      });
+      const pythonResponse = await axios.post(dispatchUrl, signed.data, {
+        headers: signed.headers,
         timeout: 15000,
       });
 
@@ -264,6 +335,12 @@ export const listJobs = async (req: AuthRequest, res: Response) => {
 // GET /api/jobs/:id — Get a single job with its section results
 export const getJob = async (req: AuthRequest, res: Response) => {
   try {
+    const tenantId = req.tenantQuery().tenant_id;
+    const cacheKey = getJobCacheKey(tenantId, req.params.id);
+    const cached = await cacheService.getJson<any>(cacheKey);
+    if (cached) {
+      return res.json(cached);
+    }
     const job = await Job.findOne({
       ...req.tenantQuery(),
       id: req.params.id,
@@ -287,13 +364,15 @@ export const getJob = async (req: AuthRequest, res: Response) => {
       job_id: job.id,
     }).lean();
 
-    return res.json({
+    const response = {
       data: {
         ...job,
         section_results: sectionResults,
         adverse_findings: adverseFindings,
       },
-    });
+    };
+    await cacheService.setJson(cacheKey, response, JOB_CACHE_TTL_SECONDS);
+    return res.json(response);
   } catch (error: any) {
     console.error("getJob error:", error);
     return res.status(500).json({
@@ -310,133 +389,15 @@ export const getJob = async (req: AuthRequest, res: Response) => {
 // POST /api/jobs/internal/status — Update job status from pipeline
 export const updateJobStatus = async (req: AuthRequest, res: Response) => {
   try {
-    const {
-      job_id,
-      tenant_id,
-      status,
-      progress_pct,
-      current_stage,
-      error_message,
-      output_urls,
-      retry_count,
-      stage_event,
-    } =
-      req.body;
-
-    if (!job_id || !tenant_id) {
-      return res.status(400).json({
-        error: "job_id and tenant_id are required",
-        code: "INVALID_STATUS_BODY",
-      });
+    const { job_id, tenant_id, retry_count } = req.body;
+    const lifecycle = await applyCanonicalInternalJobStatusUpdate(req.body);
+    if (lifecycle.statusCode !== 200) {
+      return res.status(lifecycle.statusCode).json(lifecycle.body);
     }
-
-    const allowedStatuses = new Set([
-      "queued",
-      "queued_with_delay",
-      "processing",
-      "completed",
-      "completed_with_errors",
-      "failed",
-    ]);
-    const normalizedStatus =
-      typeof status === "string" && status.toLowerCase() === "success"
-        ? "completed"
-        : status;
-    if (normalizedStatus && !allowedStatuses.has(normalizedStatus)) {
-      return res.status(400).json({
-        error: "Invalid status value",
-        code: "INVALID_STATUS_VALUE",
-      });
+    if (!lifecycle.changed) {
+      return res.status(lifecycle.statusCode).json(lifecycle.body);
     }
-
-    const existingJob = await Job.findOne({ id: job_id, tenant_id }).lean();
-    if (!existingJob) {
-      return res.status(404).json({ error: "Job not found", code: "JOB_NOT_FOUND" });
-    }
-    const isTerminal = existingJob.status === "completed" || existingJob.status === "completed_with_errors" || existingJob.status === "failed";
-    const duplicateTerminalUpdate =
-      isTerminal &&
-      normalizedStatus &&
-      normalizedStatus === existingJob.status &&
-      !stage_event &&
-      progress_pct === existingJob.progress_pct &&
-      current_stage === existingJob.current_stage;
-    if (duplicateTerminalUpdate) {
-      return res.json({ message: "Duplicate status ignored", data: { id: existingJob.id, status: existingJob.status } });
-    }
-
-    const updateFields: Record<string, any> = {};
-    if (normalizedStatus) updateFields.status = normalizedStatus;
-    if (progress_pct !== undefined) updateFields.progress_pct = progress_pct;
-    if (current_stage) updateFields.current_stage = current_stage;
-    if (error_message) updateFields.error_message = error_message;
-    if (error_message) updateFields.error_reason = error_message;
-    if (output_urls) updateFields.output_urls = output_urls;
-    if (retry_count !== undefined) updateFields.retry_count = Number(retry_count) || 0;
-    if (normalizedStatus === "processing") {
-      updateFields.started_at = new Date();
-    }
-    if (normalizedStatus === "completed" || normalizedStatus === "completed_with_errors") {
-      updateFields.completed_at = new Date();
-    }
-
-    let stagePush: any = null;
-    let stageEventKey: string | null = null;
-    if (stage_event?.stage_name) {
-      stageEventKey = crypto
-        .createHash("sha256")
-        .update(
-          `${job_id}:${stage_event.stage_name}:${stage_event.status || "success"}:${stage_event.start_time || ""}:${stage_event.end_time || ""}:${stage_event.error_reason || ""}`
-        )
-        .digest("hex");
-      const alreadyHasStage =
-        Array.isArray(existingJob.stages) &&
-        existingJob.stages.some((s: any) => s?.stage_event_key && s.stage_event_key === stageEventKey);
-      if (alreadyHasStage) {
-        stagePush = null;
-      } else {
-      const safeDuration =
-        stage_event.duration_ms !== undefined
-          ? Number(stage_event.duration_ms)
-          : stage_event.start_time && stage_event.end_time
-          ? Math.max(0, new Date(stage_event.end_time).getTime() - new Date(stage_event.start_time).getTime())
-          : 0;
-      stagePush = {
-        stages: {
-          stage_name: stage_event.stage_name,
-          stage_event_key: stageEventKey,
-          start_time: stage_event.start_time ? new Date(stage_event.start_time) : null,
-          end_time: stage_event.end_time ? new Date(stage_event.end_time) : null,
-          duration_ms: safeDuration,
-          status: stage_event.status || "success",
-          error_reason: stage_event.error_reason || null,
-        },
-      };
-      }
-    }
-
-    const stageFilter =
-      stagePush && stageEventKey
-        ? { id: job_id, tenant_id, "stages.stage_event_key": { $ne: stageEventKey } }
-        : { id: job_id, tenant_id };
-    const job = await Job.findOneAndUpdate(
-      stageFilter,
-      stagePush ? { $set: updateFields, $push: stagePush } : { $set: updateFields },
-      { new: true, runValidators: true }
-    );
-    if (!job) {
-      if (stagePush && stageEventKey) {
-        const duplicate = await Job.findOne({ id: job_id, tenant_id }).lean();
-        if (duplicate) {
-          return res.json({
-            message: "Duplicate stage event ignored",
-            data: { id: duplicate.id, status: duplicate.status },
-          });
-        }
-      }
-      return res.status(404).json({ error: "Job not found", code: "JOB_NOT_FOUND" });
-    }
-
+    const job = lifecycle.job;
     if (retry_count !== undefined) {
       metricsService.emit("retry_count", Number(retry_count) || 0, { job_id, tenant_id });
     }
@@ -455,16 +416,16 @@ export const updateJobStatus = async (req: AuthRequest, res: Response) => {
         stage: job.current_stage,
         error: job.error_message,
       };
-      const shouldEmit = await realtimeEventControlService.shouldEmit(
-        "compare_status",
-        `tenant_${tenant_id}`,
-        eventPayload
-      );
+      const workspaceRoom = job.workspace_id ? `workspace_${job.workspace_id}` : null;
+      const shouldEmit =
+        !!workspaceRoom &&
+        (await realtimeEventControlService.shouldEmit("compare_status", workspaceRoom, eventPayload));
       if (shouldEmit) {
-        io.to(`tenant_${tenant_id}`).emit("compare_status", eventPayload);
+        io.to(`workspace_${job.workspace_id}`).emit("compare_status", eventPayload);
       }
     }
 
+    await cacheService.del(getJobCacheKey(tenant_id, job_id));
     return res.json({ message: "Status updated", data: { id: job.id, status: job.status } });
   } catch (error: any) {
     console.error("updateJobStatus error:", error);
@@ -481,6 +442,8 @@ export const submitSectionResult = async (req: AuthRequest, res: Response) => {
     const {
       job_id,
       tenant_id,
+      workspace_id,
+      domain_id,
       section_id,
       status,
       markdown,
@@ -496,10 +459,29 @@ export const submitSectionResult = async (req: AuthRequest, res: Response) => {
       error_message,
     } = req.body;
 
-    if (!job_id || !tenant_id || !section_id) {
+    if (!job_id || !tenant_id || !workspace_id || !domain_id || !section_id) {
       return res.status(400).json({
-        error: "job_id, tenant_id, and section_id are required",
+        error: "job_id, tenant_id, workspace_id, domain_id, and section_id are required",
         code: "INVALID_SECTION_RESULT_BODY",
+      });
+    }
+    if (String(domain_id) !== String(tenant_id)) {
+      return res.status(409).json({
+        error: "Domain and tenant scope mismatch",
+        code: "JOB_SCOPE_MISMATCH",
+      });
+    }
+    const job = await Job.findOne({
+      id: job_id,
+      tenant_id,
+      workspace_id: String(workspace_id),
+    })
+      .select("id tenant_id workspace_id")
+      .lean();
+    if (!job) {
+      return res.status(404).json({
+        error: "Job not found for tenant scope",
+        code: "JOB_SCOPE_NOT_FOUND",
       });
     }
 
@@ -541,6 +523,7 @@ export const submitSectionResult = async (req: AuthRequest, res: Response) => {
       throw error;
     }
 
+    await cacheService.del(getJobCacheKey(tenant_id, job_id));
     return res.json({
       message: "Section result saved",
       data: { id: result.id, section_id, status: result.status },
@@ -559,10 +542,35 @@ export const submitAdverseFinding = async (req: AuthRequest, res: Response) => {
   try {
     const finding = req.body;
 
-    if (!finding.job_id || !finding.tenant_id || !finding.title) {
+    if (
+      !finding.job_id ||
+      !finding.tenant_id ||
+      !finding.workspace_id ||
+      !finding.domain_id ||
+      !finding.title
+    ) {
       return res.status(400).json({
-        error: "job_id, tenant_id, and title are required",
+        error: "job_id, tenant_id, workspace_id, domain_id, and title are required",
         code: "INVALID_FINDING_BODY",
+      });
+    }
+    if (String(finding.domain_id) !== String(finding.tenant_id)) {
+      return res.status(409).json({
+        error: "Domain and tenant scope mismatch",
+        code: "JOB_SCOPE_MISMATCH",
+      });
+    }
+    const job = await Job.findOne({
+      id: finding.job_id,
+      tenant_id: finding.tenant_id,
+      workspace_id: String(finding.workspace_id),
+    })
+      .select("id tenant_id workspace_id")
+      .lean();
+    if (!job) {
+      return res.status(404).json({
+        error: "Job not found for tenant scope",
+        code: "JOB_SCOPE_NOT_FOUND",
       });
     }
 
@@ -595,6 +603,7 @@ export const submitAdverseFinding = async (req: AuthRequest, res: Response) => {
       throw error;
     }
 
+    await cacheService.del(getJobCacheKey(finding.tenant_id, finding.job_id));
     return res.status(201).json({
       message: "Adverse finding saved",
       data: { id: created.id },
@@ -632,6 +641,7 @@ export const deleteJob = async (req: AuthRequest, res: Response) => {
     await SectionResult.deleteMany({ job_id: id, ...tenantFilter });
     await AdverseFinding.deleteMany({ job_id: id, ...tenantFilter });
 
+    await cacheService.del(getJobCacheKey(String(job.tenant_id), id));
     return res.json({
       message: "Job deleted successfully",
       data: { id },

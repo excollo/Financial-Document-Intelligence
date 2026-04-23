@@ -18,6 +18,7 @@ from app.core.logging import get_logger, log_job_start, log_job_complete, log_jo
 from app.services.metrics import metrics
 from app.services.execution_claim import execution_claim_service
 from app.services.job_state_guard import is_terminal_job
+from app.services.queue_telemetry import queue_telemetry_service
 
 logger = get_logger(__name__)
 
@@ -74,6 +75,8 @@ def process_document(
     logger.info("Celery: Starting document ingestion task", job_id=job_id, trace_id=job_id)
     metrics.emit_worker_memory({"job_id": job_id, "task": "process_document"})
     metadata = metadata or {}
+    queue_name = "heavy_jobs"
+    queue_telemetry_service.mark_dequeued(queue_name, job_id)
     domain_scope = str(metadata.get("domainId") or "global")
     if asyncio.run(is_terminal_job(job_id, metadata.get("domainId"))):
         logger.warning("Skipping process_document because job already terminal", job_id=job_id, scope=domain_scope)
@@ -107,26 +110,17 @@ def process_document(
         return result
     
     except Exception as e:
+        queue_telemetry_service.mark_dequeued(queue_name, job_id)
         logger.error("Celery: Document ingestion task FAILED", job_id=job_id, error=str(e))
-        # Avoid premature "failed" status on transient retries.
-        # Autoretry will rerun the task until max_retries is reached.
+        # Single source of truth for terminal callback semantics:
+        # ingestion_pipeline.process handles terminal vs retry callback behavior.
         current_retry = int(getattr(self.request, "retries", 0))
-        if current_retry >= int(self.max_retries):
-            backend_notifier.notify_status(
-                job_id=job_id,
-                status="failed",
-                namespace=metadata.get("filename", "document.pdf") if metadata else "document.pdf",
-                workspace_id=(metadata or {}).get("workspaceId"),
-                domain_id=(metadata or {}).get("domainId"),
-                error={"message": str(e), "stack": traceback.format_exc()}
-            )
-        else:
-            logger.warning(
-                "Task failed but will retry; skipping terminal failed callback",
-                job_id=job_id,
-                current_retry=current_retry,
-                max_retries=self.max_retries,
-            )
+        logger.warning(
+            "Task failed; callback emission delegated to ingestion pipeline",
+            job_id=job_id,
+            current_retry=current_retry,
+            max_retries=self.max_retries,
+        )
         metrics.emit(
             "retry_count",
             current_retry,
@@ -163,6 +157,8 @@ def process_news_article(
         Dict containing processing results
     """
     start_time = time.time()
+    queue_name = "light_jobs"
+    queue_telemetry_service.mark_dequeued(queue_name, job_id)
     bound_logger = log_job_start(logger, job_id, "news_article_pipeline", article_url=article_url)
     
     try:
@@ -180,6 +176,7 @@ def process_news_article(
         return result
     
     except Exception as e:
+        queue_telemetry_service.mark_dequeued(queue_name, job_id)
         execution_time = time.time() - start_time
         log_job_error(bound_logger, job_id, e, execution_time)
         raise
@@ -201,6 +198,8 @@ def generate_summary(
     start_time = time.time()
     metrics.emit_worker_memory({"job_id": job_id, "task": "generate_summary"})
     metadata = metadata or {}
+    queue_name = "light_jobs"
+    queue_telemetry_service.mark_dequeued(queue_name, job_id)
     domain_scope = str((metadata or {}).get("domainId") or "global")
     if asyncio.run(is_terminal_job(job_id, (metadata or {}).get("domainId"))):
         logger.warning("Skipping generate_summary because job already terminal", job_id=job_id, scope=domain_scope)
@@ -305,6 +304,7 @@ def generate_summary(
         }
     
     except Exception as e:
+        queue_telemetry_service.mark_dequeued(queue_name, job_id)
         execution_time = time.time() - start_time
         metrics.emit("stage_duration_ms", int(execution_time * 1000), {"job_id": job_id, "stage_name": "summary", "status": "failed"})
         log_job_error(bound_logger, job_id, e, execution_time)
@@ -346,6 +346,8 @@ def generate_comparison(
     start_time = time.time()
     metrics.emit_worker_memory({"job_id": job_id, "task": "generate_comparison"})
     metadata = metadata or {}
+    queue_name = "light_jobs"
+    queue_telemetry_service.mark_dequeued(queue_name, job_id)
     domain_scope = str(metadata.get("domainId") or "global")
     if asyncio.run(is_terminal_job(job_id, metadata.get("domainId"))):
         logger.warning("Skipping generate_comparison because job already terminal", job_id=job_id, scope=domain_scope)
@@ -433,6 +435,7 @@ def generate_comparison(
         }
     
     except Exception as e:
+        queue_telemetry_service.mark_dequeued(queue_name, job_id)
         execution_time = time.time() - start_time
         metrics.emit("stage_duration_ms", int(execution_time * 1000), {"job_id": job_id, "stage_name": "comparison", "status": "failed"})
         log_job_error(bound_logger, job_id, e, execution_time)

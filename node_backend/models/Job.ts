@@ -82,5 +82,6 @@ jobSchema.index({ tenant_id: 1, status: 1 });
 jobSchema.index({ tenant_id: 1, createdAt: -1 });
 jobSchema.index({ workspace_id: 1, createdAt: -1 });
 jobSchema.index({ tenant_id: 1, idempotency_key: 1, createdAt: -1 });
+jobSchema.index({ tenant_id: 1, id: 1 });
 
 export const Job = mongoose.model("Job", jobSchema);

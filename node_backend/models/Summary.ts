@@ -16,5 +16,7 @@ const summarySchema = new mongoose.Schema({
 
 // Index for sorting summaries by date
 summarySchema.index({ updatedAt: -1 });
+summarySchema.index({ domain: 1, workspaceId: 1, updatedAt: -1 });
+summarySchema.index({ workspaceId: 1, documentId: 1, updatedAt: -1 });
 
 export const Summary = mongoose.model("Summary", summarySchema);

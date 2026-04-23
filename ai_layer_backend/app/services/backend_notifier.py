@@ -354,23 +354,26 @@ class BackendNotifier:
             logger.error("Failed to create summary", error=str(e), document_id=document_id)
             return False
     @staticmethod
-    def delete_document(document_id: str) -> bool:
+    def delete_document(document_id: str, workspace_id: str, domain_id: str) -> bool:
         """
         Request the backend to perform a hard delete of a document.
         Used for cleanup when ingestion fails fatally.
         """
-        if not document_id:
+        if not document_id or not workspace_id or not domain_id:
             return False
             
         url = f"{settings.NODE_BACKEND_URL}/api/documents/internal/{document_id}"
-        headers = {
-            "Content-Type": "application/json",
-            "X-Internal-Secret": settings.INTERNAL_SECRET
+        payload = {
+            "documentId": document_id,
+            "workspaceId": workspace_id,
+            "domainId": domain_id,
         }
+        signed = BackendNotifier._build_signed_request("DELETE", url, payload)
+        headers = signed["headers"]
         
         try:
             logger.info("Requesting internal document deletion for cleanup", document_id=document_id)
-            response = requests.delete(url, headers=headers, timeout=10)
+            response = requests.delete(url, data=signed["body"], headers=headers, timeout=10)
             response.raise_for_status()
             logger.info("Internal document deletion successful", document_id=document_id)
             return True

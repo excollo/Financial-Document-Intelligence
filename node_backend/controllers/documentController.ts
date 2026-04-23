@@ -12,12 +12,21 @@ import { Summary } from "../models/Summary";
 import { Report } from "../models/Report";
 import { Chat } from "../models/Chat";
 import { Job } from "../models/Job";
-import { emitToTenant, emitToWorkspace } from "../services/realtimeEmitter";
+import { emitToWorkspace } from "../services/realtimeEmitter";
 import { jobAdmissionService } from "../services/jobAdmissionService";
 import { metricsService } from "../services/metricsService";
 import { brokerQueueTelemetryService } from "../services/brokerQueueTelemetryService";
+import { cacheService } from "../services/cacheService";
+import { idempotencyLockService } from "../services/idempotencyLockService";
+import { applyCanonicalInternalJobStatusUpdate } from "../services/jobLifecycleService";
+import {
+  buildSignedInternalJsonRequest,
+  buildSignedInternalRawRequest,
+} from "../services/internalRequestSigning";
 import crypto from "crypto";
-const INTERNAL_SECRET = process.env.INTERNAL_SECRET || "";
+const MAX_VALIDATION_BUFFER_BYTES = Number(
+  process.env.MAX_VALIDATION_BUFFER_BYTES || 10 * 1024 * 1024
+);
 
 interface AuthRequest extends Request {
   user?: any;
@@ -44,6 +53,22 @@ export const documentController = {
   // Helper to generate a SAS URL for a file in Azure Blob Storage
   async getPresignedUrl(fileKey: string): Promise<string> {
     return await storageService.getPresignedUrl(fileKey, 60);
+  },
+
+  buildDocumentListCacheKey(req: AuthRequest, query: any) {
+    const currentWorkspace = req.currentWorkspace || "no-workspace";
+    const userKey = req.user?.microsoftId || req.user?._id?.toString() || "anon";
+    const queryPart = JSON.stringify(query || {});
+    const pagePart = JSON.stringify(req.query || {});
+    return `doc:list:${currentWorkspace}:${userKey}:${crypto
+      .createHash("sha256")
+      .update(`${queryPart}:${pagePart}`)
+      .digest("hex")}`;
+  },
+
+  async invalidateWorkspaceDocumentCaches(workspaceId?: string) {
+    if (!workspaceId) return;
+    await cacheService.delByPrefix(`doc:list:${workspaceId}:`);
   },
 
   // Helper to check if user has access to a directory
@@ -517,16 +542,20 @@ export const documentController = {
         ? Math.min(Math.max(pageSizeRaw, 0), 200)
         : 0;
 
-      // Keep backwards compatibility: if pageSize is not provided, return full array.
-      // When page/pageSize is provided, apply DB pagination for lower latency.
+      // Bound default responses for predictable latency under large datasets.
+      const effectivePageSize = pageSize > 0 ? pageSize : 50;
       const findQuery = Document.find(query)
         .sort({ uploadedAt: -1 })
         .select(
           "id name uploadedAt directoryId namespace rhpNamespace status type relatedDrhpId relatedRhpId domain domainId workspaceId microsoftId userId fileKey error"
         )
         .lean();
-      if (pageSize > 0) {
-        findQuery.skip((page - 1) * pageSize).limit(pageSize);
+      findQuery.skip((page - 1) * effectivePageSize).limit(effectivePageSize);
+
+      const cacheKey = documentController.buildDocumentListCacheKey(req, query);
+      const cached = await cacheService.getJson<any[]>(cacheKey);
+      if (cached) {
+        return res.json(cached);
       }
       const allDocuments = await findQuery;
 
@@ -593,6 +622,7 @@ export const documentController = {
       console.log(
         `[perf] documents.getAll completed in ${totalMs}ms (workspace=${currentWorkspace}, docs=${filteredDocuments.length})`
       );
+      await cacheService.setJson(cacheKey, filteredDocuments, 30);
       res.json(filteredDocuments);
     } catch (error) {
       const totalMs = Date.now() - requestStartedAt;
@@ -753,6 +783,7 @@ export const documentController = {
         title: `Document uploaded: ${document.name}`,
         notifyWorkspace: true,
       });
+      await documentController.invalidateWorkspaceDocumentCaches(currentWorkspace);
       res.status(201).json(document);
     } catch (error) {
       console.error("Error creating document:", error);
@@ -799,6 +830,7 @@ export const documentController = {
         );
       }
 
+      await documentController.invalidateWorkspaceDocumentCaches(currentWorkspace);
       res.json(document);
     } catch (error) {
       res.status(500).json({ error: "Failed to update document" });
@@ -956,14 +988,17 @@ export const documentController = {
 
         console.log(`Deleting vectors for ${document.namespace || document.name} from Python API`);
 
-        await axios.delete(`${baseUrl}/jobs/document`, {
+        const deleteUrl = `${baseUrl}/jobs/document`;
+        const signedDelete = buildSignedInternalRawRequest("DELETE", deleteUrl, "");
+        await axios.delete(deleteUrl, {
           params: {
             namespace: document.namespace || document.name,
-            doc_type: document.type
+            doc_type: document.type,
+            document_id: document.id,
+            workspace_id: document.workspaceId,
+            domain_id: document.domainId,
           },
-          headers: {
-            "X-Internal-Secret": INTERNAL_SECRET
-          },
+          headers: signedDelete.headers,
           timeout: 10000
         });
         console.log("Vectors deleted successfully");
@@ -983,6 +1018,7 @@ export const documentController = {
         notifyWorkspace: true,
       });
 
+      await documentController.invalidateWorkspaceDocumentCaches(currentWorkspace);
       res.json({ message: "Document and related artifacts deleted successfully" });
     } catch (error) {
       console.error("Error deleting document:", error);
@@ -1114,29 +1150,42 @@ export const documentController = {
       } else if (user?._id) {
         docData.userId = user._id.toString();
       }
-      const idempotencyKey = crypto
-        .createHash("sha256")
-        .update(`${userId}:${docData.id}:document_upload`)
-        .digest("hex");
-      const existingInFlightJob = await Job.findOne({
-        tenant_id: tenantId,
-        idempotency_key: idempotencyKey,
-        status: { $in: ["queued", "queued_with_delay", "processing"] },
-      })
-        .sort({ createdAt: -1 })
-        .lean();
-      if (existingInFlightJob) {
-        const existingDoc = await Document.findOne({ id: existingInFlightJob.id }).lean();
-        if (existingDoc) {
-          try {
-            await storageService.deleteFile(fileKey);
-          } catch {}
-          return res.status(200).json({
-            message: "Upload already in progress",
-            document: existingDoc,
-            idempotent: true,
-          });
+      const stableUploadIdentity = [
+        "document_upload",
+        tenantId,
+        workspaceId,
+        userId,
+        String(directoryId || ""),
+        String(documentType || "").toUpperCase(),
+        documentController.normalizeNamespace(originalname || ""),
+      ].join(":");
+      const idempotencyKey = crypto.createHash("sha256").update(stableUploadIdentity).digest("hex");
+      const idempotencyOwner = crypto.randomUUID();
+      const lock = await idempotencyLockService.acquire({
+        tenantId,
+        idempotencyKey,
+        ownerId: idempotencyOwner,
+      });
+      if (!lock.acquired) {
+        try {
+          await storageService.deleteFile(fileKey);
+        } catch {}
+        if (lock.existingJob) {
+          const existingDoc = await Document.findOne({ id: lock.existingJob.id }).lean();
+          if (existingDoc) {
+            return res.status(200).json({
+              message: "Upload already in progress",
+              document: existingDoc,
+              idempotent: true,
+            });
+          }
         }
+        return res.status(202).json({
+          message: "Upload request already in progress",
+          idempotent: true,
+          pending: true,
+          retry_after_seconds: lock.retryAfterSeconds,
+        });
       }
 
       // --- VALIDATION START ---
@@ -1145,54 +1194,64 @@ export const documentController = {
       let rejectionReason = "Document validation failed. Unable to verify document content.";
 
       try {
-        const buffer = await storageService.downloadFile(fileKey);
+        const fileSize = await storageService.getFileSize(fileKey);
+        if (fileSize > MAX_VALIDATION_BUFFER_BYTES) {
+          // Prevent loading large files fully into memory during MIME/content validation.
+          console.warn(
+            `⚠️ Skipping deep PDF validation for large file (${fileSize} bytes > ${MAX_VALIDATION_BUFFER_BYTES} bytes)`
+          );
+          isContentValid = true;
+          docData.type = documentType;
+        } else {
+          const buffer = await storageService.downloadFile(fileKey);
 
-        // Parse PDF
-        // @ts-ignore
-        let pdfParse;
-        try {
-          pdfParse = require("pdf-parse");
-          if (typeof pdfParse !== 'function' && pdfParse.default) pdfParse = pdfParse.default;
-        } catch (e) {
-          console.error("Failed to require pdf-parse:", e);
-        }
-
-        if (typeof pdfParse === 'function') {
-          const data = await pdfParse(buffer, { max: 1 });
-          const normalizedText = (data.text || "").toLowerCase();
-
-          let detectedType: string | null = null;
-          if (normalizedText.includes("draft red herring prospectus")) {
-            detectedType = "DRHP";
-          } else if (normalizedText.includes("red herring prospectus")) {
-            // If strictly red herring and NOT draft
-            if (!normalizedText.includes("draft red herring prospectus")) {
-              detectedType = "RHP";
-            }
+          // Parse PDF
+          // @ts-ignore
+          let pdfParse;
+          try {
+            pdfParse = require("pdf-parse");
+            if (typeof pdfParse !== 'function' && pdfParse.default) pdfParse = pdfParse.default;
+          } catch (e) {
+            console.error("Failed to require pdf-parse:", e);
           }
 
-          if (!detectedType) {
-            // Invalid document
-            console.warn(`❌ Invalid document content. Rejecting.`);
-            const targetType = req.body.type || "DRHP";
-            rejectionReason = `Invalid ${targetType} document.`;
-            isContentValid = false;
-          } else {
-            // Strict validation: Content must match requested type
-            if (req.body.type && req.body.type !== detectedType) {
-              console.warn(`❌ Type mismatch. Requested: ${req.body.type}, Detected: ${detectedType}`);
-              rejectionReason = `Document type mismatch. You are trying to upload a ${detectedType} as ${req.body.type}. Please upload the correct document.`;
+          if (typeof pdfParse === 'function') {
+            const data = await pdfParse(buffer, { max: 1 });
+            const normalizedText = (data.text || "").toLowerCase();
+
+            let detectedType: string | null = null;
+            if (normalizedText.includes("draft red herring prospectus")) {
+              detectedType = "DRHP";
+            } else if (normalizedText.includes("red herring prospectus")) {
+              // If strictly red herring and NOT draft
+              if (!normalizedText.includes("draft red herring prospectus")) {
+                detectedType = "RHP";
+              }
+            }
+
+            if (!detectedType) {
+              // Invalid document
+              console.warn(`❌ Invalid document content. Rejecting.`);
+              const targetType = req.body.type || "DRHP";
+              rejectionReason = `Invalid ${targetType} document.`;
               isContentValid = false;
             } else {
-              // Apply detected type
-              documentType = detectedType;
-              docData.type = documentType;
-              isContentValid = true;
-              console.log(`✅ Document identified as ${documentType}`);
+              // Strict validation: Content must match requested type
+              if (req.body.type && req.body.type !== detectedType) {
+                console.warn(`❌ Type mismatch. Requested: ${req.body.type}, Detected: ${detectedType}`);
+                rejectionReason = `Document type mismatch. You are trying to upload a ${detectedType} as ${req.body.type}. Please upload the correct document.`;
+                isContentValid = false;
+              } else {
+                // Apply detected type
+                documentType = detectedType;
+                docData.type = documentType;
+                isContentValid = true;
+                console.log(`✅ Document identified as ${documentType}`);
+              }
             }
+          } else {
+            rejectionReason = "Server configuration error: PDF parser not available.";
           }
-        } else {
-          rejectionReason = "Server configuration error: PDF parser not available.";
         }
       } catch (valError: any) {
         console.error("Validation error:", valError);
@@ -1229,6 +1288,12 @@ export const documentController = {
         queued_with_delay: admission.status === "queued_with_delay",
         idempotency_key: idempotencyKey,
         trace_id: document.id,
+      });
+      await idempotencyLockService.bindJob({
+        tenantId,
+        idempotencyKey,
+        ownerId: idempotencyOwner,
+        jobId: String(document.id),
       });
 
       // NEW: Update directory statistics (use the actual directory ID that was used)
@@ -1268,7 +1333,8 @@ export const documentController = {
 
         console.log(`Sending document to Python API: ${pythonApiUrl}/jobs/document`); // Fixed URL space
 
-        const pythonResponse = await axios.post(`${pythonApiUrl}/jobs/document`, { // Fixed URL space
+        const dispatchUrl = `${pythonApiUrl}/jobs/document`;
+        const dispatchPayload = { // Fixed URL space
           file_url: fileUrl,
           file_type: "pdf",
           metadata: {
@@ -1283,11 +1349,12 @@ export const documentController = {
             trace_id: document.id,
             queue_name: queueName,
           }
-        }, {
-          headers: {
-            "X-Internal-Secret": INTERNAL_SECRET,
-            "X-Trace-Id": document.id,
-          },
+        };
+        const signed = buildSignedInternalJsonRequest("POST", dispatchUrl, dispatchPayload, {
+          "X-Trace-Id": document.id,
+        });
+        const pythonResponse = await axios.post(dispatchUrl, signed.data, {
+          headers: signed.headers,
           timeout: 300000 // 5 minute timeout to accommodate large PDF processing
         });
 
@@ -1345,6 +1412,7 @@ export const documentController = {
         });
       }
 
+      await documentController.invalidateWorkspaceDocumentCaches(workspaceId);
       res.status(201).json({ message: "File uploaded successfully", document });
     } catch (error) {
       console.error("Error uploading document:", error);
@@ -1538,12 +1606,28 @@ export const documentController = {
             newStatus = "processing";
           }
 
-          // Always update if status is "completed" (force update even if already completed)
+          // Do not mutate document status until canonical lifecycle accepts the callback.
           const oldStatus = document.status;
           const shouldUpdate = oldStatus !== newStatus || (newStatus === "completed" && oldStatus === "processing");
+          const jobStatus =
+            newStatus === "completed" ? "completed" : newStatus === "failed" ? "failed" : "processing";
+          const lifecycle = await applyCanonicalInternalJobStatusUpdate({
+            job_id: document.id,
+            tenant_id: String(document.domainId),
+            status: jobStatus,
+            current_stage: "document_callback",
+            error_message: jobStatus === "failed" && error
+              ? (typeof error === "string" ? error : JSON.stringify(error))
+              : undefined,
+          });
+          if (lifecycle.statusCode !== 200) {
+            return res.status(lifecycle.statusCode).json(lifecycle.body);
+          }
+          if (!lifecycle.changed) {
+            return res.status(lifecycle.statusCode).json(lifecycle.body);
+          }
 
           if (shouldUpdate) {
-            // Update using both methods to ensure persistence
             document.status = newStatus;
             if (error) {
               document.error = error;
@@ -1561,40 +1645,11 @@ export const documentController = {
           } else {
             console.log(`ℹ️ Document ${document.id} (type: ${document.type}) status unchanged: "${oldStatus}"`);
           }
-          const jobStatus =
-            newStatus === "completed"
-              ? "completed"
-              : newStatus === "failed"
-              ? "failed"
-              : "processing";
-          await Job.updateOne(
-            { id: document.id, tenant_id: String(document.domainId) },
-            {
-              $set: {
-                status: jobStatus,
-                current_stage: "document_callback",
-                ...(jobStatus === "completed" || jobStatus === "failed"
-                  ? { completed_at: new Date() }
-                  : {}),
-                ...(jobStatus === "failed" && error
-                  ? {
-                      error_message:
-                        typeof error === "string" ? error : JSON.stringify(error),
-                      error_reason:
-                        typeof error === "string" ? error : JSON.stringify(error),
-                    }
-                  : {}),
-              },
-            }
-          );
 
           const actualJobId = document.id;
           const payload = { jobId: actualJobId, status: newStatus, error };
           try {
-            await Promise.all([
-              emitToWorkspace(document.workspaceId, "upload_status", payload),
-              emitToTenant(document.domainId, "upload_status", payload),
-            ]);
+            await emitToWorkspace(document.workspaceId, "upload_status", payload);
           } catch (emitError: any) {
             console.error("uploadStatusUpdate emit failure", {
               jobId: actualJobId,
@@ -1610,6 +1665,7 @@ export const documentController = {
             });
           }
 
+          await documentController.invalidateWorkspaceDocumentCaches(document.workspaceId);
           res.status(200).json({
             message: "Upload status update processed",
             jobId: actualJobId,
@@ -1740,29 +1796,41 @@ export const documentController = {
       } else if (user?._id) {
         rhpDocData.userId = user._id.toString();
       }
-      const idempotencyKey = crypto
-        .createHash("sha256")
-        .update(`${userId}:${rhpDocData.id}:document_upload`)
-        .digest("hex");
-      const existingInFlightJob = await Job.findOne({
-        tenant_id: tenantId,
-        idempotency_key: idempotencyKey,
-        status: { $in: ["queued", "queued_with_delay", "processing"] },
-      })
-        .sort({ createdAt: -1 })
-        .lean();
-      if (existingInFlightJob) {
-        const existingDoc = await Document.findOne({ id: existingInFlightJob.id }).lean();
-        if (existingDoc) {
-          try {
-            await storageService.deleteFile(fileKey);
-          } catch {}
-          return res.status(200).json({
-            message: "Upload already in progress",
-            document: existingDoc,
-            idempotent: true,
-          });
+      const stableUploadIdentity = [
+        "rhp_upload",
+        tenantId,
+        workspaceId,
+        userId,
+        String(drhp.id),
+        documentController.normalizeNamespace(req.file.originalname || ""),
+      ].join(":");
+      const idempotencyKey = crypto.createHash("sha256").update(stableUploadIdentity).digest("hex");
+      const idempotencyOwner = crypto.randomUUID();
+      const lock = await idempotencyLockService.acquire({
+        tenantId,
+        idempotencyKey,
+        ownerId: idempotencyOwner,
+      });
+      if (!lock.acquired) {
+        try {
+          await storageService.deleteFile(fileKey);
+        } catch {}
+        if (lock.existingJob) {
+          const existingDoc = await Document.findOne({ id: lock.existingJob.id }).lean();
+          if (existingDoc) {
+            return res.status(200).json({
+              message: "Upload already in progress",
+              document: existingDoc,
+              idempotent: true,
+            });
+          }
         }
+        return res.status(202).json({
+          message: "Upload request already in progress",
+          idempotent: true,
+          pending: true,
+          retry_after_seconds: lock.retryAfterSeconds,
+        });
       }
 
       // --- VALIDATION START FOR RHP ---
@@ -1770,33 +1838,42 @@ export const documentController = {
       let rejectionReason = "Document validation failed. Unable to verify document content.";
 
       try {
-        const buffer = await storageService.downloadFile(fileKey);
-
-        // Parse PDF
-        // @ts-ignore
-        let pdfParse;
-        try {
-          pdfParse = require("pdf-parse");
-          if (typeof pdfParse !== 'function' && pdfParse.default) pdfParse = pdfParse.default;
-        } catch (e) {
-          console.error("Failed to require pdf-parse:", e);
-        }
-
-        if (typeof pdfParse === 'function') {
-          const data = await pdfParse(buffer, { max: 1 });
-          const normalizedText = (data.text || "").toLowerCase();
-
-          // Strict RHP check: Must contain "red herring prospectus" and NOT "draft"
-          if (!normalizedText.includes("red herring prospectus") || normalizedText.includes("draft red herring prospectus")) {
-            console.warn(`❌ Invalid RHP content. Rejecting.`);
-            rejectionReason = "Invalid RHP document.";
-            isContentValid = false;
-          } else {
-            isContentValid = true;
-            console.log(`✅ RHP Document content validated.`);
-          }
+        const fileSize = await storageService.getFileSize(fileKey);
+        if (fileSize > MAX_VALIDATION_BUFFER_BYTES) {
+          // Prevent large-file buffering for upload-time validation checks.
+          console.warn(
+            `⚠️ Skipping deep RHP validation for large file (${fileSize} bytes > ${MAX_VALIDATION_BUFFER_BYTES} bytes)`
+          );
+          isContentValid = true;
         } else {
-          rejectionReason = "Server configuration error: PDF parser not available.";
+          const buffer = await storageService.downloadFile(fileKey);
+
+          // Parse PDF
+          // @ts-ignore
+          let pdfParse;
+          try {
+            pdfParse = require("pdf-parse");
+            if (typeof pdfParse !== 'function' && pdfParse.default) pdfParse = pdfParse.default;
+          } catch (e) {
+            console.error("Failed to require pdf-parse:", e);
+          }
+
+          if (typeof pdfParse === 'function') {
+            const data = await pdfParse(buffer, { max: 1 });
+            const normalizedText = (data.text || "").toLowerCase();
+
+            // Strict RHP check: Must contain "red herring prospectus" and NOT "draft"
+            if (!normalizedText.includes("red herring prospectus") || normalizedText.includes("draft red herring prospectus")) {
+              console.warn(`❌ Invalid RHP content. Rejecting.`);
+              rejectionReason = "Invalid RHP document.";
+              isContentValid = false;
+            } else {
+              isContentValid = true;
+              console.log(`✅ RHP Document content validated.`);
+            }
+          } else {
+            rejectionReason = "Server configuration error: PDF parser not available.";
+          }
         }
       } catch (valError: any) {
         console.error("Validation error in uploadRhp:", valError);
@@ -1831,6 +1908,12 @@ export const documentController = {
         idempotency_key: idempotencyKey,
         trace_id: rhpDoc.id,
       });
+      await idempotencyLockService.bindJob({
+        tenantId,
+        idempotencyKey,
+        ownerId: idempotencyOwner,
+        jobId: String(rhpDoc.id),
+      });
 
       drhp.relatedRhpId = rhpDoc.id;
       await drhp.save();
@@ -1844,7 +1927,8 @@ export const documentController = {
 
         console.log(`Sending RHP document to Python API: ${pythonApiUrl}/jobs/document`);
 
-        const pythonResponse = await axios.post(`${pythonApiUrl}/jobs/document`, {
+        const rhpDispatchUrl = `${pythonApiUrl}/jobs/document`;
+        const rhpDispatchPayload = {
           file_url: fileUrl,
           file_type: "pdf",
           metadata: {
@@ -1864,15 +1948,16 @@ export const documentController = {
             trace_id: rhpDoc.id,
             queue_name: queueName
           }
-        }, {
-          headers: {
-            "X-Internal-Secret": INTERNAL_SECRET,
-            "X-Trace-Id": rhpDoc.id,
-          },
+        };
+        const signed = buildSignedInternalJsonRequest("POST", rhpDispatchUrl, rhpDispatchPayload, {
+          "X-Trace-Id": rhpDoc.id,
+        });
+        const pythonResponse = await axios.post(rhpDispatchUrl, signed.data, {
+          headers: signed.headers,
           timeout: 300000 // 5 minute timeout for PDF ingestion
         });
 
-        if (pythonResponse.data && pythonResponse.data.status === "success") {
+        if (pythonResponse.data && (pythonResponse.data.status === "success" || pythonResponse.data.status === "accepted")) {
           console.log(`✅ RHP Document ${rhpDoc.id} successfully sent to Python API`);
           await Job.updateOne(
             { id: rhpDoc.id, tenant_id: tenantId },
@@ -1887,7 +1972,7 @@ export const documentController = {
           );
           await metricsService.emitQueueMetrics(tenantId, queueName);
           await brokerQueueTelemetryService.emitBrokerQueueMetrics();
-          if (pythonResponse.data.details?.success) {
+          if (pythonResponse.data.status === "success" && pythonResponse.data.details?.success) {
             rhpDoc.status = "completed";
             await rhpDoc.save();
             finalStatus = "completed";
@@ -1931,9 +2016,22 @@ export const documentController = {
       // Emit upload status (use the actual status from n8n or default to processing)
       const jobId = rhpDoc.id;
       const uploadPayload = { jobId, status: finalStatus };
-      emitToWorkspace(rhpDoc.workspaceId, "upload_status", uploadPayload);
-      emitToTenant(rhpDoc.domainId, "upload_status", uploadPayload);
+      try {
+        await emitToWorkspace(rhpDoc.workspaceId, "upload_status", uploadPayload);
+      } catch (emitError) {
+        console.error("Failed to emit RHP upload status realtime event", emitError);
+        metricsService.emit("realtime_emit_failure", 1, {
+          flow: "upload_rhp",
+          workspace_id: String(rhpDoc.workspaceId || ""),
+          event: "upload_status",
+        });
+        return res.status(502).json({
+          error: "RHP uploaded but realtime notification failed",
+          code: "REALTIME_EMIT_FAILED",
+        });
+      }
 
+      await documentController.invalidateWorkspaceDocumentCaches(workspaceId);
       res
         .status(201)
         .json({ message: "RHP uploaded and linked", document: rhpDoc });
@@ -2209,9 +2307,45 @@ export const documentController = {
   async deleteInternal(req: Request, res: Response) {
     try {
       const { id } = req.params;
-      const document = await Document.findOne({ id });
+      const { documentId, workspaceId, domainId } = req.body || {};
+      if (!documentId || !workspaceId || !domainId) {
+        return res.status(400).json({
+          error: "documentId, workspaceId, and domainId are required",
+          code: "INVALID_DELETE_SCOPE_BODY",
+        });
+      }
+      if (String(documentId) !== String(id)) {
+        return res.status(409).json({
+          error: "Path/body document id mismatch",
+          code: "DOCUMENT_ID_MISMATCH",
+        });
+      }
+
+      const document = await Document.findOne({
+        id: String(documentId),
+        workspaceId: String(workspaceId),
+        domainId: String(domainId),
+      });
       if (!document) {
         return res.status(404).json({ error: "Document not found" });
+      }
+      if (String(document.id) !== String(documentId)) {
+        return res.status(409).json({
+          error: "Document identifier mismatch",
+          code: "DOCUMENT_ID_MISMATCH",
+        });
+      }
+      if (String(document.workspaceId) !== String(workspaceId)) {
+        return res.status(409).json({
+          error: "Workspace scope mismatch",
+          code: "WORKSPACE_SCOPE_MISMATCH",
+        });
+      }
+      if (String(document.domainId) !== String(domainId)) {
+        return res.status(409).json({
+          error: "Tenant/domain scope mismatch",
+          code: "TENANT_SCOPE_MISMATCH",
+        });
       }
 
       console.log(`🗑️ Internal request to delete document: ${document.id} (${document.name})`);
@@ -2226,21 +2360,26 @@ export const documentController = {
       }
 
       // 2. Cascade delete associated data
-      await Summary.deleteMany({ documentId: document.id });
-      await Chat.deleteMany({ documentId: document.id });
+      const scopedFilter = {
+        workspaceId: document.workspaceId,
+        domainId: document.domainId,
+      };
+      await Summary.deleteMany({ documentId: document.id, ...scopedFilter });
+      await Chat.deleteMany({ documentId: document.id, ...scopedFilter });
       
       // Delete reports that reference this document
       await Report.deleteMany({
+        ...scopedFilter,
         $or: [
           { drhpId: document.id },
           { rhpId: document.id },
           { drhpNamespace: document.namespace },
-          { rhpNamespace: document.namespace }
-        ]
+          { rhpNamespace: document.namespace },
+        ],
       });
 
       // 3. Delete the document itself
-      await Document.deleteOne({ id: document.id });
+      await Document.deleteOne({ id: document.id, ...scopedFilter });
 
       // 4. Emit socket event for frontend removal
       const deletePayload = {
@@ -2248,10 +2387,23 @@ export const documentController = {
         status: "deleted",
         error: "Ingestion failed, cleaning up.",
       };
-      emitToWorkspace(document.workspaceId, "upload_status", deletePayload);
-      emitToTenant(document.domainId, "upload_status", deletePayload);
+      try {
+        await emitToWorkspace(document.workspaceId, "upload_status", deletePayload);
+      } catch (emitError) {
+        console.error("Failed to emit internal delete realtime event", emitError);
+        metricsService.emit("realtime_emit_failure", 1, {
+          flow: "document_internal_delete",
+          workspace_id: String(document.workspaceId || ""),
+          event: "upload_status",
+        });
+        return res.status(502).json({
+          error: "Document deleted but realtime notification failed",
+          code: "REALTIME_EMIT_FAILED",
+        });
+      }
 
       console.log(`✅ Successfully deleted document ${document.id} via internal request.`);
+      await documentController.invalidateWorkspaceDocumentCaches(document.workspaceId);
       res.status(200).json({ message: "Document deleted successfully" });
     } catch (error) {
       console.error("Error in internal deleteInternal:", error);

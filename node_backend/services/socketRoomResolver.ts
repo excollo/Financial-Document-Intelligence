@@ -9,9 +9,6 @@ export async function resolveAuthorizedWorkspaceIds(userId: string, currentWorks
     .lean();
 
   const workspaceIds = new Set<string>(memberships.map((m: any) => String(m.workspaceId)));
-  if (currentWorkspace) {
-    workspaceIds.add(String(currentWorkspace));
-  }
   return Array.from(workspaceIds);
 }
 

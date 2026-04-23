@@ -5,12 +5,15 @@ import axios from "axios";
 import { publishEvent } from "../lib/events";
 import { generateDocxBuffer } from "../services/docxService";
 import { v4 as uuidv4 } from "uuid";
-import { emitToTenant, emitToWorkspace } from "../services/realtimeEmitter";
+import { emitToWorkspace } from "../services/realtimeEmitter";
 import { Job } from "../models/Job";
 import crypto from "crypto";
 import { jobAdmissionService } from "../services/jobAdmissionService";
 import { metricsService } from "../services/metricsService";
 import { brokerQueueTelemetryService } from "../services/brokerQueueTelemetryService";
+import { idempotencyLockService } from "../services/idempotencyLockService";
+import { applyCanonicalInternalJobStatusUpdate } from "../services/jobLifecycleService";
+import { buildSignedInternalJsonRequest } from "../services/internalRequestSigning";
 
 interface AuthRequest extends Request {
   user?: any;
@@ -18,7 +21,13 @@ interface AuthRequest extends Request {
   currentWorkspace?: string;
 }
 
-const INTERNAL_SECRET = process.env.INTERNAL_SECRET || "";
+const parsePagination = (query: any) => {
+  const limitRaw = Number(query?.limit ?? query?.pageSize ?? 50);
+  const offsetRaw = Number(query?.offset ?? ((Number(query?.page || 1) - 1) * limitRaw));
+  const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 200) : 50;
+  const offset = Number.isFinite(offsetRaw) ? Math.max(offsetRaw, 0) : 0;
+  return { limit, offset };
+};
 
 export const reportController = {
   async compareDocuments(req: AuthRequest, res: Response) {
@@ -59,6 +68,7 @@ export const reportController = {
         .createHash("sha256")
         .update(`${userId}:${drhpId}:${rhpId}:comparison`)
         .digest("hex");
+      const idempotencyOwner = crypto.randomUUID();
       const admission = await jobAdmissionService.check(tenantId, queueName);
       if (admission.telemetryStatus === "UNAVAILABLE") {
         metricsService.emit("telemetry_unavailable", 1, {
@@ -77,19 +87,27 @@ export const reportController = {
           code: admission.reason || "QUEUE_OVERLOADED",
         });
       }
-      const existing = await Job.findOne({
-        tenant_id: tenantId,
-        idempotency_key: idempotencyKey,
-        status: { $in: ["queued", "queued_with_delay", "processing"] },
-      })
-        .sort({ createdAt: -1 })
-        .lean();
-      if (existing) {
-        return res.status(200).json({
-          status: existing.status,
-          job_id: existing.id,
-          message: "Comparison job already in progress",
+      const lock = await idempotencyLockService.acquire({
+        tenantId: String(tenantId),
+        idempotencyKey: idempotencyKey,
+        ownerId: idempotencyOwner,
+      });
+      if (!lock.acquired) {
+        if (lock.existingJob) {
+          return res.status(200).json({
+            status: lock.existingJob.status,
+            job_id: lock.existingJob.id,
+            message: "Comparison job already in progress",
+            idempotent: true,
+          });
+        }
+        return res.status(202).json({
+          status: "queued",
+          job_id: null,
+          message: "Comparison request already in progress",
           idempotent: true,
+          pending: true,
+          retry_after_seconds: lock.retryAfterSeconds,
         });
       }
 
@@ -131,12 +149,19 @@ export const reportController = {
         queue_name: queueName,
         queued_with_delay: admission.status === "queued_with_delay",
       });
+      await idempotencyLockService.bindJob({
+        tenantId: String(tenantId),
+        idempotencyKey: idempotencyKey,
+        ownerId: idempotencyOwner,
+        jobId: String(payload.job_id),
+      });
 
-      const pythonResponse = await axios.post(`${pythonApiUrl}/jobs/comparison`, payload, {
-        headers: {
-          "X-Internal-Secret": INTERNAL_SECRET,
-          "X-Trace-Id": payload.job_id,
-        },
+      const comparisonUrl = `${pythonApiUrl}/jobs/comparison`;
+      const signed = buildSignedInternalJsonRequest("POST", comparisonUrl, payload, {
+        "X-Trace-Id": payload.job_id,
+      });
+      const pythonResponse = await axios.post(comparisonUrl, signed.data, {
+        headers: signed.headers,
         timeout: 30000
       });
 
@@ -290,36 +315,51 @@ export const reportController = {
             workspaceId: currentWorkspace,
           });
 
-          for (const sharedDir of sharedDirs) {
-            if (sharedDir.sharedFromDirectoryId) {
-              const originalDir = await Directory.findOne({
-                id: sharedDir.sharedFromDirectoryId,
-                domain: sharedDir.sharedFromDomain,
-                workspaceId: sharedDir.sharedFromWorkspaceId,
-              });
-              if (originalDir) {
-                const originalDocs = await Document.find({
-                  directoryId: originalDir.id,
-                  domain: originalDir.domain,
-                  workspaceId: originalDir.workspaceId,
-                });
-                sharedDocumentIds.push(...originalDocs.map(doc => doc.id));
-                sharedDocumentNamespaces.push(...originalDocs.map(doc => doc.namespace));
-              }
+          const sharedOrigins = sharedDirs
+            .filter(
+              (dir: any) =>
+                !!dir.sharedFromDirectoryId && !!dir.sharedFromDomain && !!dir.sharedFromWorkspaceId
+            )
+            .map((dir: any) => ({
+              id: dir.sharedFromDirectoryId,
+              domain: dir.sharedFromDomain,
+              workspaceId: dir.sharedFromWorkspaceId,
+            }));
+          if (sharedOrigins.length > 0) {
+            const originalDirectories = await Directory.find({
+              $or: sharedOrigins.map((origin) => ({
+                id: origin.id,
+                domain: origin.domain,
+                workspaceId: origin.workspaceId,
+              })),
+            }).select("id domain workspaceId");
+            const originalScope = originalDirectories.map((dir: any) => ({
+              directoryId: dir.id,
+              domain: dir.domain,
+              workspaceId: dir.workspaceId,
+            }));
+            if (originalScope.length > 0) {
+              const originalDocs = await Document.find({ $or: originalScope }).select("id namespace");
+              sharedDocumentIds.push(...originalDocs.map((doc: any) => doc.id));
+              sharedDocumentNamespaces.push(...originalDocs.map((doc: any) => doc.namespace));
             }
           }
+          const uniqueSharedDocumentIds = Array.from(new Set(sharedDocumentIds));
+          const uniqueSharedNamespaces = Array.from(
+            new Set(sharedDocumentNamespaces.filter((ns: any) => !!ns))
+          );
 
           // Include reports for shared documents
-          if (sharedDocumentIds.length > 0 || sharedDocumentNamespaces.length > 0) {
+          if (uniqueSharedDocumentIds.length > 0 || uniqueSharedNamespaces.length > 0) {
             const sharedReportsQuery: any[] = [
-              { drhpId: { $in: sharedDocumentIds } },
-              { rhpId: { $in: sharedDocumentIds } },
+              { drhpId: { $in: uniqueSharedDocumentIds } },
+              { rhpId: { $in: uniqueSharedDocumentIds } },
             ];
 
-            if (sharedDocumentNamespaces.length > 0) {
+            if (uniqueSharedNamespaces.length > 0) {
               sharedReportsQuery.push(
-                { drhpNamespace: { $in: sharedDocumentNamespaces } },
-                { rhpNamespace: { $in: sharedDocumentNamespaces } }
+                { drhpNamespace: { $in: uniqueSharedNamespaces } },
+                { rhpNamespace: { $in: uniqueSharedNamespaces } }
               );
             }
 
@@ -339,14 +379,15 @@ export const reportController = {
       // Visibility: All members of the workspace can see all reports in that workspace.
       // Do not further restrict by userId/microsoftId for reads.
 
-    const rawReports = await Report.find(query).lean();
-      console.log(`Found ${rawReports.length} reports`);
-      
-      const reports = rawReports.sort((a: any, b: any) => {
-        const timeA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
-        const timeB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
-        return timeB - timeA;
-      });
+      const { limit, offset } = parsePagination(req.query);
+      const reports = await Report.find(query)
+        .sort({ updatedAt: -1 })
+        .skip(offset)
+        .limit(limit)
+        .select(
+          "id title updatedAt drhpId rhpId drhpNamespace rhpNamespace domain domainId workspaceId microsoftId userId"
+        )
+        .lean();
       res.json(reports);
     } catch (error: any) {
       console.error("Error fetching reports:", error);
@@ -444,16 +485,8 @@ export const reportController = {
         });
       }
 
-      // Ensure one report per DRHP/RHP pair in the workspace: replace previous if exists
-      await Report.deleteMany({
-        domain: actualDomain,
-        workspaceId: currentWorkspace,
-        drhpNamespace,
-        rhpNamespace,
-      });
-
       const reportData: any = {
-        id: Date.now().toString(),
+        id: uuidv4(),
         title,
         content,
         drhpId,
@@ -476,8 +509,24 @@ export const reportController = {
       }
 
 
-      const report = new Report(reportData);
-      await report.save();
+      const report = await Report.findOneAndUpdate(
+        {
+          domainId,
+          workspaceId: currentWorkspace,
+          drhpNamespace,
+          rhpNamespace,
+        },
+        {
+          $set: reportData,
+          $setOnInsert: { id: reportData.id },
+        },
+        {
+          new: true,
+          upsert: true,
+          runValidators: true,
+          setDefaultsOnInsert: true,
+        }
+      );
 
       // Update directory's updatedAt when report is created
       if (drhpId) {
@@ -565,25 +614,24 @@ export const reportController = {
         return res.status(409).json({ message: "Tenant mismatch for callback" });
       }
 
-      await Job.updateOne(
-        { id: jobId },
-        {
-          $set: {
-            status: mappedStatus,
-            current_stage: "comparison_callback",
-            ...(mappedStatus === "completed" || mappedStatus === "completed_with_errors"
-              ? { completed_at: new Date() }
-              : {}),
-          },
-        }
-      );
+      const lifecycle = await applyCanonicalInternalJobStatusUpdate({
+        job_id: jobId,
+        tenant_id: String(job.tenant_id),
+        status: mappedStatus,
+        current_stage: "comparison_callback",
+        error_message: typeof error === "string" ? error : error?.message,
+      });
+      if (lifecycle.statusCode !== 200) {
+        return res.status(lifecycle.statusCode).json(lifecycle.body);
+      }
+      if (!lifecycle.changed) {
+        return res.status(lifecycle.statusCode).json(lifecycle.body);
+      }
+      const canonicalJob = lifecycle.job;
 
-      const eventData = { jobId, status: mappedStatus, error };
+      const eventData = { jobId, status: canonicalJob?.status || mappedStatus, error };
       try {
-        await Promise.all([
-          emitToWorkspace(job.workspace_id, "compare_status", eventData),
-          emitToTenant(job.tenant_id, "compare_status", eventData),
-        ]);
+        await emitToWorkspace(job.workspace_id, "compare_status", eventData);
       } catch (emitError: any) {
         console.error("reportStatusUpdate emit failure", {
           jobId,
@@ -825,21 +873,28 @@ export const reportController = {
         domain: req.user?.domain || req.userDomain, // Use user's actual domain for admin
       };
 
-      const rawReports = await Report.find(query);
-      const reports = rawReports.sort((a: any, b: any) => {
-        const timeA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
-        const timeB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
-        return timeB - timeA;
-      });
+      const { limit, offset } = parsePagination(req.query);
+      const reports = await Report.find(query)
+        .sort({ updatedAt: -1 })
+        .skip(offset)
+        .limit(limit)
+        .select(
+          "id title updatedAt drhpId rhpId drhpNamespace rhpNamespace domain domainId workspaceId microsoftId userId"
+        )
+        .lean();
 
       // Get all workspaces to map workspaceId to workspace name
       const { Workspace } = await import("../models/Workspace");
-      const workspaces = await Workspace.find({ domain: req.user?.domain || req.userDomain });
+      const workspaceIds = Array.from(new Set(reports.map((r: any) => r.workspaceId).filter(Boolean)));
+      const workspaces = await Workspace.find({
+        domain: req.user?.domain || req.userDomain,
+        workspaceId: { $in: workspaceIds },
+      }).select("workspaceId name slug").lean();
       const workspaceMap = new Map(workspaces.map(ws => [ws.workspaceId, { workspaceId: ws.workspaceId, name: ws.name, slug: ws.slug }]));
 
       // Add workspace information to each report
       const reportsWithWorkspace = reports.map(report => {
-        const reportObj = report.toObject ? report.toObject() : report;
+        const reportObj: any = report;
         const wsData = workspaceMap.get(reportObj.workspaceId);
         
         return {

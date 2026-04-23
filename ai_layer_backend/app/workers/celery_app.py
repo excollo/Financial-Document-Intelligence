@@ -5,7 +5,6 @@ Production-ready config with ENV fallback + debug logging.
 
 import os
 import time
-import ssl
 from typing import Optional
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 from celery import Celery
@@ -14,10 +13,10 @@ from celery.schedules import crontab
 from kombu import Queue
 
 from app.core.logging import get_logger
+from app.core.config import settings
+from app.workers.redis_tls import build_rediss_ssl_options
 
 logger = get_logger(__name__)
-
-from app.core.config import settings
 
 # Handle accidental "KEY=value" strings in env var values.
 def _strip_env_assignment_prefix(url: Optional[str]) -> Optional[str]:
@@ -44,13 +43,7 @@ def _normalize_rediss_url(url: Optional[str]) -> Optional[str]:
     query = parse_qs(parsed.query, keep_blank_values=True)
     if "ssl_cert_reqs" in query:
         return url
-
-    query["ssl_cert_reqs"] = ["CERT_NONE"]
-    normalized = urlunparse(parsed._replace(query=urlencode(query, doseq=True)))
-    logger.warning(
-        "REDIS_URL is rediss without ssl_cert_reqs; appending ssl_cert_reqs=CERT_NONE for Celery compatibility"
-    )
-    return normalized
+    return urlunparse(parsed._replace(query=urlencode(query, doseq=True)))
 
 
 _raw_broker = (settings.CELERY_BROKER_URL or "").strip() or os.getenv("CELERY_BROKER_URL") or os.getenv("REDIS_URL")
@@ -134,6 +127,20 @@ celery_app.conf.update(
     },
 )
 
+_broker_ssl_options = build_rediss_ssl_options(
+    url=BROKER_URL,
+    is_production=settings.is_production,
+    ca_bundle_path=settings.REDIS_TLS_CA_BUNDLE,
+)
+if _broker_ssl_options:
+    celery_app.conf.broker_use_ssl = _broker_ssl_options
+_backend_ssl_options = build_rediss_ssl_options(
+    url=RESULT_BACKEND,
+    is_production=settings.is_production,
+    ca_bundle_path=settings.REDIS_TLS_CA_BUNDLE,
+)
+if _backend_ssl_options:
+    celery_app.conf.redis_backend_use_ssl = _backend_ssl_options
 # ✅ Auto-discover tasks
 import app.workers.document_pipeline
 import app.workers.news_tasks

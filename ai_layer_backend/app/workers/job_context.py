@@ -22,12 +22,16 @@ class JobContext:
         self,
         job_id: str,
         tenant_id: str,
+        workspace_id: str,
+        domain_id: str,
         sop_config: Optional[Dict[str, Any]] = None,
         document_name: Optional[str] = None,
         s3_input_key: Optional[str] = None,
     ):
         self.job_id = job_id
         self.tenant_id = tenant_id
+        self.workspace_id = workspace_id
+        self.domain_id = domain_id
         self.sop_config = sop_config
         self.document_name = document_name
         self.s3_input_key = s3_input_key
@@ -107,6 +111,8 @@ class JobContext:
         await node_client.submit_section_result(
             job_id=self.job_id,
             tenant_id=self.tenant_id,
+            workspace_id=self.workspace_id,
+            domain_id=self.domain_id,
             section_id=section_id,
             status=status,
             markdown=markdown,
@@ -127,6 +133,8 @@ class JobContext:
         await node_client.submit_adverse_finding(
             job_id=self.job_id,
             tenant_id=self.tenant_id,
+            workspace_id=self.workspace_id,
+            domain_id=self.domain_id,
             **kwargs
         )
 

@@ -39,6 +39,7 @@ class PipelineOrchestrator:
         self.adverse_processor = AdverseFindingProcessor(context)
         self.docx_builder = DocxBuilder()
         self.excel_builder = ExcelBuilder()
+        self._extraction_checkpoint_metadata: Dict[str, Any] = {}
 
     async def run(self):
         """The main pipeline execution loop."""
@@ -144,7 +145,7 @@ class PipelineOrchestrator:
                 metadata["document_name"] = self.ctx.document_name
                 metadata["ingestion_fingerprint"] = self._ingestion_fingerprint()
             if stage_name == "extraction":
-                metadata["expected_section_count"] = len(self.ctx.sop_config.get("sections", []) if self.ctx.sop_config else [])
+                metadata.update(self._extraction_checkpoint_metadata or {})
             await checkpoint_store.mark_completed(self.ctx.job_id, stage_name, metadata=metadata)
             return result
         except Exception as exc:
@@ -178,12 +179,32 @@ class PipelineOrchestrator:
             db = mongodb.db
             if db is None:
                 return False
-            coll = db.get_collection("sectionresults")
-            expected = int(metadata.get("expected_section_count") or 0)
-            if expected <= 0:
+            if not self.ctx.sop_config or "sections" not in self.ctx.sop_config:
                 return False
-            count = await coll.count_documents({"job_id": self.ctx.job_id, "status": {"$in": ["completed", "skipped"]}})
-            return count >= expected
+            if not getattr(self, "pdf_sections", None):
+                return False
+            expected_ids = metadata.get("expected_section_ids") or []
+            expected_digest = metadata.get("section_identity_digest")
+            if not expected_ids or not expected_digest:
+                return False
+            section_mapping = SectionSegmenter.map_pdf_to_sop(self.pdf_sections, self.ctx.sop_config)
+            current_metadata = self._build_extraction_checkpoint_metadata(section_mapping, self.ctx.sop_config.get("sections", []))
+            if current_metadata.get("section_identity_digest") != expected_digest:
+                return False
+            if current_metadata.get("expected_section_ids") != expected_ids:
+                return False
+            coll = db.get_collection("sectionresults")
+            cursor = coll.find(
+                {
+                    "job_id": self.ctx.job_id,
+                    "status": {"$in": ["completed", "skipped"]},
+                    "section_id": {"$in": expected_ids},
+                },
+                {"section_id": 1},
+            )
+            docs = await cursor.to_list(length=max(len(expected_ids), 1) * 2)
+            persisted_ids = sorted({str(doc.get("section_id")) for doc in docs if doc.get("section_id")})
+            return persisted_ids == sorted([str(section_id) for section_id in expected_ids])
         if stage_name == "upload":
             docx_key = f"outputs/{self.ctx.job_id}/{self.ctx.job_id}.docx"
             excel_key = f"outputs/{self.ctx.job_id}/{self.ctx.job_id}.xlsx"
@@ -196,6 +217,24 @@ class PipelineOrchestrator:
     def _ingestion_fingerprint(self) -> str:
         payload = f"{self.ctx.job_id}:{self.ctx.s3_input_key or ''}:{self.ctx.document_name or ''}"
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    def _build_extraction_checkpoint_metadata(self, section_mapping: Dict[str, Any], sop_sections: List[Dict[str, Any]]) -> Dict[str, Any]:
+        expected_section_ids: List[str] = []
+        signature_parts: List[str] = []
+        for section in sop_sections:
+            sid = str(section.get("section_id") or "").strip()
+            if not sid:
+                continue
+            expected_section_ids.append(sid)
+            segment = section_mapping.get(sid) or {}
+            text = str(segment.get("text") or "")
+            signature_parts.append(f"{sid}:{hashlib.sha256(text.encode('utf-8')).hexdigest()}")
+        digest = hashlib.sha256("|".join(signature_parts).encode("utf-8")).hexdigest() if signature_parts else ""
+        return {
+            "expected_section_count": len(expected_section_ids),
+            "expected_section_ids": expected_section_ids,
+            "section_identity_digest": digest,
+        }
 
     async def _prepare_document(self):
         """Download document from Azure Blob Storage and perform initial text extraction."""
@@ -254,6 +293,7 @@ class PipelineOrchestrator:
         # 1. Map PDF segments to SOP sections
         logger.info("Mapping PDF segments to SOP sections", job_id=self.ctx.job_id)
         section_mapping = SectionSegmenter.map_pdf_to_sop(self.pdf_sections, self.ctx.sop_config)
+        self._extraction_checkpoint_metadata = self._build_extraction_checkpoint_metadata(section_mapping, sop_sections)
         chunking_ended = time.time()
         await self.ctx.update_status(
             stage_event={

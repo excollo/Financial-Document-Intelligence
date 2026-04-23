@@ -7,12 +7,15 @@ import path from "path";
 import { publishEvent } from "../lib/events";
 import { generateDocxBuffer } from "../services/docxService";
 import { v4 as uuidv4 } from "uuid";
-import { emitToTenant, emitToWorkspace } from "../services/realtimeEmitter";
+import { emitToWorkspace } from "../services/realtimeEmitter";
 import { Job } from "../models/Job";
 import crypto from "crypto";
 import { jobAdmissionService } from "../services/jobAdmissionService";
 import { metricsService } from "../services/metricsService";
 import { brokerQueueTelemetryService } from "../services/brokerQueueTelemetryService";
+import { idempotencyLockService } from "../services/idempotencyLockService";
+import { applyCanonicalInternalJobStatusUpdate } from "../services/jobLifecycleService";
+import { buildSignedInternalJsonRequest } from "../services/internalRequestSigning";
 
 interface AuthRequest extends Request {
   user?: any;
@@ -20,7 +23,15 @@ interface AuthRequest extends Request {
   currentWorkspace?: string;
 }
 
-const INTERNAL_SECRET = process.env.INTERNAL_SECRET || "";
+const parsePagination = (query: any) => {
+  const limitRaw = Number(query?.limit ?? query?.pageSize ?? 50);
+  const offsetRaw = Number(query?.offset ?? ((Number(query?.page || 1) - 1) * limitRaw));
+  const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 200) : 50;
+  const offset = Number.isFinite(offsetRaw) ? Math.max(offsetRaw, 0) : 0;
+  return { limit, offset };
+};
+
+const SUMMARY_TRIGGER_TIMEOUT_MS = Number(process.env.SUMMARY_TRIGGER_TIMEOUT_MS || 120000);
 
 export const summaryController = {
   async triggerSummary(req: AuthRequest, res: Response) {
@@ -55,6 +66,7 @@ export const summaryController = {
         .createHash("sha256")
         .update(`${userId}:${operationDocumentId}:summary`)
         .digest("hex");
+      const idempotencyOwner = crypto.randomUUID();
       const admission = await jobAdmissionService.check(tenantId, queueName);
       if (admission.telemetryStatus === "UNAVAILABLE") {
         metricsService.emit("telemetry_unavailable", 1, {
@@ -76,19 +88,27 @@ export const summaryController = {
           code: admission.reason || "QUEUE_OVERLOADED",
         });
       }
-      const existing = await Job.findOne({
-        tenant_id: tenantId,
-        idempotency_key: idempotencyKey,
-        status: { $in: ["queued", "queued_with_delay", "processing"] },
-      })
-        .sort({ createdAt: -1 })
-        .lean();
-      if (existing) {
-        return res.status(200).json({
-          status: existing.status,
-          job_id: existing.id,
-          message: "Summary generation job already in progress",
+      const lock = await idempotencyLockService.acquire({
+        tenantId: String(tenantId),
+        idempotencyKey: idempotencyKey,
+        ownerId: idempotencyOwner,
+      });
+      if (!lock.acquired) {
+        if (lock.existingJob) {
+          return res.status(200).json({
+            status: lock.existingJob.status,
+            job_id: lock.existingJob.id,
+            message: "Summary generation job already in progress",
+            idempotent: true,
+          });
+        }
+        return res.status(202).json({
+          status: "queued",
+          job_id: null,
+          message: "Summary request already in progress",
           idempotent: true,
+          pending: true,
+          retry_after_seconds: lock.retryAfterSeconds,
         });
       }
       const payload = {
@@ -124,17 +144,25 @@ export const summaryController = {
         queue_name: queueName,
         queued_with_delay: admission.status === "queued_with_delay",
       });
+      await idempotencyLockService.bindJob({
+        tenantId: String(tenantId),
+        idempotencyKey: idempotencyKey,
+        ownerId: idempotencyOwner,
+        jobId: String(payload.job_id),
+      });
 
       console.log(`[DEBUG] About to call Python API: ${pythonApiUrl}/jobs/summary`);
       console.log(`[DEBUG] Internal Secret Present: ${!!process.env.INTERNAL_SECRET}`);
       
-      const pythonResponse = await axios.post(`${pythonApiUrl}/jobs/summary`, payload, {
-        headers: {
-          "X-Internal-Secret": process.env.INTERNAL_SECRET,
-          "Content-Type": "application/json",
-          "X-Trace-Id": payload.job_id,
-        },
-        timeout: 30000
+      const summaryUrl = `${pythonApiUrl}/jobs/summary`;
+      const signed = buildSignedInternalJsonRequest("POST", summaryUrl, payload, {
+        "X-Trace-Id": payload.job_id,
+      });
+      const pythonResponse = await axios.post(summaryUrl, signed.data, {
+        headers: signed.headers,
+        timeout: Number.isFinite(SUMMARY_TRIGGER_TIMEOUT_MS) && SUMMARY_TRIGGER_TIMEOUT_MS > 0
+          ? SUMMARY_TRIGGER_TIMEOUT_MS
+          : 120000
       });
 
       if (pythonResponse.data && pythonResponse.data.status === "accepted") {
@@ -279,41 +307,59 @@ export const summaryController = {
             workspaceId: currentWorkspace,
           });
 
-          for (const sharedDir of sharedDirs) {
-            if (sharedDir.sharedFromDirectoryId) {
-              const originalDir = await Directory.findOne({
-                id: sharedDir.sharedFromDirectoryId,
-                domain: sharedDir.sharedFromDomain,
-                workspaceId: sharedDir.sharedFromWorkspaceId,
-              });
-              if (originalDir) {
-                const originalDocs = await Document.find({
-                  directoryId: originalDir.id,
-                  domain: originalDir.domain,
-                  workspaceId: originalDir.workspaceId,
-                });
-                sharedDocumentIds.push(...originalDocs.map(doc => doc.id));
-              }
+          const sharedOrigins = sharedDirs
+            .filter(
+              (dir: any) =>
+                !!dir.sharedFromDirectoryId && !!dir.sharedFromDomain && !!dir.sharedFromWorkspaceId
+            )
+            .map((dir: any) => ({
+              id: dir.sharedFromDirectoryId,
+              domain: dir.sharedFromDomain,
+              workspaceId: dir.sharedFromWorkspaceId,
+            }));
+          if (sharedOrigins.length > 0) {
+            const originalDirectories = await Directory.find({
+              $or: sharedOrigins.map((origin) => ({
+                id: origin.id,
+                domain: origin.domain,
+                workspaceId: origin.workspaceId,
+              })),
+            }).select("id domain workspaceId");
+            const originalScope = originalDirectories.map((dir: any) => ({
+              directoryId: dir.id,
+              domain: dir.domain,
+              workspaceId: dir.workspaceId,
+            }));
+            if (originalScope.length > 0) {
+              const originalDocs = await Document.find({ $or: originalScope }).select("id");
+              sharedDocumentIds.push(...originalDocs.map((doc: any) => doc.id));
             }
           }
+          const uniqueSharedDocumentIds = Array.from(new Set(sharedDocumentIds));
 
           // Non-user-specific summaries:
           // 1) Always include all summaries within the current domain/workspace.
           // 2) If the user has access to shared documents, also include summaries
           //    whose `documentId` belongs to those shared documents.
-          if (sharedDocumentIds.length > 0) {
+          if (uniqueSharedDocumentIds.length > 0) {
             // Remove domain/workspaceId from base query since we're using $or
             delete query.domain;
             delete query.workspaceId;
             query.$or = [
               { domain: domain, workspaceId: currentWorkspace },
-              { documentId: { $in: sharedDocumentIds } },
+              { documentId: { $in: uniqueSharedDocumentIds } },
             ];
           }
         }
       }
 
-      const summaries = await Summary.find(query).sort({ updatedAt: -1 });
+      const { limit, offset } = parsePagination(req.query);
+      const summaries = await Summary.find(query)
+        .sort({ updatedAt: -1 })
+        .skip(offset)
+        .limit(limit)
+        .select("id title updatedAt documentId format domain domainId workspaceId microsoftId userId")
+        .lean();
       res.json(summaries);
     } catch (error) {
       console.error("Error fetching summaries:", error);
@@ -345,9 +391,13 @@ export const summaryController = {
       // All workspace members can see all summaries in their workspace
       // No user-based filtering needed - workspace isolation is sufficient
 
-      const summaries = await Summary.find(query).sort({
-        updatedAt: -1,
-      });
+      const { limit, offset } = parsePagination(req.query);
+      const summaries = await Summary.find(query)
+        .sort({ updatedAt: -1 })
+        .skip(offset)
+        .limit(limit)
+        .select("id title updatedAt documentId format domain domainId workspaceId microsoftId userId")
+        .lean();
       res.json(summaries);
     } catch (error) {
       console.error("Error fetching summaries:", error);
@@ -683,25 +733,24 @@ export const summaryController = {
         return res.status(409).json({ message: "Tenant mismatch for callback" });
       }
 
-      await Job.updateOne(
-        { id: jobId },
-        {
-          $set: {
-            status: mappedStatus,
-            current_stage: "summary_callback",
-            ...(mappedStatus === "completed" || mappedStatus === "completed_with_errors"
-              ? { completed_at: new Date() }
-              : {}),
-          },
-        }
-      );
+      const lifecycle = await applyCanonicalInternalJobStatusUpdate({
+        job_id: jobId,
+        tenant_id: String(job.tenant_id),
+        status: mappedStatus,
+        current_stage: "summary_callback",
+        error_message: typeof error === "string" ? error : error?.message,
+      });
+      if (lifecycle.statusCode !== 200) {
+        return res.status(lifecycle.statusCode).json(lifecycle.body);
+      }
+      if (!lifecycle.changed) {
+        return res.status(lifecycle.statusCode).json(lifecycle.body);
+      }
+      const canonicalJob = lifecycle.job;
 
-      const eventData = { jobId, status: mappedStatus, error };
+      const eventData = { jobId, status: canonicalJob?.status || mappedStatus, error };
       try {
-        await Promise.all([
-          emitToWorkspace(job.workspace_id, "summary_status", eventData),
-          emitToTenant(job.tenant_id, "summary_status", eventData),
-        ]);
+        await emitToWorkspace(job.workspace_id, "summary_status", eventData);
       } catch (emitError: any) {
         console.error("summaryStatusUpdate emit failure", {
           jobId,
@@ -847,13 +896,21 @@ export const summaryController = {
         domain: req.user?.domain || req.userDomain, // Use user's actual domain for admin
       };
 
-      const summaries = await Summary.find(query).sort({ updatedAt: -1 });
+      const { limit, offset } = parsePagination(req.query);
+      const summaries = await Summary.find(query)
+        .sort({ updatedAt: -1 })
+        .skip(offset)
+        .limit(limit)
+        .select("id title updatedAt documentId format domain domainId workspaceId microsoftId userId")
+        .lean();
 
       // Get all workspaces to map workspaceId to workspace name
       const { Workspace } = await import("../models/Workspace");
+      const workspaceIds = Array.from(new Set(summaries.map((s: any) => s.workspaceId).filter(Boolean)));
       const workspaces = await Workspace.find({
         domain: req.user?.domain || req.userDomain,
-      });
+        workspaceId: { $in: workspaceIds },
+      }).select("workspaceId name slug").lean();
       const workspaceMap = new Map(
         workspaces.map((ws) => [
           ws.workspaceId,
@@ -862,8 +919,8 @@ export const summaryController = {
       );
 
       // Add workspace information to each summary
-      const summariesWithWorkspace = summaries.map((summary) => ({
-        ...summary.toObject(),
+      const summariesWithWorkspace = summaries.map((summary: any) => ({
+        ...summary,
         workspaceId: workspaceMap.get(summary.workspaceId) || {
           workspaceId: summary.workspaceId,
           name: workspaceMap.get(summary.workspaceId)?.name

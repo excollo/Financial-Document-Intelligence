@@ -53,7 +53,12 @@ describe("callback canonical validation", () => {
     const { Job } = require("../models/Job");
     Job.findOne.mockReturnValue({ select: () => ({ lean: async () => null }) });
     const req: any = {
-      body: { jobId: "unknown-summary-job", status: "completed" },
+      body: {
+        jobId: "unknown-summary-job",
+        status: "completed",
+        workspaceId: "ws-1",
+        domainId: "tenant-1",
+      },
     };
     const res = mockRes();
     await summaryController.summaryStatusUpdate(req, res);
@@ -64,7 +69,12 @@ describe("callback canonical validation", () => {
     const { Job } = require("../models/Job");
     Job.findOne.mockReturnValue({ select: () => ({ lean: async () => null }) });
     const req: any = {
-      body: { jobId: "unknown-report-job", status: "completed" },
+      body: {
+        jobId: "unknown-report-job",
+        status: "completed",
+        workspaceId: "ws-1",
+        domainId: "tenant-1",
+      },
     };
     const res = mockRes();
     await reportController.reportStatusUpdate(req, res);
@@ -81,6 +91,7 @@ describe("callback canonical validation", () => {
         jobId: "job-1",
         status: "completed",
         workspaceId: "ws-other",
+        domainId: "t-a",
       },
     };
     const res = mockRes();

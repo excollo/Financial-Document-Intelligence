@@ -3,9 +3,12 @@ import { AuthRequest } from "../middleware/auth";
 import { Domain } from "../models/Domain";
 import axios from "axios";
 import FormData from "form-data";
+import {
+    buildSignedInternalJsonRequest,
+    buildSignedInternalRawRequest,
+} from "../services/internalRequestSigning";
 
 const PYTHON_API_URL = process.env.PYTHON_API_URL || "http://localhost:8000";
-const INTERNAL_SECRET = process.env.INTERNAL_SECRET || "";
 
 export const domainController = {
     // Get current domain configuration
@@ -177,11 +180,16 @@ export const domainController = {
 
                 }));
 
-                axios.post(`${PYTHON_API_URL}/onboarding/re-onboard`, forwardData, {
-                    headers: {
-                        ...forwardData.getHeaders(),
-                        "X-Internal-Secret": INTERNAL_SECRET
-                    },
+                const onboardingUrl = `${PYTHON_API_URL}/onboarding/re-onboard`;
+                const forwardBuffer = forwardData.getBuffer();
+                const signed = buildSignedInternalRawRequest(
+                    "POST",
+                    onboardingUrl,
+                    forwardBuffer,
+                    forwardData.getHeaders() as Record<string, string>
+                );
+                axios.post(onboardingUrl, forwardBuffer, {
+                    headers: signed.headers,
                     timeout: 30000,
                 }).then(response => {
                     console.log(`✅ Success: AI Re-onboarding started for ${domainId}`);
@@ -337,17 +345,18 @@ export const domainController = {
             );
 
             // Forward to Python AI Platform
-            const pythonResponse = await axios.post(
-                `${PYTHON_API_URL}/onboarding/setup`,
-                forwardData,
-                {
-                    headers: {
-                        ...forwardData.getHeaders(),
-                        "X-Internal-Secret": INTERNAL_SECRET
-                    },
-                    timeout: 30000, // 30s timeout for initial request (processing is async)
-                }
+            const onboardingSetupUrl = `${PYTHON_API_URL}/onboarding/setup`;
+            const setupBuffer = forwardData.getBuffer();
+            const setupSigned = buildSignedInternalRawRequest(
+                "POST",
+                onboardingSetupUrl,
+                setupBuffer,
+                forwardData.getHeaders() as Record<string, string>
             );
+            const pythonResponse = await axios.post(onboardingSetupUrl, setupBuffer, {
+                headers: setupSigned.headers,
+                timeout: 30000, // 30s timeout for initial request (processing is async)
+            });
 
             console.log(`✅ Onboarding request forwarded for ${domainId}`, pythonResponse.data);
 
@@ -430,17 +439,18 @@ export const domainController = {
                 { $set: { onboarding_status: "processing", updatedAt: new Date() } }
             );
 
-            const pythonResponse = await axios.post(
-                `${PYTHON_API_URL}/onboarding/re-onboard`,
-                forwardData,
-                {
-                    headers: { 
-                        ...forwardData.getHeaders(),
-                        "X-Internal-Secret": INTERNAL_SECRET
-                    },
-                    timeout: 30000,
-                }
+            const reOnboardUrl = `${PYTHON_API_URL}/onboarding/re-onboard`;
+            const reOnboardBuffer = forwardData.getBuffer();
+            const reOnboardSigned = buildSignedInternalRawRequest(
+                "POST",
+                reOnboardUrl,
+                reOnboardBuffer,
+                forwardData.getHeaders() as Record<string, string>
             );
+            const pythonResponse = await axios.post(reOnboardUrl, reOnboardBuffer, {
+                headers: reOnboardSigned.headers,
+                timeout: 30000,
+            });
 
             console.log(`✅ Re-onboarding forwarded for ${domainId}`, pythonResponse.data);
 
@@ -479,13 +489,41 @@ export const domainController = {
 
             console.log(`🚀 Manual trigger: News Monitor crawl for domain: ${domainId}`);
 
-            const response = await axios.post(`${PYTHON_API_URL}/news-monitor/trigger`, {
-                domainId: domainId
-            }, {
-                headers: {
-                    "X-Internal-Secret": INTERNAL_SECRET
-                }
+            const domainDoc = await Domain.findOne({ domainId });
+            if (!domainDoc) {
+                return res.status(404).json({
+                    error: "Domain not found",
+                    detail:
+                        "No domain record matches your account. Ensure your user is linked to a valid domain in MongoDB.",
+                });
+            }
+
+            const newsMonitorUrl = `${PYTHON_API_URL}/news-monitor/trigger`;
+            const newsPayload = { domainId: domainId };
+            const signed = buildSignedInternalJsonRequest("POST", newsMonitorUrl, newsPayload);
+            const response = await axios.post(newsMonitorUrl, signed.data, {
+                headers: signed.headers,
+                // RSS + Serper + GPT per company can exceed default axios timeouts
+                timeout: 900_000,
+                validateStatus: (s) => s < 500,
             });
+
+            if (response.status >= 400) {
+                const py = response.data as { detail?: string | object };
+                let detail =
+                    typeof py?.detail === "string"
+                        ? py.detail
+                        : py?.detail != null
+                          ? JSON.stringify(py.detail)
+                          : JSON.stringify(response.data);
+                if (response.status === 404) {
+                    detail = `${detail} If the domain exists in Node, set ai_layer_backend MONGODB_URI (and optional MONGO_DB_NAME) to the same database as node_backend so the crawler can read the domains collection.`;
+                }
+                return res.status(response.status).json({
+                    error: "News monitor trigger failed",
+                    detail,
+                });
+            }
 
             res.json({
                 message: "Instant news crawl triggered successfully",

@@ -30,6 +30,10 @@ from app.core.memory import maybe_collect
 logger = get_logger(__name__)
 
 
+class RetriableIngestionError(RuntimeError):
+    """Signals transient ingestion failures that should be retried by Celery."""
+
+
 class IngestionPipeline:
     def __init__(self):
         self.extraction = ExtractionService()
@@ -102,7 +106,18 @@ class IngestionPipeline:
             batch = []
             for chunk in chunks_with_embeddings:
                 meta = chunk.get("metadata", {})
-                vector_id = f"{namespace}_{chunk['chunk_index']}"
+                vector_document_id = str(meta.get("documentId") or "").strip()
+                vector_workspace_id = str(meta.get("workspaceId") or "").strip()
+                vector_domain_id = str(meta.get("domainId") or "").strip()
+                if not vector_document_id:
+                    raise RuntimeError("documentId is required before vector upsert")
+                if not vector_workspace_id:
+                    raise RuntimeError("workspaceId is required before vector upsert")
+                if not vector_domain_id:
+                    raise RuntimeError("domainId is required before vector upsert")
+                vector_id = (
+                    f"{vector_domain_id}_{vector_workspace_id}_{vector_document_id}_{chunk['chunk_index']}"
+                )
                 batch.append(
                     {
                         "id": vector_id,
@@ -112,6 +127,7 @@ class IngestionPipeline:
                             "chunk_index": chunk["chunk_index"],
                             "documentName": meta.get("documentName", namespace),
                             "documentId": meta.get("documentId", ""),
+                            "workspaceId": meta.get("workspaceId", ""),
                             "domain": meta.get("domain", ""),
                             "domainId": meta.get("domainId", ""),
                             "type": meta.get("type", "DRHP"),
@@ -176,6 +192,12 @@ class IngestionPipeline:
             filename=filename,
             doc_type=doc_type,
         )
+        document_id = str(metadata.get("documentId") or "").strip()
+        workspace_id = str(metadata.get("workspaceId") or "").strip()
+        domain_id = str(metadata.get("domainId") or "").strip()
+        domain = str(metadata.get("domain") or "").strip()
+        if not document_id:
+            raise ValueError("metadata.documentId is required before ingestion vector writes")
 
         try:
             # 1. Download document
@@ -242,6 +264,10 @@ class IngestionPipeline:
                     result_collection = mongodb.get_sync_collection("extraction_results")
                     for t in batch_tables:
                         t["job_id"] = job_id
+                        t["document_id"] = document_id
+                        t["workspace_id"] = workspace_id
+                        t["domain_id"] = domain_id
+                        t["domain"] = domain
                         t["filename"] = filename
                         t["doc_type"] = doc_type
                         t["created_at"] = time.time()
@@ -271,10 +297,15 @@ class IngestionPipeline:
                 metadata_coll = mongodb.get_sync_collection("document_metadata")
                 # Keep full TOC structure (title, pages, etc)
                 toc_data = [{"title": s.get("name"), "start_page": s.get("start_page"), "end_page": s.get("end_page"), "type": s.get("type")} for s in toc_map]
+                metadata_filter = {"document_id": document_id} if document_id else {"job_id": job_id}
                 metadata_coll.update_one(
-                    {"filename": filename},
+                    metadata_filter,
                     {"$set": {
                         "job_id": job_id,
+                        "document_id": document_id,
+                        "workspace_id": workspace_id,
+                        "domain_id": domain_id,
+                        "domain": domain,
                         "filename": filename,
                         "doc_type": doc_type,
                         "toc": toc_data,
@@ -315,23 +346,9 @@ class IngestionPipeline:
 
             if not sections:
                 logger.warning("No sections extracted from document", job_id=job_id)
-                document_id = metadata.get("documentId")
-                
-                # 1. Notify backend of failure with specific error message
-                backend_notifier.notify_status(
-                    job_id=job_id,
-                    status="failed",
-                    namespace=filename,
-                    document_id=document_id,
-                    workspace_id=metadata.get("workspaceId"),
-                    domain_id=metadata.get("domainId"),
-                    error={"message": "No text extracted from document. Check if the PDF is non-searchable."}
+                raise RetriableIngestionError(
+                    "No text extracted from document. Check if the PDF is non-searchable."
                 )
-                
-                # NOTE: We no longer delete the document automatically on failure
-                # so the user can see the error message in their document list.
-                
-                return {"success": False, "error": "No text extracted from document"}
 
             logger.info(
                 "Sections extracted",
@@ -346,6 +363,7 @@ class IngestionPipeline:
                 "job_id": job_id,
                 "documentName": filename,
                 "documentId": metadata.get("documentId", ""),
+                "workspaceId": metadata.get("workspaceId", ""),
                 "domain": metadata.get("domain", ""),
                 "domainId": metadata.get("domainId", ""),
                 "type": doc_type,
@@ -426,6 +444,10 @@ class IngestionPipeline:
                 collection.insert_one(
                     {
                         "job_id": job_id,
+                        "document_id": document_id,
+                        "workspace_id": workspace_id,
+                        "domain_id": domain_id,
+                        "domain": domain,
                         "filename": filename,
                         "doc_type": doc_type,
                         "status": "completed",
@@ -496,6 +518,8 @@ class IngestionPipeline:
                         namespace=filename,
                         host=host,
                         document_id=str(document_id or ""),
+                        workspace_id=str(workspace_id or ""),
+                        domain_id=str(domain_id or ""),
                     )
                     logger.warning(
                         "Compensating vector cleanup applied after ingestion failure",

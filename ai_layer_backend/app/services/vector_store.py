@@ -61,13 +61,23 @@ class VectorStoreService:
         for chunk in chunks:
             # Metadata as stored in n8n workflow
             chunk_metadata = chunk.get("metadata", {})
+            document_id = str(chunk_metadata.get("documentId", "")).strip()
+            workspace_id = str(chunk_metadata.get("workspaceId", "")).strip()
+            domain_id = str(chunk_metadata.get("domainId", "")).strip()
+            if not document_id:
+                raise ValueError("documentId is required before vector upsert")
+            if not workspace_id:
+                raise ValueError("workspaceId is required before vector upsert")
+            if not domain_id:
+                raise ValueError("domainId is required before vector upsert")
             metadata = {
                 "text": chunk["chunk_text"],
                 "chunk_index": chunk["chunk_index"],
                 "documentName": namespace,
-                "documentId": chunk_metadata.get("documentId", ""),
+                "documentId": document_id,
+                "workspaceId": workspace_id,
                 "domain": chunk_metadata.get("domain", ""),
-                "domainId": chunk_metadata.get("domainId", ""),
+                "domainId": domain_id,
                 "type": chunk_metadata.get("type", "DRHP")
             }
             # Merge extra metadata if any
@@ -75,7 +85,7 @@ class VectorStoreService:
                 metadata.update(chunk["metadata"])
             
             # Create a unique ID for the vector
-            vector_id = f"{namespace}_{chunk['chunk_index']}"
+            vector_id = f"{domain_id}_{workspace_id}_{document_id}_{chunk['chunk_index']}"
             
             vectors.append({
                 "id": vector_id,
@@ -131,6 +141,8 @@ class VectorStoreService:
         namespace: str,
         host: str = "",
         document_id: str = "",
+        workspace_id: str = "",
+        domain_id: str = "",
     ):
         """
         Delete all vectors in a namespace.
@@ -142,22 +154,32 @@ class VectorStoreService:
             index=index_name,
             namespace=namespace
         )
+
+        if not document_id:
+            raise ValueError("document_id is required for scoped vector deletion")
+        if not workspace_id:
+            raise ValueError("workspace_id is required for scoped vector deletion")
+        if not domain_id:
+            raise ValueError("domain_id is required for scoped vector deletion")
         
         try:
-            # Delete vectors using metadata filter on default namespace.
-            # Prefer documentId-scoped cleanup when available; fallback to documentName.
-            filter_payload: Dict[str, Any]
-            if document_id:
-                filter_payload = {"documentId": document_id}
-            else:
-                filter_payload = {"documentName": namespace}
-
             response = index.delete(
                 namespace="",
-                filter=filter_payload
+                filter={
+                    "documentId": document_id,
+                    "workspaceId": workspace_id,
+                    "domainId": domain_id,
+                }
             )
             
-            logger.info("Deletion request sent (filtered by documentName)", index=index_name, namespace=namespace)
+            logger.info(
+                "Deletion request sent (filtered by documentId)",
+                index=index_name,
+                namespace=namespace,
+                document_id=document_id,
+                workspace_id=workspace_id,
+                domain_id=domain_id,
+            )
             return response
             
         except Exception as e:

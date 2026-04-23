@@ -43,6 +43,12 @@ jest.mock("../services/realtimeEventControlService", () => ({
     shouldEmit: jest.fn().mockResolvedValue(true),
   },
 }));
+jest.mock("../services/idempotencyLockService", () => ({
+  idempotencyLockService: {
+    acquire: jest.fn().mockResolvedValue({ acquired: true }),
+    bindJob: jest.fn().mockResolvedValue(undefined),
+  },
+}));
 
 jest.mock("../models/SopConfig", () => ({
   SopConfig: {
@@ -63,11 +69,11 @@ function mockRes() {
 
 describe("job idempotency and stage tracking", () => {
   it("returns existing in-flight job for same idempotency key", async () => {
-    const { Job } = jest.requireMock("../models/Job");
-    Job.findOne.mockReturnValueOnce({
-      sort: jest.fn().mockReturnValue({
-        lean: jest.fn().mockResolvedValue({ id: "existing-job-1", status: "processing" }),
-      }),
+    const { idempotencyLockService } = jest.requireMock("../services/idempotencyLockService");
+    idempotencyLockService.acquire.mockResolvedValueOnce({
+      acquired: false,
+      existingJob: { id: "existing-job-1", status: "processing" },
+      retryAfterSeconds: 60,
     });
 
     const req: any = {
@@ -83,6 +89,44 @@ describe("job idempotency and stage tracking", () => {
     expect(res.json).toHaveBeenCalledWith({
       data: { id: "existing-job-1", status: "processing", idempotent: true },
     });
+  });
+
+  it("uses stable createJob idempotency key across blob-key retries", async () => {
+    const { idempotencyLockService } = jest.requireMock("../services/idempotencyLockService");
+    idempotencyLockService.acquire.mockReset();
+    idempotencyLockService.acquire
+      .mockResolvedValueOnce({
+        acquired: false,
+        existingJob: { id: "existing-job-blob", status: "processing" },
+        retryAfterSeconds: 60,
+      })
+      .mockResolvedValueOnce({
+        acquired: false,
+        existingJob: { id: "existing-job-blob", status: "processing" },
+        retryAfterSeconds: 60,
+      });
+
+    const baseReq: any = {
+      body: {
+        document_name: "same.pdf",
+        workspace_id: "ws-1",
+        request_id: "client-req-1",
+      },
+      tenantId: "tenant-1",
+      tenantQuery: () => ({ tenant_id: "tenant-1" }),
+      user: { _id: "user-1" },
+      currentWorkspace: "ws-1",
+      headers: {},
+    };
+    const reqA = { ...baseReq, body: { ...baseReq.body, s3_input_key: "blob-a.pdf" } };
+    const reqB = { ...baseReq, body: { ...baseReq.body, s3_input_key: "blob-b.pdf" } };
+
+    await createJob(reqA, mockRes());
+    await createJob(reqB, mockRes());
+
+    const keyA = idempotencyLockService.acquire.mock.calls[0][0].idempotencyKey;
+    const keyB = idempotencyLockService.acquire.mock.calls[1][0].idempotencyKey;
+    expect(keyA).toBe(keyB);
   });
 
   it("persists stage events from internal callback", async () => {
