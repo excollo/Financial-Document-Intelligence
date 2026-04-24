@@ -21,6 +21,11 @@ jest.mock("../models/Report", () => ({
     deleteMany: jest.fn(),
   },
 }));
+jest.mock("../models/Job", () => ({
+  Job: {
+    deleteMany: jest.fn().mockResolvedValue({ deletedCount: 0 }),
+  },
+}));
 jest.mock("../services/storageService", () => ({
   storageService: {
     deleteFile: jest.fn().mockResolvedValue(undefined),
@@ -28,6 +33,12 @@ jest.mock("../services/storageService", () => ({
 }));
 jest.mock("../services/realtimeEmitter", () => ({
   emitToWorkspace: jest.fn(),
+}));
+jest.mock("../services/idempotencyLockService", () => ({
+  idempotencyLockService: {
+    releaseByJobId: jest.fn().mockResolvedValue(undefined),
+    releaseByIdempotencyKey: jest.fn().mockResolvedValue(undefined),
+  },
 }));
 
 function mockRes() {

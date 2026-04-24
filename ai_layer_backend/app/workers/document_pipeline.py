@@ -77,6 +77,8 @@ def process_document(
     metadata = metadata or {}
     queue_name = "heavy_jobs"
     queue_telemetry_service.mark_dequeued(queue_name, job_id)
+    if mongodb.db is None:
+        asyncio.run(mongodb.connect())
     domain_scope = str(metadata.get("domainId") or "global")
     if asyncio.run(is_terminal_job(job_id, metadata.get("domainId"))):
         logger.warning("Skipping process_document because job already terminal", job_id=job_id, scope=domain_scope)
@@ -271,6 +273,12 @@ def generate_summary(
             job_id=job_id,
             status=job_status,
             namespace=namespace,
+            output_urls={
+                "namespace": namespace,
+                "jobId": str(job_id),
+                "workspaceId": str(metadata.get("workspaceId") or ""),
+                "domainId": str(metadata.get("domainId") or ""),
+            },
             authorization=metadata.get("authorization", ""),
             workspace_id=metadata.get("workspaceId", ""),
             domain_id=metadata.get("domainId", ""),
@@ -413,6 +421,12 @@ def generate_comparison(
                 job_id=job_id,
                 namespace=drhp_namespace,
                 status="completed",
+                output_urls={
+                    "namespace": drhp_namespace,
+                    "jobId": str(job_id),
+                    "workspaceId": str(metadata.get("workspaceId") or ""),
+                    "domainId": str(domain_id or ""),
+                },
                 authorization=authorization,
                 workspace_id=metadata.get("workspaceId", ""),
                 domain_id=domain_id,

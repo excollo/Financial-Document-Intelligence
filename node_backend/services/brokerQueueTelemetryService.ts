@@ -42,7 +42,11 @@ class BrokerQueueTelemetryService {
     // Approximation for queue age using enqueue timestamps persisted at submit time in Redis ZSET.
     const oldest = await client.zrange(`${AGE_SET_PREFIX}:${queueName}`, 0, 0, "WITHSCORES");
     const oldestTsMs = oldest.length >= 2 ? Number(oldest[1]) : 0;
-    const ageSeconds = oldestTsMs > 0 ? Math.max(0, Math.floor((Date.now() - oldestTsMs) / 1000)) : 0;
+    let ageSeconds = oldestTsMs > 0 ? Math.max(0, Math.floor((Date.now() - oldestTsMs) / 1000)) : 0;
+    // Avoid stale queue-age false positives when broker depth is empty.
+    if (Number(depth || 0) === 0) {
+      ageSeconds = 0;
+    }
 
     const snapshot: QueueSnapshot = {
       queue_name: queueName,

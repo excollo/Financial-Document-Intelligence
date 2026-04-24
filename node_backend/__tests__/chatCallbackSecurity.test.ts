@@ -1,6 +1,13 @@
 import request from "supertest";
 import crypto from "crypto";
-import { app } from "../index";
+
+jest.mock("../models/ChatJobStatus", () => ({
+  ChatJobStatus: {
+    findOneAndUpdate: jest.fn().mockReturnValue({
+      lean: jest.fn().mockResolvedValue(null),
+    }),
+  },
+}));
 
 function signPost(path: string, body: any, timestamp: string, nonce: string) {
   const rawBody = JSON.stringify(body);
@@ -12,10 +19,14 @@ function signPost(path: string, body: any, timestamp: string, nonce: string) {
 }
 
 describe("chat callback security", () => {
+  let app: any;
+
   beforeAll(() => {
     process.env.INTERNAL_SECRET = "test-secret";
     process.env.INTERNAL_CALLBACK_SIGNING_SECRET = "test-secret";
     process.env.INTERNAL_CALLBACK_SIGNATURE_REQUIRED = "true";
+    // Import after env + mocks so middleware/controller initialize with test settings.
+    app = require("../index").app;
   });
 
   it("rejects unsigned chat status callback", async () => {

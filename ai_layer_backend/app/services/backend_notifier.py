@@ -50,6 +50,7 @@ class BackendNotifier:
         error: Optional[Dict[str, Any]] = None,
         execution_id: Optional[str] = None,
         result: Optional[Dict[str, Any]] = None,
+        output_urls: Optional[Dict[str, Any]] = None,
         document_id: Optional[str] = None,
         workspace_id: Optional[str] = None,
         domain_id: Optional[str] = None,
@@ -73,6 +74,9 @@ class BackendNotifier:
         
         if result:
             payload["result"] = result
+
+        if output_urls and isinstance(output_urls, dict) and output_urls:
+            payload["output_urls"] = output_urls
             
         if error:
             payload["error"] = {
@@ -174,6 +178,7 @@ class BackendNotifier:
         namespace: str,
         status: str,
         error: Optional[Dict[str, Any]] = None,
+        output_urls: Optional[Dict[str, Any]] = None,
         authorization: str = "",
         workspace_id: str = "",
         domain_id: str = "",
@@ -198,6 +203,8 @@ class BackendNotifier:
             "workspaceId": workspace_id,
             "domainId": domain_id,
         }
+        if output_urls and isinstance(output_urls, dict) and output_urls:
+            payload["output_urls"] = output_urls
         
         signed = BackendNotifier._build_signed_request("POST", settings.REPORT_STATUS_UPDATE_URL, payload)
         headers = signed["headers"]
@@ -271,6 +278,7 @@ class BackendNotifier:
         namespace: str,
         status: str,
         error: Optional[Dict[str, Any]] = None,
+        output_urls: Optional[Dict[str, Any]] = None,
         authorization: str = "",
         workspace_id: str = "",
         domain_id: str = "",
@@ -290,6 +298,8 @@ class BackendNotifier:
             "workspaceId": workspace_id,
             "domainId": domain_id,
         }
+        if output_urls and isinstance(output_urls, dict) and output_urls:
+            payload["output_urls"] = output_urls
         
         signed = BackendNotifier._build_signed_request("POST", settings.SUMMARY_STATUS_UPDATE_URL, payload)
         headers = signed["headers"]

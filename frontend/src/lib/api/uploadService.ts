@@ -2,8 +2,6 @@ import axios from "axios";
 import { SessionData } from "./sessionService";
 import { documentService } from "@/services/api";
 
-const N8N_WEBHOOK_URL = import.meta.env.VITE_N8N_WEBHOOK_URL;
-
 export interface UploadResponse {
   success: boolean;
   error?: string;
@@ -49,7 +47,7 @@ export const uploadService = {
   //     formData.append("namespace",file.name.replace(".pdf", ""));
   //     formData.append("filename", file.name.replace(".pdf", ""));
 
-  //     const uploadResponse = await axios.post(N8N_WEBHOOK_URL, formData, {
+  //     const uploadResponse = await axios.post("<legacy-webhook-url>", formData, {
   //       headers: { "Content-Type": "multipart/form-data" },
   //       timeout: 300000, // 5 minutes timeout for processing
   //     });

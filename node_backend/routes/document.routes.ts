@@ -72,7 +72,16 @@ router.post("/", requireCreateInDirectory, documentController.create);
 router.post(
   "/upload",
   rateLimitByWorkspace("document:upload", 100, 24 * 60 * 60 * 1000),
+  (req: Request, _res: Response, next: NextFunction) => {
+    console.log("[upload-route] before multer upload.single");
+    next();
+  },
   upload.single("file"),
+  (req: Request, _res: Response, next: NextFunction) => {
+    const fileName = (req as any).file?.originalname || "unknown";
+    console.log(`[upload-route] after multer upload.single file=${fileName}`);
+    next();
+  },
   // @ts-ignore
   function (err: any, req: Request, res: Response, next: NextFunction) {
     if (err && err.code === "LIMIT_FILE_SIZE") {
@@ -82,7 +91,11 @@ router.post(
     }
     next(err);
   },
-  documentController.uploadDocument
+  (req: Request, res: Response, next: NextFunction) => {
+    console.log("[upload-route] before controller uploadDocument");
+    Promise.resolve(documentController.uploadDocument(req as any, res))
+      .catch(next);
+  }
 );
 
 // Upload RHP document

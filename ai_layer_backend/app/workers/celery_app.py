@@ -113,7 +113,6 @@ celery_app.conf.update(
         "visibility_timeout": 3600,  # 1 hour
         "retry_on_timeout": True,
     },
-    task_default_queue="heavy_jobs",
     task_queues=(
         Queue("heavy_jobs"),
         Queue("light_jobs"),

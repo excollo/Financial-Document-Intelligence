@@ -31,6 +31,8 @@ jest.mock("../services/idempotencyLockService", () => ({
   idempotencyLockService: {
     acquire: jest.fn().mockResolvedValue({ acquired: true }),
     bindJob: jest.fn().mockResolvedValue(undefined),
+    releaseByJobId: jest.fn().mockResolvedValue(undefined),
+    releaseByOwner: jest.fn().mockResolvedValue(undefined),
   },
 }));
 jest.mock("../services/cacheService", () => ({

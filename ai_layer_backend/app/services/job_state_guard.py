@@ -7,6 +7,9 @@ TERMINAL_STATUSES = {"completed", "failed", "completed_with_errors"}
 
 
 async def is_terminal_job(job_id: str, tenant_id: Optional[str] = None) -> bool:
+    # Celery tasks call this through asyncio.run(), which creates a fresh loop each time.
+    # Reconnect so Motor is bound to the current loop before using collections.
+    await mongodb.connect()
     coll = mongodb.get_collection("jobs")
     query = {"id": job_id}
     if tenant_id:

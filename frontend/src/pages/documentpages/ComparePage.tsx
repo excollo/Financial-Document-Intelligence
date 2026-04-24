@@ -8,9 +8,7 @@ import {
   reportService,
   Report,
   shareService,
-  jobService,
 } from "@/services/api";
-import { reportN8nService } from "@/lib/api/reportN8nService";
 import { sessionService } from "@/lib/api/sessionService";
 import { toast } from "sonner";
 import { Navbar } from "@/components/sharedcomponents/Navbar";
@@ -51,6 +49,7 @@ import rehypeRaw from "rehype-raw";
 import { cleanSummaryContent } from "@/lib/utils/markdownConverter";
 
 interface ComparePageProps { }
+const REPORT_FOCUS_REFRESH_COOLDOWN_MS = 15000;
 
 const buildDocxFileName = (
   rawName: string | undefined,
@@ -103,6 +102,19 @@ export const ComparePage: React.FC<ComparePageProps> = () => {
   const drhpRef = useRef(drhp);
   const rhpRef = useRef(rhp);
   const selectedReportRef = useRef(selectedReport);
+  const lastReportRefreshAtRef = useRef(0);
+
+  const isMatchingReportPair = (report: Report, drhpDoc: any, rhpDoc: any) => {
+    if (!drhpDoc || !rhpDoc) return false;
+    // Prefer strict document-id pair matching whenever available.
+    if (report.drhpId && report.rhpId) {
+      return report.drhpId === drhpDoc.id && report.rhpId === rhpDoc.id;
+    }
+    // Fallback to strict namespace pair matching.
+    const drhpNs = drhpDoc.namespace;
+    const rhpNs = rhpDoc.rhpNamespace || rhpDoc.namespace;
+    return report.drhpNamespace === drhpNs && report.rhpNamespace === rhpNs;
+  };
 
   // Update refs when values change
   useEffect(() => {
@@ -132,11 +144,7 @@ export const ComparePage: React.FC<ComparePageProps> = () => {
 
       // Fetch existing reports for this DRHP/RHP pair
       const allReports = await reportService.getAll();
-      const filteredReports = allReports.filter(
-        (r) =>
-          r.drhpNamespace === drhpDoc.namespace ||
-          (rhpDoc && r.rhpNamespace === rhpDoc.rhpNamespace)
-      );
+      const filteredReports = allReports.filter((r) => isMatchingReportPair(r, drhpDoc, rhpDoc));
 
       // Sort reports by updatedAt to get the latest first
       const sortedReports = filteredReports.sort(
@@ -150,7 +158,13 @@ export const ComparePage: React.FC<ComparePageProps> = () => {
       if (sortedReports.length > 0) {
         const latestReport = sortedReports[0];
         console.log('Initial fetch - Selecting latest report:', latestReport.title, 'Updated:', latestReport.updatedAt);
-        setSelectedReport(latestReport);
+        try {
+          const fullReport = await reportService.getById(latestReport.id);
+          setSelectedReport(fullReport);
+        } catch (e) {
+          console.warn("Failed to load full report content, using list payload", e);
+          setSelectedReport(latestReport);
+        }
       } else {
         console.log('Initial fetch - No reports found');
         setSelectedReport(null);
@@ -174,11 +188,7 @@ export const ComparePage: React.FC<ComparePageProps> = () => {
 
     try {
       const allReports = await reportService.getAll();
-      const filteredReports = allReports.filter(
-        (r) =>
-          r.drhpNamespace === drhp.namespace ||
-          (rhp && r.rhpNamespace === rhp.rhpNamespace)
-      );
+      const filteredReports = allReports.filter((r) => isMatchingReportPair(r, drhp, rhp));
 
       // Sort reports by updatedAt to get the latest first
       const sortedReports = filteredReports.sort(
@@ -193,13 +203,21 @@ export const ComparePage: React.FC<ComparePageProps> = () => {
         const latestReport = sortedReports[0];
         console.log('refreshReports - Selecting latest report:', latestReport.id, latestReport.title, 'Updated:', latestReport.updatedAt);
         // Force update selectedReport to ensure UI refreshes with latest content
-        setSelectedReport(latestReport);
+        try {
+          const fullReport = await reportService.getById(latestReport.id);
+          setSelectedReport(fullReport);
+        } catch (e) {
+          console.warn("Failed to load full report content, using list payload", e);
+          setSelectedReport(latestReport);
+        }
       } else {
         console.log('refreshReports - No reports found for this document pair');
         setSelectedReport(null);
       }
+      return sortedReports;
     } catch (error) {
       console.error("Error refreshing reports:", error);
+      return [];
     }
   };
 
@@ -261,8 +279,12 @@ export const ComparePage: React.FC<ComparePageProps> = () => {
     // Determine socket URL from API URL (remove /api suffix)
     const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
     const socketUrl = apiUrl.endsWith("/api") ? apiUrl.slice(0, -4) : apiUrl;
-
-    const socket = socketIOClient(socketUrl, { transports: ["websocket"] });
+    const token = localStorage.getItem("accessToken");
+    const socket = socketIOClient(socketUrl, {
+      transports: ["websocket"],
+      auth: token ? { token: `Bearer ${token}` } : undefined,
+      extraHeaders: token ? { Authorization: `Bearer ${token}` } : undefined,
+    });
 
     socket.on(
       "compare_status",
@@ -283,7 +305,7 @@ export const ComparePage: React.FC<ComparePageProps> = () => {
         }
         lastHandledRef.current = { jobId, status: cleanStatus };
 
-        // Handle both "completed" and "success" status (n8n sends "success" with possible space)
+        // Handle both "completed" and "success" status payloads.
         if (cleanStatus === "completed" || cleanStatus === "success") {
           toast.success("Comparison completed successfully!");
           setComparing(false);
@@ -308,10 +330,8 @@ export const ComparePage: React.FC<ComparePageProps> = () => {
                 return;
               }
 
-              const filteredReports = allReports.filter(
-                (r) =>
-                  r.drhpNamespace === currentDrhp.namespace ||
-                  (currentRhp && r.rhpNamespace === currentRhp.rhpNamespace)
+              const filteredReports = allReports.filter((r) =>
+                isMatchingReportPair(r, currentDrhp, currentRhp)
               );
 
               if (filteredReports.length > 0) {
@@ -326,7 +346,13 @@ export const ComparePage: React.FC<ComparePageProps> = () => {
 
                 // Always update to latest report (same as SummaryPanel pattern)
                 setReports(sortedReports);
-                setSelectedReport(latestReport);
+                try {
+                  const fullReport = await reportService.getById(latestReport.id);
+                  setSelectedReport(fullReport);
+                } catch (e) {
+                  console.warn("Failed to load full report content, using list payload", e);
+                  setSelectedReport(latestReport);
+                }
 
                 // If we have a specific reportId, verify it matches
                 if (reportId && reportId !== latestReport.id) {
@@ -378,42 +404,26 @@ export const ComparePage: React.FC<ComparePageProps> = () => {
   }, [drhpId]);
 
   useEffect(() => {
-    // On mount and on window focus, check if report is ready
-    const checkReportReady = async () => {
-      if (!drhpId) return;
-      const key = `report_processing_${drhpId}`;
-      if (localStorage.getItem(key)) {
-        // Use refreshReports to get latest reports
-        await refreshReports();
-        if (reports && reports.length > 0) {
-          setComparing(false);
-          localStorage.removeItem(key);
-          // Set ready flag for global notification
-          localStorage.setItem(`report_ready_${drhpId}`, "1");
-          toast.success("Comparison report is ready!");
-        }
-      }
-    };
-    checkReportReady();
-    // Listen for window focus
-    const onFocus = () => checkReportReady();
-    window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
-  }, [drhpId, drhp?.namespace, rhp?.rhpNamespace]);
-
-  // Removed periodic polling; rely on socket "completed" event to refresh
-
-  useEffect(() => {
-    // Refetch reports on window focus if processing is ongoing
+    // Single focus handler with cooldown to avoid GET storms.
     if (!drhpId) return;
-    const onFocus = async () => {
-      if (comparing) {
-        await refreshReports();
+    const maybeRefreshOnFocus = async () => {
+      const now = Date.now();
+      if (now - lastReportRefreshAtRef.current < REPORT_FOCUS_REFRESH_COOLDOWN_MS) return;
+      lastReportRefreshAtRef.current = now;
+      const key = `report_processing_${drhpId}`;
+      if (!comparing && !localStorage.getItem(key)) return;
+      const refreshed = await refreshReports();
+      if (localStorage.getItem(key) && refreshed && refreshed.length > 0) {
+        setComparing(false);
+        localStorage.removeItem(key);
+        localStorage.setItem(`report_ready_${drhpId}`, "1");
+        toast.success("Comparison report is ready!");
       }
     };
-    window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
-  }, [comparing, drhpId]);
+    void maybeRefreshOnFocus();
+    window.addEventListener("focus", maybeRefreshOnFocus);
+    return () => window.removeEventListener("focus", maybeRefreshOnFocus);
+  }, [drhpId, comparing, drhp, rhp]);
 
   const handleCreateReport = async () => {
     if (!drhp || !rhp) {
@@ -434,18 +444,18 @@ export const ComparePage: React.FC<ComparePageProps> = () => {
       
       toast.info("Initiating Intelligence Pipeline for comparison...");
 
-      // NEW: Using the central job service for intelligence processing
-      const response = await jobService.create({
-        directoryId: drhp.directoryId,
+      const response = await reportService.createComparison({
         drhpId: drhp.id,
         rhpId: rhp.id,
-        title: `${drhp.name} vs ${rhp.name} Intelligence Report`
+        drhpNamespace: drhp.namespace,
+        rhpNamespace: rhp.rhpNamespace || rhp.namespace,
+        prompt: `${drhp.name} vs ${rhp.name} Intelligence Report`,
       });
 
-      if (response.data?.id) {
-        toast.success("Intelligence Pipeline job started. Comparison is underway!");
+      if (response?.job_id) {
+        toast.success("Comparison job started. Processing is underway!");
       } else {
-        toast.success("Comparison job started successfully!");
+        toast.success(response?.message || "Comparison job request accepted");
       }
 
     } catch (error: any) {

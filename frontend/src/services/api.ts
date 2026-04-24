@@ -861,6 +861,27 @@ export const chatService = {
     return response.data;
   },
 
+  getMessages: async (chatId: string, params?: { limit?: number; offset?: number }) => {
+    const token = localStorage.getItem("accessToken");
+    const domain = getUserDomain();
+    const currentWorkspace = getCurrentWorkspace();
+    const query = new URLSearchParams();
+    if (domain) query.set("domain", domain);
+    if (typeof params?.limit === "number") query.set("limit", String(params.limit));
+    if (typeof params?.offset === "number") query.set("offset", String(params.offset));
+    const qs = query.toString();
+    const url = qs
+      ? `${API_URL}/chats/${chatId}/messages?${qs}`
+      : `${API_URL}/chats/${chatId}/messages`;
+    const response = await axios.get(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(currentWorkspace && { "x-workspace": currentWorkspace }),
+      },
+    });
+    return response.data;
+  },
+
   update: async (id: string, chat: any) => {
     const token = localStorage.getItem("accessToken");
     const domain = getUserDomain();
@@ -963,23 +984,33 @@ export const reportService = {
     return response.data;
   },
 
-  async createComparison(
-    drhpNamespace: string,
-    rhpNamespace: string,
-    prompt?: string
-  ): Promise<{ jobId: string; report: Report; reportId: string }> {
+  async createComparison(params: {
+    drhpId: string;
+    rhpId: string;
+    drhpNamespace: string;
+    rhpNamespace: string;
+    prompt?: string;
+  }): Promise<{
+    status: string;
+    job_id: string | null;
+    message?: string;
+    idempotent?: boolean;
+    pending?: boolean;
+  }> {
     const token = localStorage.getItem("accessToken");
     const domain = getUserDomain();
     const currentWorkspace = getCurrentWorkspace();
     const payload = {
-      drhpNamespace,
-      rhpNamespace,
+      drhpId: params.drhpId,
+      rhpId: params.rhpId,
+      drhpNamespace: params.drhpNamespace,
+      rhpNamespace: params.rhpNamespace,
       domain, // Include domain in payload
       prompt:
-        prompt || "Compare these documents and provide a detailed analysis",
+        params.prompt || "Compare these documents and provide a detailed analysis",
     };
     const response = await axios.post(
-      `${API_URL}/reports/create-report`,
+      `${API_URL}/reports/compare`,
       payload,
       {
         headers: {
@@ -1180,6 +1211,7 @@ export const reportService = {
 };
 
 export const summaryService = {
+  _inflightByDocument: new Map<string, Promise<Summary[]>>(),
   async getAll(): Promise<Summary[]> {
     const token = localStorage.getItem("accessToken");
     const domain = getUserDomain();
@@ -1210,10 +1242,17 @@ export const summaryService = {
   },
 
   async getByDocumentId(documentId: string, linkToken?: string): Promise<Summary[]> {
+    const domain = getUserDomain() || "";
+    const currentWorkspace = getCurrentWorkspace() || "";
+    const effectiveLinkToken = linkToken || localStorage.getItem("sharedLinkToken") || "";
+    const inflightKey = `${documentId}::${domain}::${currentWorkspace}::${effectiveLinkToken}`;
+    const existing = this._inflightByDocument.get(inflightKey);
+    if (existing) {
+      return existing;
+    }
+
+    const requestPromise = (async () => {
     const token = localStorage.getItem("accessToken");
-    const domain = getUserDomain();
-    const currentWorkspace = getCurrentWorkspace();
-    const effectiveLinkToken = linkToken || localStorage.getItem("sharedLinkToken");
     const params = new URLSearchParams();
     if (domain) params.set("domain", domain);
     if (effectiveLinkToken) params.set("linkToken", effectiveLinkToken);
@@ -1227,6 +1266,14 @@ export const summaryService = {
       },
     });
     return response.data;
+    })();
+
+    this._inflightByDocument.set(inflightKey, requestPromise);
+    try {
+      return await requestPromise;
+    } finally {
+      this._inflightByDocument.delete(inflightKey);
+    }
   },
 
   async create(summary: Omit<Summary, "id" | "updatedAt">): Promise<Summary> {

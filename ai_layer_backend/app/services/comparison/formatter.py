@@ -157,7 +157,15 @@ class ComparisonFormatter:
                 if not cells: continue
                 
                 if not header_processed:
-                    header_cells = "".join([f"<th>{re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', c)}</th>" for c in cells])
+                    header_cells_parts = []
+                    for c in cells:
+                        header_clean = re.sub(
+                            r"[*][*](.*?)[*][*]",
+                            lambda m: f"<strong>{m.group(1)}</strong>",
+                            c,
+                        )
+                        header_cells_parts.append(f"<th>{header_clean}</th>")
+                    header_cells = "".join(header_cells_parts)
                     table_html += f"<thead><tr>{header_cells}</tr></thead><tbody>"
                     header_processed = True
                 else:

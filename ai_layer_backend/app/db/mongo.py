@@ -57,7 +57,8 @@ class MongoDB:
             )
         except Exception as e:
             logger.warning(f"MongoDB connection failed: {str(e)}")
-            # Don't raise, allowing server to start for local dev
+            if settings.mongodb_fail_fast:
+                raise
     
     async def disconnect(self) -> None:
         """Close async MongoDB connection."""
@@ -84,7 +85,8 @@ class MongoDB:
             )
         except Exception as e:
             logger.warning("MongoDB sync connection failed, but continuing", error=str(e))
-            # Don't raise, allowing workers to start
+            if settings.mongodb_fail_fast:
+                raise
     
     def disconnect_sync(self) -> None:
         """Close synchronous MongoDB connection."""
@@ -116,6 +118,17 @@ class MongoDB:
         Returns:
             Collection instance
         """
+        # Celery worker processes can occasionally hold a closed/stale sync client.
+        # Reconnect lazily so long-running jobs do not fail with
+        # "Cannot use MongoClient after close".
+        if self.sync_client is not None:
+            try:
+                self.sync_client.admin.command("ping")
+            except Exception:
+                self.sync_client = None
+                self.sync_db = None
+        if self.sync_db is None:
+            self.connect_sync()
         if self.sync_db is None:
             raise RuntimeError("MongoDB sync not connected. Call connect_sync() first.")
         return self.sync_db[collection_name]

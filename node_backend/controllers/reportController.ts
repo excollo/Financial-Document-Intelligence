@@ -32,6 +32,9 @@ const parsePagination = (query: any) => {
 export const reportController = {
   async compareDocuments(req: AuthRequest, res: Response) {
     let createdJobId: string | null = null;
+    let idempotencyKey: string | null = null;
+    let idempotencyOwner: string | null = null;
+    let tenantIdForLock: string | null = null;
     try {
       const { drhpNamespace, rhpNamespace, sessionId, prompt } = req.body;
 
@@ -62,14 +65,25 @@ export const reportController = {
       if (!tenantId) {
         return res.status(400).json({ error: "Unable to resolve tenant/domain for comparison job" });
       }
+      tenantIdForLock = String(tenantId);
       const queueName = "light_jobs";
       const userId = req.user?._id?.toString?.() || "anonymous";
-      const idempotencyKey = crypto
+      idempotencyKey = crypto
         .createHash("sha256")
         .update(`${userId}:${drhpId}:${rhpId}:comparison`)
         .digest("hex");
-      const idempotencyOwner = crypto.randomUUID();
+      idempotencyOwner = crypto.randomUUID();
       const admission = await jobAdmissionService.check(tenantId, queueName);
+      console.log("[report.compare] admission decision", {
+        tenantId,
+        queueName,
+        allow: admission.allow,
+        reason: admission.reason,
+        loadState: admission.loadState,
+        telemetryStatus: admission.telemetryStatus,
+        queueDepth: admission.queueDepth,
+        queueAgeSeconds: admission.queueAgeSeconds,
+      });
       if (admission.telemetryStatus === "UNAVAILABLE") {
         metricsService.emit("telemetry_unavailable", 1, {
           tenant_id: tenantId,
@@ -89,8 +103,13 @@ export const reportController = {
       }
       const lock = await idempotencyLockService.acquire({
         tenantId: String(tenantId),
-        idempotencyKey: idempotencyKey,
+        idempotencyKey,
         ownerId: idempotencyOwner,
+      });
+      console.log("[report.compare] idempotency lock", {
+        acquired: lock.acquired,
+        hasExistingJob: Boolean((lock as any)?.existingJob),
+        retryAfterSeconds: (lock as any)?.retryAfterSeconds,
       });
       if (!lock.acquired) {
         if (lock.existingJob) {
@@ -151,18 +170,29 @@ export const reportController = {
       });
       await idempotencyLockService.bindJob({
         tenantId: String(tenantId),
-        idempotencyKey: idempotencyKey,
+        idempotencyKey,
         ownerId: idempotencyOwner,
         jobId: String(payload.job_id),
       });
 
       const comparisonUrl = `${pythonApiUrl}/jobs/comparison`;
+      console.log("[report.compare] python dispatch start", {
+        url: comparisonUrl,
+        jobId: payload.job_id,
+        tenantId,
+        workspaceId: payload.metadata?.workspaceId,
+      });
       const signed = buildSignedInternalJsonRequest("POST", comparisonUrl, payload, {
         "X-Trace-Id": payload.job_id,
       });
       const pythonResponse = await axios.post(comparisonUrl, signed.data, {
         headers: signed.headers,
         timeout: 30000
+      });
+      console.log("[report.compare] python dispatch response", {
+        status: pythonResponse?.status,
+        dataStatus: pythonResponse?.data?.status,
+        jobId: pythonResponse?.data?.job_id || payload.job_id,
       });
 
       if (pythonResponse.data && pythonResponse.data.status === "accepted") {
@@ -175,11 +205,20 @@ export const reportController = {
         });
       }
 
+      if (createdJobId) {
+        await idempotencyLockService.releaseByJobId({
+          tenantId: String(tenantId),
+          jobId: createdJobId,
+        });
+      }
       res.status(500).json({ error: "Failed to start comparison job", details: pythonResponse.data });
     } catch (error: any) {
       if (createdJobId) {
         await Job.updateOne(
-          { id: createdJobId },
+          {
+            id: createdJobId,
+            ...(tenantIdForLock ? { tenant_id: tenantIdForLock } : {}),
+          },
           {
             $set: {
               status: "failed",
@@ -189,6 +228,18 @@ export const reportController = {
             },
           }
         );
+        if (tenantIdForLock) {
+          await idempotencyLockService.releaseByJobId({
+            tenantId: tenantIdForLock,
+            jobId: createdJobId,
+          });
+        }
+      } else if (tenantIdForLock && idempotencyKey && idempotencyOwner) {
+        await idempotencyLockService.releaseByOwner({
+          tenantId: tenantIdForLock,
+          idempotencyKey,
+          ownerId: idempotencyOwner,
+        });
       }
       console.error("Error in compareDocuments:", error.message);
       res.status(500).json({ error: "Comparison trigger failed", message: error.message });
@@ -349,28 +400,68 @@ export const reportController = {
             new Set(sharedDocumentNamespaces.filter((ns: any) => !!ns))
           );
 
-          // Include reports for shared documents
+          // Include reports for shared documents, but keep each shared branch scoped
+          // to the exact domain/workspace tuple where those documents were resolved.
           if (uniqueSharedDocumentIds.length > 0 || uniqueSharedNamespaces.length > 0) {
-            const sharedReportsQuery: any[] = [
-              { drhpId: { $in: uniqueSharedDocumentIds } },
-              { rhpId: { $in: uniqueSharedDocumentIds } },
-            ];
-
-            if (uniqueSharedNamespaces.length > 0) {
-              sharedReportsQuery.push(
-                { drhpNamespace: { $in: uniqueSharedNamespaces } },
-                { rhpNamespace: { $in: uniqueSharedNamespaces } }
-              );
+            const sharedScopeMap = new Map<
+              string,
+              { domain: string; workspaceId: string; ids: Set<string>; namespaces: Set<string> }
+            >();
+            for (const doc of sharedDocs as any[]) {
+              const scopedDomain = String(doc?.domain || "");
+              const scopedWorkspace = String(doc?.workspaceId || "");
+              const docId = String(doc?.id || "");
+              const docNamespace = String(doc?.namespace || "");
+              if (!scopedDomain || !scopedWorkspace || !docId) {
+                continue;
+              }
+              const key = `${scopedDomain}::${scopedWorkspace}`;
+              if (!sharedScopeMap.has(key)) {
+                sharedScopeMap.set(key, {
+                  domain: scopedDomain,
+                  workspaceId: scopedWorkspace,
+                  ids: new Set<string>(),
+                  namespaces: new Set<string>(),
+                });
+              }
+              const scoped = sharedScopeMap.get(key)!;
+              scoped.ids.add(docId);
+              if (docNamespace) {
+                scoped.namespaces.add(docNamespace);
+              }
             }
 
-            // Combine with workspace reports
-            // Remove domain/workspaceId from base query since we're using $or
-            delete query.domain;
-            delete query.workspaceId;
-            query.$or = [
-              { domain: domain, workspaceId: currentWorkspace },
-              ...sharedReportsQuery,
-            ];
+            const sharedReportsQuery: any[] = [];
+            for (const scoped of sharedScopeMap.values()) {
+              const ids = Array.from(scoped.ids);
+              const namespaces = Array.from(scoped.namespaces);
+              const scopedOr: any[] = [
+                { drhpId: { $in: ids } },
+                { rhpId: { $in: ids } },
+              ];
+              if (namespaces.length > 0) {
+                scopedOr.push(
+                  { drhpNamespace: { $in: namespaces } },
+                  { rhpNamespace: { $in: namespaces } }
+                );
+              }
+              sharedReportsQuery.push({
+                domain: scoped.domain,
+                workspaceId: scoped.workspaceId,
+                $or: scopedOr,
+              });
+            }
+
+            if (sharedReportsQuery.length > 0) {
+              // Combine with workspace reports
+              // Remove domain/workspaceId from base query since we're using $or
+              delete query.domain;
+              delete query.workspaceId;
+              query.$or = [
+                { domain: domain, workspaceId: currentWorkspace },
+                ...sharedReportsQuery,
+              ];
+            }
           }
         }
         // If no shared directories, query already has domain and workspaceId, so it will show all workspace reports
@@ -509,6 +600,7 @@ export const reportController = {
       }
 
 
+      const { id: generatedId, ...reportDataWithoutId } = reportData;
       const report = await Report.findOneAndUpdate(
         {
           domainId,
@@ -517,8 +609,8 @@ export const reportController = {
           rhpNamespace,
         },
         {
-          $set: reportData,
-          $setOnInsert: { id: reportData.id },
+          $set: reportDataWithoutId,
+          $setOnInsert: { id: generatedId },
         },
         {
           new: true,
@@ -570,7 +662,7 @@ export const reportController = {
 
   async reportStatusUpdate(req: Request, res: Response) {
     try {
-      const { jobId, status, error, workspaceId, domainId } = req.body;
+      const { jobId, status, error, workspaceId, domainId, output_urls, outputUrls, result } = req.body;
       if (!workspaceId || !domainId) {
         return res.status(400).json({
           message: "Missing required scoped callback metadata",
@@ -614,11 +706,32 @@ export const reportController = {
         return res.status(409).json({ message: "Tenant mismatch for callback" });
       }
 
+      const canonicalOutputUrls =
+        (output_urls &&
+        typeof output_urls === "object" &&
+        !Array.isArray(output_urls) &&
+        Object.keys(output_urls).length > 0
+          ? output_urls
+          : undefined) ||
+        (outputUrls &&
+        typeof outputUrls === "object" &&
+        !Array.isArray(outputUrls) &&
+        Object.keys(outputUrls).length > 0
+          ? outputUrls
+          : undefined) ||
+        (result?.output_urls &&
+        typeof result.output_urls === "object" &&
+        !Array.isArray(result.output_urls) &&
+        Object.keys(result.output_urls).length > 0
+          ? result.output_urls
+          : undefined);
+
       const lifecycle = await applyCanonicalInternalJobStatusUpdate({
         job_id: jobId,
         tenant_id: String(job.tenant_id),
         status: mappedStatus,
         current_stage: "comparison_callback",
+        output_urls: canonicalOutputUrls,
         error_message: typeof error === "string" ? error : error?.message,
       });
       if (lifecycle.statusCode !== 200) {

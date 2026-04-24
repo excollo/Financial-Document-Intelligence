@@ -128,20 +128,12 @@ export default function ChatSummaryLayout() {
 
                 try {
                   const updatedDoc = await documentService.getById(namespace, linkToken || undefined);
-
-                  // Check for summaries as indicator of completion
-                  let summariesExist = false;
-                  try {
-                    const summaries = await summaryService.getByDocumentId(updatedDoc.id, linkToken || undefined);
-                    summariesExist = summaries && summaries.length > 0;
-                  } catch { }
-
-                  // Document is complete if status is not processing OR if summaries exist
-                  if (updatedDoc && (updatedDoc.status !== "processing" || summariesExist)) {
+                  // Document is complete when backend marks status terminal.
+                  if (updatedDoc && updatedDoc.status !== "processing") {
                     // Document processing completed
                     setCurrentDocument(updatedDoc);
                     setIsDocumentProcessing(false);
-                    if (updatedDoc.status === "completed" || updatedDoc.status === "ready" || summariesExist) {
+                    if (updatedDoc.status === "completed" || updatedDoc.status === "ready") {
                       toast.success("Document processing completed!");
                     }
                   } else {
@@ -294,7 +286,7 @@ export default function ChatSummaryLayout() {
           }
         />
         <RhpUploadModal
-          drhpId={currentDocument?._id}
+          drhpId={currentDocument?.id}
           drhpName={currentDocument?.name || ""}
           open={showRhpModal}
           onOpenChange={setShowRhpModal}

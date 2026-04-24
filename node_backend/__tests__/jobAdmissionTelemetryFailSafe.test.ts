@@ -1,5 +1,3 @@
-import { jobAdmissionService } from "../services/jobAdmissionService";
-
 jest.mock("../models/Job", () => ({
   Job: {
     countDocuments: jest.fn(),
@@ -15,6 +13,9 @@ jest.mock("../services/brokerQueueTelemetryService", () => ({
 
 describe("admission telemetry fail-safe", () => {
   it("forces overloaded when telemetry unavailable", async () => {
+    process.env.QUEUE_ADMISSION_STRICT = "true";
+    jest.resetModules();
+    const { jobAdmissionService } = await import("../services/jobAdmissionService");
     const { Job } = jest.requireMock("../models/Job");
     const { brokerQueueTelemetryService } = jest.requireMock("../services/brokerQueueTelemetryService");
     Job.countDocuments.mockResolvedValueOnce(3).mockResolvedValueOnce(1);
@@ -39,5 +40,6 @@ describe("admission telemetry fail-safe", () => {
     expect(decision.loadState).toBe("overloaded");
     expect(decision.telemetryStatus).toBe("UNAVAILABLE");
     expect(decision.reason).toBe("TELEMETRY_UNAVAILABLE");
+    delete process.env.QUEUE_ADMISSION_STRICT;
   });
 });

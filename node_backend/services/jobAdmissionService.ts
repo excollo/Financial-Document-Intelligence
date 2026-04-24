@@ -6,6 +6,11 @@ const MAX_ACTIVE_RUNNING_JOBS = Number(process.env.MAX_ACTIVE_RUNNING_JOBS || "5
 const QUEUE_AGE_WARN_SECONDS = Number(process.env.QUEUE_AGE_WARN_SECONDS || "120");
 const DEGRADED_QUEUE_DEPTH = Number(process.env.DEGRADED_QUEUE_DEPTH || "120");
 const OVERLOADED_QUEUE_AGE_SECONDS = Number(process.env.OVERLOADED_QUEUE_AGE_SECONDS || "300");
+const INFERRED_QUEUE_STALE_SECONDS = Number(process.env.INFERRED_QUEUE_STALE_SECONDS || "1800");
+const QUEUE_ADMISSION_STRICT =
+  typeof process.env.QUEUE_ADMISSION_STRICT === "string"
+    ? process.env.QUEUE_ADMISSION_STRICT.toLowerCase() === "true"
+    : process.env.NODE_ENV === "production";
 
 export interface AdmissionDecision {
   allow: boolean;
@@ -21,10 +26,21 @@ export interface AdmissionDecision {
 class JobAdmissionService {
   async check(tenantId: string, queueName: string): Promise<AdmissionDecision> {
     const queuedStatuses = ["queued", "queued_with_delay"];
+    const inferredCutoff = new Date(Date.now() - INFERRED_QUEUE_STALE_SECONDS * 1000);
     const [inferredDepth, activeRunning, oldestQueued, brokerSnapshot] = await Promise.all([
-      Job.countDocuments({ tenant_id: tenantId, queue_name: queueName, status: { $in: queuedStatuses } }),
+      Job.countDocuments({
+        tenant_id: tenantId,
+        queue_name: queueName,
+        status: { $in: queuedStatuses },
+        updatedAt: { $gte: inferredCutoff },
+      }),
       Job.countDocuments({ tenant_id: tenantId, queue_name: queueName, status: "processing" }),
-      Job.findOne({ tenant_id: tenantId, queue_name: queueName, status: { $in: queuedStatuses } })
+      Job.findOne({
+        tenant_id: tenantId,
+        queue_name: queueName,
+        status: { $in: queuedStatuses },
+        updatedAt: { $gte: inferredCutoff },
+      })
         .sort({ createdAt: 1 })
         .select("createdAt")
         .lean(),
@@ -35,6 +51,18 @@ class JobAdmissionService {
       ? Math.max(0, Math.floor((Date.now() - new Date(oldestQueued.createdAt).getTime()) / 1000))
       : 0;
     if (brokerSnapshot.telemetry_status === "UNAVAILABLE") {
+      if (!QUEUE_ADMISSION_STRICT) {
+        return {
+          allow: true,
+          status: "queued_with_delay",
+          loadState: "degraded",
+          telemetryStatus: "UNAVAILABLE",
+          reason: "TELEMETRY_UNAVAILABLE_LOCAL_BYPASS",
+          queueDepth: inferredDepth,
+          activeRunning,
+          queueAgeSeconds: inferredQueueAgeSeconds,
+        };
+      }
       return {
         allow: false,
         status: "queued_with_delay",
@@ -52,7 +80,20 @@ class JobAdmissionService {
       inferredQueueAgeSeconds
     );
 
-    if (queueDepth >= MAX_QUEUE_DEPTH || queueAgeSeconds >= OVERLOADED_QUEUE_AGE_SECONDS) {
+    const hasBacklog = queueDepth > 0 || inferredDepth > 0;
+    if (queueDepth >= MAX_QUEUE_DEPTH || (hasBacklog && queueAgeSeconds >= OVERLOADED_QUEUE_AGE_SECONDS)) {
+      if (!QUEUE_ADMISSION_STRICT) {
+        return {
+          allow: true,
+          status: "queued_with_delay",
+          loadState: "degraded",
+          telemetryStatus: "OK",
+          reason: "QUEUE_OVERLOADED_LOCAL_BYPASS",
+          queueDepth,
+          activeRunning,
+          queueAgeSeconds,
+        };
+      }
       return {
         allow: false,
         status: "queued_with_delay",
@@ -68,7 +109,7 @@ class JobAdmissionService {
     if (
       activeRunning >= MAX_ACTIVE_RUNNING_JOBS ||
       queueDepth >= DEGRADED_QUEUE_DEPTH ||
-      queueAgeSeconds >= QUEUE_AGE_WARN_SECONDS
+      (hasBacklog && queueAgeSeconds >= QUEUE_AGE_WARN_SECONDS)
     ) {
       return {
         allow: true,

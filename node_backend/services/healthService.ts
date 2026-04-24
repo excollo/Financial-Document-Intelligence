@@ -56,7 +56,7 @@ export class HealthService {
     private static readonly EXCOLLO_DOMAIN = "excollo.com";
     private static readonly DEFAULT_ALERT_RECIPIENTS = [
         "sonuv@excollo.com",
-        "developmet@excollo.com",
+        "development@excollo.com",
         "chinmaygupta@excollo.com",
     ];
     private static readonly DEFAULT_HEALTH_CHECK_TOGGLES: HealthCheckToggles = {
@@ -71,6 +71,14 @@ export class HealthService {
             perplexity: false,
         },
     };
+
+    private static isHealthAlertsEnabled(): boolean {
+        const env = (process.env.NODE_ENV || "development").toLowerCase();
+        if (env === "production") {
+            return true;
+        }
+        return process.env.HEALTH_ALERTS_ENABLED === "true";
+    }
 
     static async checkMongoDB(): Promise<ServiceStatus> {
         const start = Date.now();
@@ -284,7 +292,7 @@ export class HealthService {
         };
 
         // If critical error, send email alert
-        if (overall === "error" && this.shouldSendAlert(report)) {
+        if (this.isHealthAlertsEnabled() && overall === "error" && this.shouldSendAlert(report)) {
             console.log("HealthService: Triggering email alert...");
             this.sendEmailAlert(report).catch(err => console.error("HealthService: Async email alert failed:", err));
         }
@@ -403,6 +411,11 @@ export class HealthService {
         if (invalidRecipients.length > 0) {
             console.warn(
                 `HealthService: Ignoring invalid health alert recipients (must be @${this.EXCOLLO_DOMAIN}): ${invalidRecipients.join(", ")}`
+            );
+        }
+        if (validRecipients.length === 0) {
+            console.error(
+                `HealthService: No valid health alert recipients configured. Set HEALTH_ALERT_RECIPIENTS or domain health_alert_recipients.`
             );
         }
 

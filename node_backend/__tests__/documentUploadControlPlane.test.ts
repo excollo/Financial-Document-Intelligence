@@ -469,10 +469,14 @@ describe("document upload control plane", () => {
 
   it("uploadRhp treats accepted dispatch as successful enqueue", async () => {
     const drhpSave = jest.fn().mockResolvedValue(undefined);
-    Document.findById.mockReset();
-    Document.findById.mockReturnValue({
-      id: "drhp-1",
-      save: drhpSave,
+    Document.findOne.mockImplementationOnce((query: any) => {
+      if (query?.id === "drhp-1" && query?.type === "DRHP") {
+        return Promise.resolve({
+          id: "drhp-1",
+          save: drhpSave,
+        });
+      }
+      return Promise.resolve(null);
     });
     storageService.getFileSize.mockResolvedValueOnce(25 * 1024 * 1024);
     mockedAxios.post.mockResolvedValueOnce({

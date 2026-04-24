@@ -22,6 +22,8 @@ class ExecutionClaimService:
         self._index_ready = True
 
     async def try_claim(self, task_name: str, job_id: str, scope: Optional[str] = None) -> Tuple[bool, str]:
+        # Ensure Motor connection is rebound to the active event loop.
+        await mongodb.connect()
         now_ts = time.time()
         lease_seconds = int(os.environ.get("EXECUTION_CLAIM_LEASE_SECONDS", "3600"))
         claim_id = f"{task_name}:{job_id}:{int(now_ts * 1000)}"
@@ -67,6 +69,8 @@ class ExecutionClaimService:
         return bool(doc and doc.get("execution_claimed_by") == claim_id), claim_id
 
     async def release_claim(self, task_name: str, job_id: str, claim_id: str, scope: Optional[str] = None):
+        # Ensure Motor connection is rebound to the active event loop.
+        await mongodb.connect()
         coll = mongodb.get_collection(self.COLLECTION)
         await coll.update_one(
             {
@@ -79,6 +83,8 @@ class ExecutionClaimService:
         )
 
     async def renew_claim(self, task_name: str, job_id: str, claim_id: str, scope: Optional[str] = None) -> bool:
+        # Ensure Motor connection is rebound to the active event loop.
+        await mongodb.connect()
         coll = mongodb.get_collection(self.COLLECTION)
         now_ts = time.time()
         lease_seconds = int(os.environ.get("EXECUTION_CLAIM_LEASE_SECONDS", "3600"))

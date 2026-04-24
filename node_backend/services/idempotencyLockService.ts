@@ -160,6 +160,32 @@ class IdempotencyLockService {
     );
   }
 
+  async releaseByOwner(params: {
+    tenantId: string;
+    idempotencyKey: string;
+    ownerId: string;
+  }): Promise<void> {
+    await IdempotencyLock.deleteOne({
+      tenant_id: params.tenantId,
+      idempotency_key: params.idempotencyKey,
+      owner_id: params.ownerId,
+    });
+  }
+
+  async releaseByJobId(params: { tenantId: string; jobId: string }): Promise<void> {
+    await IdempotencyLock.deleteMany({
+      tenant_id: params.tenantId,
+      job_id: params.jobId,
+    });
+  }
+
+  async releaseByIdempotencyKey(params: { tenantId: string; idempotencyKey: string }): Promise<void> {
+    await IdempotencyLock.deleteMany({
+      tenant_id: params.tenantId,
+      idempotency_key: params.idempotencyKey,
+    });
+  }
+
   private async resolveActiveJob(jobId: string | null, tenantId: string) {
     if (!jobId) return null;
     const job = await this.runQuery<any>(

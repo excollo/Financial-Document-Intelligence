@@ -28,6 +28,10 @@ def setup_logging() -> None:
         stream=sys.stdout,
         level=log_level,
     )
+    # Reduce third-party client verbosity in local/dev logs.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
     
     # Configure structlog processors
     processors = [

@@ -13,6 +13,9 @@ function getConfig() {
   const nodeEnv = (process.env.NODE_ENV || "development").toLowerCase();
   const isProduction = nodeEnv === "production";
   const weakModeRequested = process.env.INTERNAL_CALLBACK_SIGNATURE_REQUIRED === "false";
+  const allowInMemoryNonceFallbackProd =
+    String(process.env.INTERNAL_CALLBACK_ALLOW_IN_MEMORY_NONCE_FALLBACK_PROD || "").toLowerCase() ===
+    "true";
   return {
     nonceTtlSeconds: Number(process.env.INTERNAL_CALLBACK_NONCE_TTL_SECONDS || 300),
     timestampToleranceSeconds: Number(
@@ -23,6 +26,7 @@ function getConfig() {
     internalSecret: process.env.INTERNAL_SECRET || "",
     signatureRequired: isProduction ? true : !weakModeRequested,
     isProduction,
+    allowInMemoryNonceFallbackProd,
   };
 }
 
@@ -90,7 +94,7 @@ function computeSignature(payload: string, secret: string) {
 }
 
 async function checkAndStoreNonce(nonce: string): Promise<boolean> {
-  const { isProduction } = getConfig();
+  const { isProduction, allowInMemoryNonceFallbackProd } = getConfig();
   const redis = getRedisClient();
   if (redis) {
     try {
@@ -111,7 +115,7 @@ async function checkAndStoreNonce(nonce: string): Promise<boolean> {
     }
   }
 
-  if (isProduction) {
+  if (isProduction && !allowInMemoryNonceFallbackProd) {
     // Multi-instance deployments require a shared nonce store.
     return false;
   }

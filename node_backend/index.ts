@@ -37,6 +37,7 @@ import { emitToWorkspace } from "./services/realtimeEmitter";
 import { requestMetricsMiddleware } from "./middleware/requestMetrics";
 import { brokerQueueTelemetryService } from "./services/brokerQueueTelemetryService";
 import { buildSignedInternalRawRequest } from "./services/internalRequestSigning";
+import { staleJobReaperService } from "./services/staleJobReaperService";
 
 dotenv.config();
 
@@ -235,8 +236,13 @@ app.use(
 );
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 app.use(requestMetricsMiddleware);
+const shouldLogHttpRequests = process.env.LOG_HTTP_REQUESTS !== "false";
+const noisyRequestPrefixes = ["/api/notifications", "/api/jobs", "/api/documents/check-existing"];
 app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  const isNoisyPoll = noisyRequestPrefixes.some((prefix) => req.url.startsWith(prefix));
+  if (shouldLogHttpRequests && !isNoisyPoll) {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  }
   next();
 });
 app.use(passport.initialize());
@@ -406,6 +412,23 @@ if (process.env.NODE_ENV !== "test") {
   }, Number(process.env.BROKER_TELEMETRY_POLL_MS || "10000")).unref();
 }
 
+if (process.env.NODE_ENV !== "test" && process.env.STALE_JOB_REAPER_ENABLED !== "false") {
+  const intervalMs = Number(process.env.STALE_JOB_REAPER_INTERVAL_MS || "60000");
+  setTimeout(() => {
+    staleJobReaperService.reapOnce().catch((err) => {
+      console.error("[StaleJobReaper] Initial run failed:", err?.message || err);
+    });
+    setInterval(() => {
+      staleJobReaperService.reapOnce().catch((err) => {
+        console.error("[StaleJobReaper] Interval run failed:", err?.message || err);
+      });
+    }, intervalMs).unref();
+  }, 15000).unref();
+  console.log(
+    `🛡️ Stale job reaper started (interval=${intervalMs}ms, queuedTimeout=${process.env.STALE_JOB_QUEUED_TIMEOUT_MS || 600000}ms, processingTimeout=${process.env.STALE_JOB_PROCESSING_TIMEOUT_MS || 2700000}ms)`
+  );
+}
+
 // ============================================================================
 // STALE DOCUMENT RECOVERY WATCHER
 // Runs every 5 minutes. Finds documents stuck in "processing" for >20 minutes
@@ -441,7 +464,7 @@ async function recoverStaleDocuments() {
 
         try {
           // Check if Celery has a job for this document's id (job_id may equal documentId due to our fix)
-          const statusUrl = `${pythonApiUrl}/jobs/${doc.id}`;
+          const statusUrl = `${pythonApiUrl}/jobs/${encodeURIComponent(String(doc.id))}`;
           const signed = buildSignedInternalRawRequest("GET", statusUrl, "");
           const jobRes = await axios.get(statusUrl, {
             headers: signed.headers,

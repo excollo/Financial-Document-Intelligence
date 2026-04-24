@@ -27,6 +27,23 @@ class MarkdownConverter:
             return []
         val = data.get(key)
         return val if isinstance(val, list) else []
+
+    def _safe_number(self, value: Any, default: float = 0.0) -> float:
+        """Convert mixed numeric inputs (int/float/str) into float safely."""
+        if value is None:
+            return default
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            cleaned = value.replace(",", "").replace("%", "").strip()
+            cleaned = re.sub(r"[^\d.\-]", "", cleaned)
+            if cleaned in {"", "-", ".", "-."}:
+                return default
+            try:
+                return float(cleaned)
+            except ValueError:
+                return default
+        return default
     
     def convert_investor_json_to_markdown(
         self,
@@ -43,7 +60,7 @@ class MarkdownConverter:
             return ""
 
         company_name = investor_json.get("company_name", "Not explicitly stated in the provided text")
-        total_share_issue = investor_json.get("total_share_issue", 0)
+        total_share_issue = self._safe_number(investor_json.get("total_share_issue", 0))
         investors = self._safe_get_list(investor_json, "section_a_extracted_investors")
 
         # -- Step 1: Build processed list --
@@ -51,7 +68,8 @@ class MarkdownConverter:
 
         # -- Step 2: Add Others row if needed (matches n8n addOthersRowIfNeeded) --
         total_extracted_shares = sum(
-            inv.get("number_of_equity_shares", 0) for inv in processed_investors
+            self._safe_number(inv.get("number_of_equity_shares", 0))
+            for inv in processed_investors
         )
         
         if total_share_issue > 0 and total_extracted_shares < total_share_issue:
@@ -70,7 +88,7 @@ class MarkdownConverter:
         # -- Step 3: Recalculate percentages --
         if total_share_issue > 0:
             for inv in processed_investors:
-                shares = inv.get("number_of_equity_shares", 0)
+                shares = self._safe_number(inv.get("number_of_equity_shares", 0))
                 pct_value = (shares / total_share_issue) * 100
                 pct_str = f"{pct_value:.2f}%"
                 inv["percentage_of_pre_issue_capital"] = pct_str
@@ -131,7 +149,7 @@ class MarkdownConverter:
         else:
             for inv in processed_investors:
                 name = inv.get("investor_name", "N/A")
-                shares = inv.get("number_of_equity_shares", 0)
+                shares = int(self._safe_number(inv.get("number_of_equity_shares", 0)))
                 pct = inv.get("percentage_of_pre_issue_capital", "0%")
                 cat = inv.get("investor_category", "N/A")
                 markdown += f"| {name} | {shares:,} | {pct} | {cat} |\n"
@@ -147,7 +165,8 @@ class MarkdownConverter:
             markdown += llm_matched_md + "\n"
         else:
             matched_total_shares = sum(
-                m["number_of_equity_shares"] for m in matched_investors
+                self._safe_number(m.get("number_of_equity_shares", 0))
+                for m in matched_investors
             )
             matched_total_pct_numeric = sum(
                 float(str(m["percentage_of_capital"]).replace("%", ""))
@@ -172,7 +191,7 @@ class MarkdownConverter:
                 for m in matched_investors:
                     markdown += (
                         f"| {m['investor_name']} "
-                        f"| {m['number_of_equity_shares']:,} "
+                        f"| {int(self._safe_number(m.get('number_of_equity_shares', 0))):,} "
                         f"| {m['percentage_of_capital']} "
                         f"| {m['investor_category']} |\n"
                     )

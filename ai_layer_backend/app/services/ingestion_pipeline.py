@@ -464,6 +464,12 @@ class IngestionPipeline:
                 job_id=job_id,
                 status="completed",
                 namespace=filename,
+                output_urls={
+                    "namespace": filename,
+                    "documentId": str(metadata.get("documentId") or job_id),
+                    "workspaceId": str(metadata.get("workspaceId") or ""),
+                    "domainId": str(metadata.get("domainId") or ""),
+                },
                 document_id=metadata.get("documentId"),
                 workspace_id=metadata.get("workspaceId"),
                 domain_id=metadata.get("domainId"),

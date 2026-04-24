@@ -32,10 +32,15 @@ const parsePagination = (query: any) => {
 };
 
 const SUMMARY_TRIGGER_TIMEOUT_MS = Number(process.env.SUMMARY_TRIGGER_TIMEOUT_MS || 120000);
+const SUMMARY_STALE_QUEUE_MS = Number(process.env.SUMMARY_STALE_QUEUE_MS || 10 * 60 * 1000);
+const SUMMARY_STALE_PROCESSING_MS = Number(process.env.SUMMARY_STALE_PROCESSING_MS || 30 * 60 * 1000);
 
 export const summaryController = {
   async triggerSummary(req: AuthRequest, res: Response) {
     let createdJobId: string | null = null;
+    let tenantIdForLock: string | null = null;
+    let idempotencyKeyForLock: string | null = null;
+    let idempotencyOwnerForLock: string | null = null;
     try {
       const { documentId, namespace, docType, metadata } = req.body;
 
@@ -59,6 +64,7 @@ export const summaryController = {
       if (!tenantId) {
         return res.status(400).json({ error: "Unable to resolve tenant/domain for summary job" });
       }
+      tenantIdForLock = String(tenantId);
       const queueName = "light_jobs";
       const userId = req.user?._id?.toString?.() || "anonymous";
       const operationDocumentId = `${documentId || namespace}:${docType.toLowerCase()}`;
@@ -67,7 +73,19 @@ export const summaryController = {
         .update(`${userId}:${operationDocumentId}:summary`)
         .digest("hex");
       const idempotencyOwner = crypto.randomUUID();
+      idempotencyKeyForLock = idempotencyKey;
+      idempotencyOwnerForLock = idempotencyOwner;
       const admission = await jobAdmissionService.check(tenantId, queueName);
+      console.log("[summary.trigger] admission decision", {
+        tenantId,
+        queueName,
+        allow: admission.allow,
+        reason: admission.reason,
+        loadState: admission.loadState,
+        telemetryStatus: admission.telemetryStatus,
+        queueDepth: admission.queueDepth,
+        queueAgeSeconds: admission.queueAgeSeconds,
+      });
       if (admission.telemetryStatus === "UNAVAILABLE") {
         metricsService.emit("telemetry_unavailable", 1, {
           tenant_id: tenantId,
@@ -88,11 +106,62 @@ export const summaryController = {
           code: admission.reason || "QUEUE_OVERLOADED",
         });
       }
-      const lock = await idempotencyLockService.acquire({
+      let lock = await idempotencyLockService.acquire({
         tenantId: String(tenantId),
         idempotencyKey: idempotencyKey,
         ownerId: idempotencyOwner,
       });
+      if (!lock.acquired) {
+        console.log("[summary.trigger] lock not acquired", {
+          tenantId,
+          idempotencyKey,
+          existingJob: (lock as any).existingJob || null,
+          retryAfterSeconds: (lock as any).retryAfterSeconds || null,
+        });
+        // Recover stale summary jobs that keep idempotency locked forever.
+        const existingJobId = (lock as any)?.existingJob?.id;
+        if (existingJobId) {
+          const existingJobDoc = await Job.findOne({ id: existingJobId, tenant_id: tenantId })
+            .select("id status createdAt updatedAt")
+            .lean();
+          if (existingJobDoc) {
+            const ageMs = Date.now() - new Date(existingJobDoc.createdAt as any).getTime();
+            const status = String(existingJobDoc.status || "");
+            const staleQueued =
+              (status === "queued" || status === "queued_with_delay") &&
+              ageMs > SUMMARY_STALE_QUEUE_MS;
+            const staleProcessing = status === "processing" && ageMs > SUMMARY_STALE_PROCESSING_MS;
+            if (staleQueued || staleProcessing) {
+              console.warn("[summary.trigger] reclaiming stale summary job lock", {
+                tenantId,
+                jobId: existingJobDoc.id,
+                status,
+                ageMs,
+              });
+              await Job.updateOne(
+                { id: existingJobDoc.id, tenant_id: tenantId },
+                {
+                  $set: {
+                    status: "failed",
+                    error_reason: "Stale summary job reclaimed by idempotency recovery",
+                    error_message: "Stale summary job reclaimed by idempotency recovery",
+                    completed_at: new Date(),
+                  },
+                }
+              );
+              await idempotencyLockService.releaseByJobId({
+                tenantId: String(tenantId),
+                jobId: String(existingJobDoc.id),
+              });
+              lock = await idempotencyLockService.acquire({
+                tenantId: String(tenantId),
+                idempotencyKey: idempotencyKey,
+                ownerId: idempotencyOwner,
+              });
+            }
+          }
+        }
+      }
       if (!lock.acquired) {
         if (lock.existingJob) {
           return res.status(200).json({
@@ -164,6 +233,11 @@ export const summaryController = {
           ? SUMMARY_TRIGGER_TIMEOUT_MS
           : 120000
       });
+      console.log("[summary.trigger] python dispatch response", {
+        status: pythonResponse.status,
+        dataStatus: pythonResponse.data?.status,
+        jobId: pythonResponse.data?.job_id || payload.job_id,
+      });
 
       if (pythonResponse.data && pythonResponse.data.status === "accepted") {
         await metricsService.emitQueueMetrics(tenantId, queueName);
@@ -175,11 +249,20 @@ export const summaryController = {
         });
       }
 
+      if (createdJobId) {
+        await idempotencyLockService.releaseByJobId({
+          tenantId: String(tenantId),
+          jobId: String(createdJobId),
+        });
+      }
       res.status(500).json({ error: "Failed to start summary job", details: pythonResponse.data });
     } catch (error: any) {
       if (createdJobId) {
         await Job.updateOne(
-          { id: createdJobId },
+          {
+            id: createdJobId,
+            ...(tenantIdForLock ? { tenant_id: tenantIdForLock } : {}),
+          },
           {
             $set: {
               status: "failed",
@@ -189,6 +272,18 @@ export const summaryController = {
             },
           }
         );
+        if (tenantIdForLock) {
+          await idempotencyLockService.releaseByJobId({
+            tenantId: tenantIdForLock,
+            jobId: createdJobId,
+          });
+        }
+      } else if (tenantIdForLock && idempotencyKeyForLock && idempotencyOwnerForLock) {
+        await idempotencyLockService.releaseByOwner({
+          tenantId: tenantIdForLock,
+          idempotencyKey: idempotencyKeyForLock,
+          ownerId: idempotencyOwnerForLock,
+        });
       }
       const upstreamMessage =
         error?.response?.data?.detail ||
@@ -339,16 +434,53 @@ export const summaryController = {
 
           // Non-user-specific summaries:
           // 1) Always include all summaries within the current domain/workspace.
-          // 2) If the user has access to shared documents, also include summaries
-          //    whose `documentId` belongs to those shared documents.
+          // 2) If the user has access to shared documents, include summaries for those
+          //    document IDs only within their resolved domain/workspace scope.
           if (uniqueSharedDocumentIds.length > 0) {
-            // Remove domain/workspaceId from base query since we're using $or
-            delete query.domain;
-            delete query.workspaceId;
-            query.$or = [
-              { domain: domain, workspaceId: currentWorkspace },
-              { documentId: { $in: uniqueSharedDocumentIds } },
-            ];
+            const sharedScopeMap = new Map<
+              string,
+              { domain: string; workspaceId: string; ids: Set<string> }
+            >();
+            for (const doc of sharedDocs as any[]) {
+              const scopedDomain = String(doc?.domain || "");
+              const scopedWorkspace = String(doc?.workspaceId || "");
+              const docId = String(doc?.id || "");
+              if (!scopedDomain || !scopedWorkspace || !docId) {
+                continue;
+              }
+              const key = `${scopedDomain}::${scopedWorkspace}`;
+              if (!sharedScopeMap.has(key)) {
+                sharedScopeMap.set(key, {
+                  domain: scopedDomain,
+                  workspaceId: scopedWorkspace,
+                  ids: new Set<string>(),
+                });
+              }
+              sharedScopeMap.get(key)!.ids.add(docId);
+            }
+
+            const sharedSummariesQuery: any[] = [];
+            for (const scoped of sharedScopeMap.values()) {
+              const ids = Array.from(scoped.ids);
+              if (ids.length === 0) {
+                continue;
+              }
+              sharedSummariesQuery.push({
+                domain: scoped.domain,
+                workspaceId: scoped.workspaceId,
+                documentId: { $in: ids },
+              });
+            }
+
+            if (sharedSummariesQuery.length > 0) {
+              // Remove domain/workspaceId from base query since we're using $or
+              delete query.domain;
+              delete query.workspaceId;
+              query.$or = [
+                { domain: domain, workspaceId: currentWorkspace },
+                ...sharedSummariesQuery,
+              ];
+            }
           }
         }
       }
@@ -358,7 +490,7 @@ export const summaryController = {
         .sort({ updatedAt: -1 })
         .skip(offset)
         .limit(limit)
-        .select("id title updatedAt documentId format domain domainId workspaceId microsoftId userId")
+        .select("id title content updatedAt documentId format domain domainId workspaceId microsoftId userId")
         .lean();
       res.json(summaries);
     } catch (error) {
@@ -396,7 +528,7 @@ export const summaryController = {
         .sort({ updatedAt: -1 })
         .skip(offset)
         .limit(limit)
-        .select("id title updatedAt documentId format domain domainId workspaceId microsoftId userId")
+        .select("id title content updatedAt documentId format domain domainId workspaceId microsoftId userId")
         .lean();
       res.json(summaries);
     } catch (error) {
@@ -686,7 +818,7 @@ export const summaryController = {
 
   async summaryStatusUpdate(req: Request, res: Response) {
     try {
-      const { jobId, status, error, workspaceId, domainId } = req.body;
+      const { jobId, status, error, workspaceId, domainId, output_urls, outputUrls, result } = req.body;
       console.log("Summary status update received from backend worker:", { jobId, status, error });
 
       if (!workspaceId || !domainId) {
@@ -733,11 +865,32 @@ export const summaryController = {
         return res.status(409).json({ message: "Tenant mismatch for callback" });
       }
 
+      const canonicalOutputUrls =
+        (output_urls &&
+        typeof output_urls === "object" &&
+        !Array.isArray(output_urls) &&
+        Object.keys(output_urls).length > 0
+          ? output_urls
+          : undefined) ||
+        (outputUrls &&
+        typeof outputUrls === "object" &&
+        !Array.isArray(outputUrls) &&
+        Object.keys(outputUrls).length > 0
+          ? outputUrls
+          : undefined) ||
+        (result?.output_urls &&
+        typeof result.output_urls === "object" &&
+        !Array.isArray(result.output_urls) &&
+        Object.keys(result.output_urls).length > 0
+          ? result.output_urls
+          : undefined);
+
       const lifecycle = await applyCanonicalInternalJobStatusUpdate({
         job_id: jobId,
         tenant_id: String(job.tenant_id),
         status: mappedStatus,
         current_stage: "summary_callback",
+        output_urls: canonicalOutputUrls,
         error_message: typeof error === "string" ? error : error?.message,
       });
       if (lifecycle.statusCode !== 200) {
@@ -765,9 +918,13 @@ export const summaryController = {
         });
       }
 
-      // Log if there's an error
-      if (error) {
-        console.error("Summary generation error from n8n:", { jobId, status, error });
+      // Log only meaningful callback errors.
+      const hasMeaningfulError =
+        typeof error === "string"
+          ? error.trim().length > 0
+          : Boolean(error && (error.message || error.error || error.code));
+      if (hasMeaningfulError) {
+        console.error("Summary generation callback error:", { jobId, status, error });
       }
 
       res

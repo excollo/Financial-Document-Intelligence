@@ -56,6 +56,7 @@ import { trackDirectoryOpen } from "@/utils/directoryTracking";
 import { getCurrentWorkspace } from "@/services/workspaceContext";
 import { ViewSummaryModal } from "@/components/documentcomponents/ViewSummaryModal";
 import { ViewReportModal } from "@/components/documentcomponents/ViewReportModal";
+import { io as socketIOClient, Socket } from "socket.io-client";
 
 export const StartConversation: React.FC = () => {
   // ============================================================================
@@ -220,6 +221,12 @@ export const StartConversation: React.FC = () => {
   // Intelligence Job state
   const [jobs, setJobs] = useState<any[]>([]); // Jobs in current directory
   const [jobsLoading, setJobsLoading] = useState(false); // Loading state for jobs
+  const socketRef = useRef<Socket | null>(null);
+  const isSocketConnectedRef = useRef(false);
+  const pendingUploadIdsRef = useRef<Set<string>>(new Set());
+  const uploadPollAttemptsRef = useRef<Map<string, number>>(new Map());
+  const uploadPollDelayRef = useRef<Map<string, number>>(new Map());
+  const uploadPollTimerRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   // ============================================================================
   // HOOKS AND EFFECTS
@@ -234,6 +241,106 @@ export const StartConversation: React.FC = () => {
     "A file is currently uploading. Please wait."
   );
 
+  const clearUploadPollTimer = (documentId: string) => {
+    const timer = uploadPollTimerRef.current.get(documentId);
+    if (timer) {
+      clearTimeout(timer);
+      uploadPollTimerRef.current.delete(documentId);
+    }
+  };
+
+  const clearUploadTracking = (documentId: string) => {
+    pendingUploadIdsRef.current.delete(documentId);
+    uploadPollAttemptsRef.current.delete(documentId);
+    uploadPollDelayRef.current.delete(documentId);
+    clearUploadPollTimer(documentId);
+  };
+
+  const finalizeUploadStatusFromDoc = async (doc: any, fallbackName?: string) => {
+    if (!doc?.id) return;
+    const documentId = String(doc.id);
+    const isComplete = doc.status === "completed" || doc.status === "ready" || doc.status === "success";
+    const isFailed = doc.status === "failed" || doc.status === "error";
+    if (!isComplete && !isFailed) return;
+
+    const fileName = fallbackName || doc.name || "Document";
+    toast.dismiss(`upload-processing-${documentId}`);
+
+    if (isComplete) {
+      toast.success(
+        <div className="flex items-center gap-2">
+          <CheckCircle className="h-4 w-4 text-green-600" />
+          <span>{fileName} processed successfully!</span>
+        </div>
+      );
+      setUploadedDoc(doc);
+      setShowSuccessModal(true);
+      fetchDocuments();
+      if (doc.directoryId) {
+        const types = await fetchDirectoryDocumentTypes(doc.directoryId);
+        setDirectoryDocumentTypes((prev) => ({
+          ...prev,
+          [doc.directoryId]: types,
+        }));
+        updateDirectoryLastModified(doc.directoryId);
+      }
+    } else {
+      const errorMsg = typeof doc.error === "string" ? doc.error : (doc.error?.message || "Processing failed");
+      toast.error(
+        <div className="flex items-center gap-2">
+          <AlertCircle className="h-4 w-4 text-destructive" />
+          <span>Processing failed for {fileName}. {errorMsg}</span>
+        </div>
+      );
+    }
+
+    setIsUploading(false);
+    clearUploadTracking(documentId);
+  };
+
+  const scheduleUploadFallbackPolling = (documentId: string, initialDelayMs = 20000) => {
+    if (!pendingUploadIdsRef.current.has(documentId)) return;
+    clearUploadPollTimer(documentId);
+    if (!uploadPollAttemptsRef.current.has(documentId)) {
+      uploadPollAttemptsRef.current.set(documentId, 0);
+    }
+    if (!uploadPollDelayRef.current.has(documentId)) {
+      uploadPollDelayRef.current.set(documentId, 5000);
+    }
+
+    const timer = setTimeout(async () => {
+      if (!pendingUploadIdsRef.current.has(documentId)) return;
+
+      try {
+        const doc = await documentService.getById(documentId);
+        const status = String(doc?.status || "").toLowerCase();
+        if (status === "completed" || status === "ready" || status === "success" || status === "failed" || status === "error") {
+          await finalizeUploadStatusFromDoc(doc);
+          return;
+        }
+      } catch (error) {
+        console.error("Fallback status poll failed:", error);
+      }
+
+      const attempts = (uploadPollAttemptsRef.current.get(documentId) || 0) + 1;
+      uploadPollAttemptsRef.current.set(documentId, attempts);
+      if (attempts >= 20) {
+        toast.dismiss(`upload-processing-${documentId}`);
+        toast.warning("Document is still processing. You can refresh later to check latest status.");
+        clearUploadTracking(documentId);
+        setIsUploading(false);
+        return;
+      }
+
+      const currentDelay = uploadPollDelayRef.current.get(documentId) || 5000;
+      const nextDelay = Math.min(currentDelay * 2, 30000);
+      uploadPollDelayRef.current.set(documentId, nextDelay);
+      scheduleUploadFallbackPolling(documentId, currentDelay);
+    }, initialDelayMs);
+
+    uploadPollTimerRef.current.set(documentId, timer);
+  };
+
   /**
    * Socket Event Handler for Upload Status
    * Listens for real-time upload status updates via WebSocket
@@ -247,6 +354,26 @@ export const StartConversation: React.FC = () => {
       status: string;
       error?: any;
     }) => {
+      const eventDocumentId = String(data.jobId || "");
+      const eventStatus = String(data.status || "").toLowerCase();
+      const isTerminalEvent =
+        eventStatus === "failed" ||
+        eventStatus === "error" ||
+        eventStatus === "completed" ||
+        eventStatus === "success" ||
+        eventStatus === "ready";
+
+      if (eventDocumentId && pendingUploadIdsRef.current.has(eventDocumentId) && isTerminalEvent) {
+        try {
+          const latestDoc = await documentService.getById(eventDocumentId);
+          await finalizeUploadStatusFromDoc(latestDoc);
+        } catch {
+          const fallbackDoc = { id: eventDocumentId, status: eventStatus, error: data.error };
+          await finalizeUploadStatusFromDoc(fallbackDoc, "Document");
+        }
+        return;
+      }
+
       // Ensure we stop the global uploading overlay when a final status is received
       if (data.status === "failed" || data.status === "completed" || data.status === "success" || data.status === "error") {
         setIsUploading(false);
@@ -405,19 +532,50 @@ export const StartConversation: React.FC = () => {
       }
     };
 
-    // Listen for socket events (if socket is available)
-    if (window.io) {
-      window.io.on("upload_status", handleUploadStatus);
-      window.io.on("summary_status", handleSummaryStatus);
-      window.io.on("compare_status", handleCompareStatus);
+    const token = localStorage.getItem("accessToken");
+    const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+    const socketUrl = apiUrl.endsWith("/api") ? apiUrl.slice(0, -4) : apiUrl;
+    const socket = socketIOClient(socketUrl, {
+      transports: ["websocket"],
+      auth: token ? { token: `Bearer ${token}` } : undefined,
+    });
 
-      return () => {
-        window.io.off("upload_status", handleUploadStatus);
-        window.io.off("summary_status", handleSummaryStatus);
-        window.io.off("compare_status", handleCompareStatus);
-      };
-    }
-  }, [currentFolder?.id, documents]);
+    socketRef.current = socket;
+
+    socket.on("connect", () => {
+      isSocketConnectedRef.current = true;
+    });
+
+    socket.on("disconnect", () => {
+      isSocketConnectedRef.current = false;
+      for (const documentId of pendingUploadIdsRef.current) {
+        scheduleUploadFallbackPolling(documentId, 1000);
+      }
+    });
+
+    socket.on("connect_error", () => {
+      isSocketConnectedRef.current = false;
+      for (const documentId of pendingUploadIdsRef.current) {
+        scheduleUploadFallbackPolling(documentId, 1000);
+      }
+    });
+
+    socket.on("upload_status", handleUploadStatus);
+    socket.on("summary_status", handleSummaryStatus);
+    socket.on("compare_status", handleCompareStatus);
+
+    return () => {
+      socket.off("upload_status", handleUploadStatus);
+      socket.off("summary_status", handleSummaryStatus);
+      socket.off("compare_status", handleCompareStatus);
+      socket.disconnect();
+      socketRef.current = null;
+      isSocketConnectedRef.current = false;
+      for (const documentId of Array.from(uploadPollTimerRef.current.keys())) {
+        clearUploadPollTimer(documentId);
+      }
+    };
+  }, [currentFolder?.id]);
 
   // ============================================================================
   // UTILITY FUNCTIONS
@@ -1650,6 +1808,18 @@ export const StartConversation: React.FC = () => {
       }
 
       if (!response || !response.document) {
+        if (response?.pending || response?.idempotent) {
+          toast.dismiss(toastId);
+          toast(
+            <div className="flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>Upload already in progress. Please wait a moment and refresh.</span>
+            </div>,
+            { duration: 4000 }
+          );
+          setIsUploading(false);
+          return;
+        }
         throw new Error(response?.error || "Upload failed");
       }
       console.log("file response:", response);
@@ -1666,87 +1836,13 @@ export const StartConversation: React.FC = () => {
         { id: `upload-processing-${uploadedDocument.id}`, duration: Infinity }
       );
 
-      // Poll for document processing status
-      let pollAttempts = 0;
-      const maxPollAttempts = 120; // 10 minutes (5 second intervals)
-      const pollInterval = 5000; // 5 seconds
-
-      const pollForStatus = async () => {
-        try {
-          const doc = await documentService.getById(uploadedDocument.id);
-
-          // Check if processing is complete
-          if (doc.status === "completed" || doc.status === "ready") {
-            toast.dismiss(`upload-processing-${uploadedDocument.id}`);
-            toast.success(
-              <div className="flex items-center gap-2">
-                <CheckCircle className="h-4 w-4 text-green-600" />
-                <span>{file.name} processed successfully!</span>
-              </div>
-            );
-
-            // Show success modal
-            setUploadedDoc(doc);
-            setShowSuccessModal(true);
-            fetchDocuments(); // Refresh the document list
-            // Update directory document types if document has a directoryId
-            if (uploadedDocument.directoryId) {
-              const types = await fetchDirectoryDocumentTypes(uploadedDocument.directoryId);
-              setDirectoryDocumentTypes(prev => ({
-                ...prev,
-                [uploadedDocument.directoryId]: types
-              }));
-              // Update directory's last modified time
-              updateDirectoryLastModified(uploadedDocument.directoryId);
-            }
-            setIsUploading(false);
-            return;
-          }
-
-          // Check if processing failed
-          if (doc.status === "failed" || doc.status === "error") {
-            toast.dismiss(`upload-processing-${uploadedDocument.id}`);
-            toast.error(
-              <div className="flex items-center gap-2">
-                <AlertCircle className="h-4 w-4 text-destructive" />
-                <span>Processing failed for {file.name}. Please try uploading again.</span>
-              </div>
-            );
-            setIsUploading(false);
-            return;
-          }
-
-          // Continue polling if still processing
-          pollAttempts++;
-          if (pollAttempts < maxPollAttempts) {
-            setTimeout(pollForStatus, pollInterval);
-          } else {
-            // Timeout after max attempts
-            toast.dismiss(`upload-processing-${uploadedDocument.id}`);
-            toast.warning(
-              <div className="flex items-center gap-2">
-                <AlertCircle className="h-4 w-4 text-yellow-600" />
-                <span>{file.name} is taking longer than expected. You can check its status later.</span>
-              </div>
-            );
-            setIsUploading(false);
-            fetchDocuments(); // Refresh anyway
-          }
-        } catch (error) {
-          console.error("Error polling document status:", error);
-          pollAttempts++;
-          if (pollAttempts < maxPollAttempts) {
-            setTimeout(pollForStatus, pollInterval);
-          } else {
-            toast.dismiss(`upload-processing-${uploadedDocument.id}`);
-            toast.error("Failed to check processing status. Please refresh the page.");
-            setIsUploading(false);
-          }
-        }
-      };
-
-      // Start polling after a short delay
-      setTimeout(pollForStatus, pollInterval);
+      // Socket-first tracking: poll only as fallback if no terminal socket event arrives.
+      const documentId = String(uploadedDocument.id);
+      pendingUploadIdsRef.current.add(documentId);
+      uploadPollAttemptsRef.current.set(documentId, 0);
+      uploadPollDelayRef.current.set(documentId, 5000);
+      const fallbackStartDelay = isSocketConnectedRef.current ? 20000 : 1000;
+      scheduleUploadFallbackPolling(documentId, fallbackStartDelay);
     } catch (error) {
       console.error("Upload error:", error);
       toast.error(

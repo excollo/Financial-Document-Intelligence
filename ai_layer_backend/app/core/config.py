@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     API_HOST: str = "0.0.0.0"
     API_PORT: int = 8000
     API_WORKERS: int = 4
+    CORS_ALLOWED_ORIGINS: str = ""
+    CORS_ALLOW_CREDENTIALS: bool = True
     
     # Redis Configuration
     REDIS_HOST: str = "localhost"
@@ -113,7 +115,9 @@ class Settings(BaseSettings):
     INTERNAL_CALLBACK_NONCE_TTL_SECONDS: int = 300
     INTERNAL_CALLBACK_TIMESTAMP_TOLERANCE_SECONDS: int = 300
     INTERNAL_CALLBACK_SIGNATURE_REQUIRED: bool = True
+    INTERNAL_CALLBACK_ALLOW_IN_MEMORY_NONCE_FALLBACK_PROD: bool = False
     NODE_BACKEND_URL: str = ""  # Node.js backend base URL
+    MONGODB_FAIL_FAST: Optional[bool] = None
     
     # Backend callback URLs (Properties to ensure they are always derived from NODE_BACKEND_URL)
     @property
@@ -223,6 +227,37 @@ class Settings(BaseSettings):
     def is_sandbox(self) -> bool:
         """Check if running in sandbox environment."""
         return self.APP_ENV == "sandbox"
+
+    @property
+    def mongodb_fail_fast(self) -> bool:
+        if self.MONGODB_FAIL_FAST is not None:
+            return bool(self.MONGODB_FAIL_FAST)
+        return self.is_production
+
+    @property
+    def cors_allowed_origins(self) -> list[str]:
+        explicit = [o.strip() for o in self.CORS_ALLOWED_ORIGINS.split(",") if o.strip()]
+        if explicit:
+            return explicit
+        if self.is_production:
+            node_origin = ""
+            if self.NODE_BACKEND_URL:
+                try:
+                    parts = urlsplit(self.NODE_BACKEND_URL)
+                    if parts.scheme and parts.netloc:
+                        node_origin = f"{parts.scheme}://{parts.netloc}"
+                except Exception:
+                    node_origin = ""
+            defaults = [node_origin] if node_origin else []
+            return defaults
+        return [
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "http://localhost:5000",
+            "http://127.0.0.1:5000",
+        ]
 
 
 @lru_cache()

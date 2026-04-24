@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Upload } from "lucide-react";
 import { uploadService } from "@/lib/api/uploadService";
-import { summaryN8nService } from "@/lib/api/summaryN8nService";
+import { summaryTriggerService } from "@/lib/api/summaryTriggerService";
 import { sessionService } from "@/lib/api/sessionService";
 
 interface CreateWorkspaceModalProps {
@@ -104,7 +104,7 @@ export function CreateWorkspaceModal({
               toast.info("Generating summary...");
               const session = sessionService.initializeSession();
 
-              await summaryN8nService.createSummary(
+              await summaryTriggerService.createSummary(
                 "Generate DRHP Doc Summary",
                 session,
                 [],

@@ -4,6 +4,14 @@ import { alertAggregationService } from "./alertAggregationService";
 type MetricValue = number;
 
 class MetricsService {
+  private noisyMetrics = new Set([
+    "event_loop_lag_ms",
+    "heap_used_mb",
+    "request_latency_ms",
+    "response_size_bytes",
+    "queue_depth",
+    "queue_age_seconds",
+  ]);
   private thresholds = {
     queueDepth: Number(process.env.ALERT_QUEUE_DEPTH_THRESHOLD || "300"),
     queueAgeSeconds: Number(process.env.ALERT_QUEUE_AGE_SECONDS_THRESHOLD || "180"),
@@ -13,17 +21,21 @@ class MetricsService {
   };
 
   emit(metric: string, value: MetricValue, tags: Record<string, string | number | boolean> = {}) {
-    // Structured output intended for centralized log ingestion.
-    // Avoid plain console-only unstructured logs.
-    console.info(
-      JSON.stringify({
-        type: "metric",
-        metric,
-        value,
-        tags,
-        ts: new Date().toISOString(),
-      })
-    );
+    const verboseMetrics = process.env.METRICS_VERBOSE === "true";
+    const shouldLogMetric = verboseMetrics || !this.noisyMetrics.has(metric);
+    if (shouldLogMetric) {
+      // Structured output intended for centralized log ingestion.
+      // Avoid plain console-only unstructured logs.
+      console.info(
+        JSON.stringify({
+          type: "metric",
+          metric,
+          value,
+          tags,
+          ts: new Date().toISOString(),
+        })
+      );
+    }
     this.emitAlertIfThreshold(metric, value, tags);
   }
 

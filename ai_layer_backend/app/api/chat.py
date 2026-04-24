@@ -3,6 +3,7 @@ API endpoints for real-time chat.
 All endpoints require X-Internal-Secret header.
 """
 from typing import Dict, Any, List, Optional
+from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Request, Depends
 from pydantic import BaseModel, Field
 from app.services.chat.service import chat_service
@@ -72,7 +73,7 @@ async def chat_query(request: ChatRequest, req: Request):
                 "output": result["output"],
                 "usage": result.get("usage"),
                 "duration": result.get("duration"),
-                "timestamp": str(uuid.uuid1().time) # or datetime
+                "timestamp": datetime.now(timezone.utc)
             })
         except Exception as mongo_err:
             logger.warning("Failed to log chat to MongoDB", error=str(mongo_err))

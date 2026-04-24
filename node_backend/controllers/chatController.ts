@@ -1,12 +1,14 @@
 import { Request, Response } from "express";
 import { Chat } from "../models/Chat";
 import { ChatMessage } from "../models/ChatMessage";
+import { ChatJobStatus } from "../models/ChatJobStatus";
 import { Document } from "../models/Document";
 import { User } from "../models/User";
 import axios from "axios";
 import { buildSignedInternalJsonRequest } from "../services/internalRequestSigning";
 import { metricsService } from "../services/metricsService";
 import { cacheService } from "../services/cacheService";
+import { emitToWorkspace } from "../services/realtimeEmitter";
 
 interface AuthRequest extends Request {
   user?: any;
@@ -67,6 +69,32 @@ export const chatController = {
       });
 
       if (pythonResponse.data && pythonResponse.data.status === "success") {
+        const callbackJobId = String(pythonResponse.data.job_id || "").trim();
+        if (callbackJobId) {
+          let domainId = String((req.user as any)?.domainId || "");
+          if (!domainId && (req.user as any)?._id) {
+            const userWithDomain = await User.findById((req.user as any)._id).select("domainId").lean();
+            domainId = String((userWithDomain as any)?.domainId || "");
+          }
+          const workspaceId = String(req.currentWorkspace || req.userDomain || "");
+          if (workspaceId && domainId) {
+            await ChatJobStatus.findOneAndUpdate(
+              { job_id: callbackJobId },
+              {
+                $set: {
+                  chat_id: String(req.body?.chatId || req.body?.sessionId || ""),
+                  namespace: String(namespace || ""),
+                  workspace_id: workspaceId,
+                  domain_id: domainId,
+                  user_id: String((req.user as any)?._id || ""),
+                  status: "processing",
+                  error_message: null,
+                },
+              },
+              { upsert: true, new: true }
+            );
+          }
+        }
         return res.json({
           response: pythonResponse.data.output,
           job_id: pythonResponse.data.job_id,
@@ -452,17 +480,40 @@ export const chatController = {
       if (!jobId || !status) {
         return res.status(400).json({ message: "Missing jobId or status" });
       }
-      // Chat status callbacks are accepted for observability only.
-      // We avoid broadcasting unscoped job events without trusted persisted mapping.
-      console.warn("chatStatusUpdate received (no realtime emit without trusted mapping)", {
-        jobId,
-        status,
-        hasError: !!error,
-      });
+      const normalizedStatus = String(status).toLowerCase() === "success"
+        ? "completed"
+        : String(status).toLowerCase();
+      const mappedStatus = ["completed", "failed", "processing", "completed_with_errors"].includes(normalizedStatus)
+        ? normalizedStatus
+        : "processing";
+      const tracked = await ChatJobStatus.findOneAndUpdate(
+        { job_id: String(jobId) },
+        {
+          $set: {
+            status: mappedStatus,
+            error_message: typeof error === "string" ? error : error?.message || null,
+          },
+        },
+        { new: true }
+      ).lean();
+      if (!tracked) {
+        console.warn("chatStatusUpdate received without tracked mapping", {
+          jobId,
+          status: mappedStatus,
+          hasError: !!error,
+        });
+      } else {
+        await emitToWorkspace(String(tracked.workspace_id), "chat_status", {
+          jobId: String(jobId),
+          status: mappedStatus,
+          error,
+          chatId: tracked.chat_id || undefined,
+        });
+      }
       res.status(200).json({
         message: "Chat status update processed",
         jobId,
-        status,
+        status: mappedStatus,
         error,
       });
     } catch (err) {

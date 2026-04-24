@@ -27,6 +27,51 @@ import crypto from "crypto";
 const MAX_VALIDATION_BUFFER_BYTES = Number(
   process.env.MAX_VALIDATION_BUFFER_BYTES || 10 * 1024 * 1024
 );
+const PRE_DISPATCH_STEP_TIMEOUT_MS = Number(process.env.PRE_DISPATCH_STEP_TIMEOUT_MS || 15000);
+
+async function withTimeout<T>(label: string, promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
+}
+
+async function cleanupUploadArtifacts(params: {
+  tenantId?: string;
+  jobId?: string;
+  idempotencyKey?: string;
+}) {
+  const tenantId = String(params.tenantId || "").trim();
+  if (!tenantId) return;
+  try {
+    if (params.jobId) {
+      await Job.deleteMany({ id: String(params.jobId), tenant_id: tenantId });
+      await idempotencyLockService.releaseByJobId({
+        tenantId,
+        jobId: String(params.jobId),
+      });
+    }
+    if (params.idempotencyKey) {
+      await idempotencyLockService.releaseByIdempotencyKey({
+        tenantId,
+        idempotencyKey: String(params.idempotencyKey),
+      });
+    }
+  } catch (cleanupErr: any) {
+    console.warn("cleanupUploadArtifacts failed", cleanupErr?.message || cleanupErr);
+  }
+}
 
 interface AuthRequest extends Request {
   user?: any;
@@ -853,6 +898,7 @@ export const documentController = {
       if (!document) {
         return res.status(404).json({ error: "Document not found" });
       }
+      const tenantId = String(document.domainId || "");
 
       // HARD DELETE: remove file(s) from Azure Blob Storage and Mongo based on type
       if (document.fileKey) {
@@ -932,6 +978,12 @@ export const documentController = {
 
       // Finally, delete the documents themselves
       await Document.deleteMany({ id: { $in: docIdsToDelete }, workspaceId: currentWorkspace });
+      for (const deletedJobId of docIdsToDelete) {
+        await cleanupUploadArtifacts({
+          tenantId,
+          jobId: deletedJobId,
+        });
+      }
 
       // Update directory statistics after deletion
       if (document.directoryId) {
@@ -1028,6 +1080,7 @@ export const documentController = {
 
   async uploadDocument(req: AuthRequest, res: Response) {
     try {
+      console.log("[upload-controller] entered uploadDocument");
       if (!req.file) {
         return res.status(400).json({ error: "No file uploaded" });
       }
@@ -1050,14 +1103,18 @@ export const documentController = {
       }
 
       // Get user's domainId
+      console.log("[upload-controller] step=user_lookup:start");
       const userWithDomain = await User.findById(user._id).select("domainId");
+      console.log("[upload-controller] step=user_lookup:done");
       if (!userWithDomain?.domainId) {
         return res.status(400).json({ error: "User domainId not found. Please contact administrator." });
       }
       const tenantId = String(userWithDomain.domainId);
       const queueName = "heavy_jobs";
       const userId = user?._id?.toString?.() || "anonymous";
+      console.log("[upload-controller] step=admission_check:start");
       const admission = await jobAdmissionService.check(tenantId, queueName);
+      console.log("[upload-controller] step=admission_check:done");
       if (admission.telemetryStatus === "UNAVAILABLE") {
         metricsService.emit("telemetry_unavailable", 1, {
           tenant_id: tenantId,
@@ -1093,20 +1150,26 @@ export const documentController = {
       }
 
       // Verify directory exists in the workspace (including shared directories)
+      console.log("[upload-controller] step=directory_model_import:start");
       const { Directory } = await import("../models/Directory");
+      console.log("[upload-controller] step=directory_model_import:done");
+      console.log("[upload-controller] step=directory_lookup_primary:start");
       let directory = await Directory.findOne({
         id: directoryId,
         workspaceId,
       });
+      console.log("[upload-controller] step=directory_lookup_primary:done");
 
       // If not found, check if it's a shared directory
       if (!directory) {
+        console.log("[upload-controller] step=directory_lookup_shared:start");
         directory = await Directory.findOne({
           id: directoryId,
           workspaceId,
           isShared: true,
           sharedWithUserId: user._id.toString(),
         });
+        console.log("[upload-controller] step=directory_lookup_shared:done");
       }
 
       if (!directory) {
@@ -1135,10 +1198,12 @@ export const documentController = {
         directoryId: directoryId, // Required - no null allowed
       };
       // Pre-check duplicate by namespace within workspace
+      console.log(`[upload:${docData.id}] step=duplicate_namespace_check:start`);
       const duplicate = await Document.findOne({
         workspaceId: docData.workspaceId,
         namespace: docData.namespace,
       }).collation({ locale: "en", strength: 2 });
+      console.log(`[upload:${docData.id}] step=duplicate_namespace_check:done`);
       if (duplicate) {
         return res.status(409).json({
           error: "Document with this namespace already exists",
@@ -1161,11 +1226,37 @@ export const documentController = {
       ].join(":");
       const idempotencyKey = crypto.createHash("sha256").update(stableUploadIdentity).digest("hex");
       const idempotencyOwner = crypto.randomUUID();
-      const lock = await idempotencyLockService.acquire({
-        tenantId,
-        idempotencyKey,
-        ownerId: idempotencyOwner,
-      });
+      console.log(`[upload:${docData.id}] step=idempotency_acquire:start`);
+      let lock = await withTimeout(
+        "idempotencyLockService.acquire",
+        idempotencyLockService.acquire({
+          tenantId,
+          idempotencyKey,
+          ownerId: idempotencyOwner,
+        }),
+        PRE_DISPATCH_STEP_TIMEOUT_MS
+      );
+      console.log(`[upload:${docData.id}] step=idempotency_acquire:done acquired=${lock.acquired}`);
+      if (!lock.acquired) {
+        if (lock.existingJob) {
+          const existingDoc = await Document.findOne({ id: lock.existingJob.id }).lean();
+          if (!existingDoc) {
+            await cleanupUploadArtifacts({
+              tenantId,
+              jobId: lock.existingJob.id,
+            });
+            lock = await withTimeout(
+              "idempotencyLockService.acquire.reclaim",
+              idempotencyLockService.acquire({
+                tenantId,
+                idempotencyKey,
+                ownerId: idempotencyOwner,
+              }),
+              PRE_DISPATCH_STEP_TIMEOUT_MS
+            );
+          }
+        }
+      }
       if (!lock.acquired) {
         try {
           await storageService.deleteFile(fileKey);
@@ -1192,9 +1283,12 @@ export const documentController = {
       // Download file to validate content (DRHP vs RHP)
       let isContentValid = false;
       let rejectionReason = "Document validation failed. Unable to verify document content.";
+      console.log(`[upload:${docData.id}] step=validation:start fileKey=${fileKey}`);
 
       try {
+        console.log(`[upload:${docData.id}] step=validation:get_file_size:start`);
         const fileSize = await storageService.getFileSize(fileKey);
+        console.log(`[upload:${docData.id}] step=validation:get_file_size:done size=${fileSize}`);
         if (fileSize > MAX_VALIDATION_BUFFER_BYTES) {
           // Prevent loading large files fully into memory during MIME/content validation.
           console.warn(
@@ -1203,20 +1297,26 @@ export const documentController = {
           isContentValid = true;
           docData.type = documentType;
         } else {
+          console.log(`[upload:${docData.id}] step=validation:download_file:start`);
           const buffer = await storageService.downloadFile(fileKey);
+          console.log(`[upload:${docData.id}] step=validation:download_file:done bytes=${buffer.length}`);
 
           // Parse PDF
           // @ts-ignore
           let pdfParse;
           try {
+            console.log(`[upload:${docData.id}] step=validation:require_pdf_parse:start`);
             pdfParse = require("pdf-parse");
             if (typeof pdfParse !== 'function' && pdfParse.default) pdfParse = pdfParse.default;
+            console.log(`[upload:${docData.id}] step=validation:require_pdf_parse:done`);
           } catch (e) {
             console.error("Failed to require pdf-parse:", e);
           }
 
           if (typeof pdfParse === 'function') {
+            console.log(`[upload:${docData.id}] step=validation:pdf_parse:start`);
             const data = await pdfParse(buffer, { max: 1 });
+            console.log(`[upload:${docData.id}] step=validation:pdf_parse:done`);
             const normalizedText = (data.text || "").toLowerCase();
 
             let detectedType: string | null = null;
@@ -1260,19 +1360,28 @@ export const documentController = {
         isContentValid = true;
         docData.type = documentType;
       }
+      console.log(`[upload:${docData.id}] step=validation:end valid=${isContentValid} docType=${docData.type}`);
 
       if (!isContentValid) {
         // Delete from R2
         try {
           await storageService.deleteFile(fileKey);
         } catch (e) { }
+        await idempotencyLockService.releaseByOwner({
+          tenantId,
+          idempotencyKey,
+          ownerId: idempotencyOwner,
+        });
 
         return res.status(400).json({ error: rejectionReason });
       }
       // --- VALIDATION END ---
 
       const document = new Document(docData);
+      console.log(`[upload:${docData.id}] step=document_save:start`);
       await document.save();
+      console.log(`[upload:${docData.id}] step=document_save:done`);
+      console.log(`[upload:${docData.id}] step=job_create:start`);
       await Job.create({
         id: document.id,
         tenant_id: tenantId,
@@ -1289,6 +1398,7 @@ export const documentController = {
         idempotency_key: idempotencyKey,
         trace_id: document.id,
       });
+      console.log(`[upload:${docData.id}] step=job_create:done`);
       await idempotencyLockService.bindJob({
         tenantId,
         idempotencyKey,
@@ -1315,21 +1425,33 @@ export const documentController = {
       }
 
       // Publish event for upload
-      await publishEvent({
-        actorUserId: (req as any).user?._id?.toString?.(),
-        domain: (req as any).userDomain,
-        action: "document.uploaded",
-        resourceType: "document",
-        resourceId: document.id,
-        title: `Document uploaded: ${document.name} `,
-        notifyWorkspace: true,
-      });
+      console.log(`[upload:${document.id}] step=publish_event:start`);
+      await withTimeout(
+        "publishEvent(document.uploaded)",
+        publishEvent({
+          actorUserId: (req as any).user?._id?.toString?.(),
+          domain: (req as any).userDomain,
+          action: "document.uploaded",
+          resourceType: "document",
+          resourceId: document.id,
+          title: `Document uploaded: ${document.name} `,
+          notifyWorkspace: true,
+        }),
+        PRE_DISPATCH_STEP_TIMEOUT_MS
+      );
+      console.log(`[upload:${document.id}] step=publish_event:done`);
 
       // --- INTEGRATION: CALL PYTHON API INSTEAD OF N8N ---
       const pythonApiUrl = process.env.PYTHON_API_URL || "http://localhost:8000";
 
       try {
-        const fileUrl = await documentController.getPresignedUrl(fileKey);
+        console.log(`[upload:${document.id}] step=get_presigned_url:start fileKey=${fileKey}`);
+        const fileUrl = await withTimeout(
+          "storageService.getPresignedUrl",
+          documentController.getPresignedUrl(fileKey),
+          PRE_DISPATCH_STEP_TIMEOUT_MS
+        );
+        console.log(`[upload:${document.id}] step=get_presigned_url:done`);
 
         console.log(`Sending document to Python API: ${pythonApiUrl}/jobs/document`); // Fixed URL space
 
@@ -1405,6 +1527,11 @@ export const documentController = {
         } catch (rollbackErr) {
           console.error("Rollback failed:", rollbackErr);
         }
+        await cleanupUploadArtifacts({
+          tenantId,
+          jobId: document.id,
+          idempotencyKey,
+        });
 
         return res.status(500).json({
           error: "Document ingestion failed. Please try again.",
@@ -1555,7 +1682,21 @@ export const documentController = {
     console.log("🚀 Received upload-status update hit!");
     try {
       // Canonical correlation: terminal updates require immutable document/job ID.
-      const { jobId, documentId, status, error, workspaceId, domainId } = req.body;
+      const { jobId, documentId, status, error, workspaceId, domainId, output_urls, outputUrls, result } = req.body;
+      const canonicalOutputUrls =
+        (output_urls && typeof output_urls === "object" && !Array.isArray(output_urls) && Object.keys(output_urls).length > 0
+          ? output_urls
+          : undefined) ||
+        (outputUrls && typeof outputUrls === "object" && !Array.isArray(outputUrls) && Object.keys(outputUrls).length > 0
+          ? outputUrls
+          : undefined) ||
+        (result?.output_urls &&
+        typeof result.output_urls === "object" &&
+        !Array.isArray(result.output_urls) &&
+        Object.keys(result.output_urls).length > 0
+          ? result.output_urls
+          : undefined);
+
       if (jobId && documentId && String(jobId) !== String(documentId)) {
         console.warn("uploadStatusUpdate rejected due to identifier mismatch", {
           jobId,
@@ -1616,6 +1757,7 @@ export const documentController = {
             tenant_id: String(document.domainId),
             status: jobStatus,
             current_stage: "document_callback",
+            output_urls: canonicalOutputUrls,
             error_message: jobStatus === "failed" && error
               ? (typeof error === "string" ? error : JSON.stringify(error))
               : undefined,
@@ -1716,8 +1858,21 @@ export const documentController = {
       const { drhpId } = req.body;
       if (!req.file) return res.status(400).json({ error: "No file uploaded" });
       if (!drhpId) return res.status(400).json({ error: "Missing DRHP ID" });
-
-      const drhp = await Document.findById(drhpId);
+      const user = (req as any).user;
+      const workspaceId = req.currentWorkspace;
+      if (!workspaceId) {
+        return res.status(400).json({ error: "Workspace is required. Please select a workspace." });
+      }
+      const userWithDomain = await User.findById(user._id).select("domainId");
+      if (!userWithDomain?.domainId) {
+        return res.status(400).json({ error: "User domainId not found. Please contact administrator." });
+      }
+      const drhp = await Document.findOne({
+        id: String(drhpId),
+        workspaceId: String(workspaceId),
+        domainId: String(userWithDomain.domainId),
+        type: "DRHP",
+      });
       if (!drhp) return res.status(404).json({ error: "DRHP not found" });
 
       // Ensure cross-compatibility with AWS S3 (key) and Azure Blob Storage (url/blobName)
@@ -1729,22 +1884,8 @@ export const documentController = {
       if (!fileKey) {
         return res.status(400).json({ error: "Internal storage error: Upload succeeded but could not determine blob key." });
       }
-      const user = (req as any).user;
-
-      // Workspace is required for document upload
-      const workspaceId = req.currentWorkspace;
-      if (!workspaceId) {
-        return res.status(400).json({ error: "Workspace is required. Please select a workspace." });
-      }
-
       // Create RHP namespace by appending "-rhp" to the DRHP namespace
       const rhpNamespace = req.file.originalname;
-
-      // Get user's domainId
-      const userWithDomain = await User.findById(user._id).select("domainId");
-      if (!userWithDomain?.domainId) {
-        return res.status(400).json({ error: "User domainId not found. Please contact administrator." });
-      }
       const tenantId = String(userWithDomain.domainId);
       const queueName = "heavy_jobs";
       const userId = user?._id?.toString?.() || "anonymous";
@@ -1806,11 +1947,27 @@ export const documentController = {
       ].join(":");
       const idempotencyKey = crypto.createHash("sha256").update(stableUploadIdentity).digest("hex");
       const idempotencyOwner = crypto.randomUUID();
-      const lock = await idempotencyLockService.acquire({
+      let lock = await idempotencyLockService.acquire({
         tenantId,
         idempotencyKey,
         ownerId: idempotencyOwner,
       });
+      if (!lock.acquired) {
+        if (lock.existingJob) {
+          const existingDoc = await Document.findOne({ id: lock.existingJob.id }).lean();
+          if (!existingDoc) {
+            await cleanupUploadArtifacts({
+              tenantId,
+              jobId: lock.existingJob.id,
+            });
+            lock = await idempotencyLockService.acquire({
+              tenantId,
+              idempotencyKey,
+              ownerId: idempotencyOwner,
+            });
+          }
+        }
+      }
       if (!lock.acquired) {
         try {
           await storageService.deleteFile(fileKey);
@@ -1885,6 +2042,11 @@ export const documentController = {
         try {
           await storageService.deleteFile(fileKey);
         } catch (e) { }
+        await idempotencyLockService.releaseByOwner({
+          tenantId,
+          idempotencyKey,
+          ownerId: idempotencyOwner,
+        });
 
         return res.status(400).json({ error: rejectionReason });
       }
@@ -2380,6 +2542,10 @@ export const documentController = {
 
       // 3. Delete the document itself
       await Document.deleteOne({ id: document.id, ...scopedFilter });
+      await cleanupUploadArtifacts({
+        tenantId: String(document.domainId || ""),
+        jobId: String(document.id),
+      });
 
       // 4. Emit socket event for frontend removal
       const deletePayload = {

@@ -3,7 +3,7 @@ import React from "react";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { SummaryPanel } from "../SummaryPanel";
 import { summaryService, shareService } from "@/services/api";
-import { summaryN8nService } from "@/lib/api/summaryN8nService";
+import { summaryTriggerService } from "@/lib/api/summaryTriggerService";
 import { describe, it, beforeEach, expect, vi } from "vitest";
 
 vi.mock("@/services/api", () => ({
@@ -17,8 +17,8 @@ vi.mock("@/services/api", () => ({
     },
 }));
 
-vi.mock("@/lib/api/summaryN8nService", () => ({
-    summaryN8nService: {
+vi.mock("@/lib/api/summaryTriggerService", () => ({
+    summaryTriggerService: {
         createSummary: vi.fn(),
     },
 }));
@@ -43,7 +43,7 @@ describe("SummaryPanel component", () => {
     beforeEach(() => {
         vi.clearAllMocks();
         (summaryService.getByDocumentId as any).mockResolvedValue([]);
-        (summaryN8nService.createSummary as any).mockResolvedValue({});
+        (summaryTriggerService.createSummary as any).mockResolvedValue({});
         (shareService.resolveTokenRole as any).mockResolvedValue("owner");
     });
 
@@ -73,6 +73,6 @@ describe("SummaryPanel component", () => {
         );
         const button = await screen.findByRole("button", { name: /generate new summary/i });
         fireEvent.click(button);
-        await waitFor(() => expect(summaryN8nService.createSummary).toHaveBeenCalled());
+        await waitFor(() => expect(summaryTriggerService.createSummary).toHaveBeenCalled());
     });
 });

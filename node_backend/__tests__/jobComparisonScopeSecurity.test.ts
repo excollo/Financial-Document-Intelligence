@@ -33,6 +33,13 @@ jest.mock("../services/brokerQueueTelemetryService", () => ({
     emitBrokerQueueMetrics: jest.fn().mockResolvedValue(undefined),
   },
 }));
+jest.mock("../services/idempotencyLockService", () => ({
+  idempotencyLockService: {
+    acquire: jest.fn().mockResolvedValue({ acquired: true }),
+    bindJob: jest.fn().mockResolvedValue(undefined),
+    releaseByJobId: jest.fn().mockResolvedValue(undefined),
+  },
+}));
 jest.mock("axios", () => ({
   post: jest.fn(),
 }));
@@ -49,6 +56,7 @@ describe("comparison intake scope security", () => {
   const { Document } = jest.requireMock("../models/Document");
   const { SopConfig } = jest.requireMock("../models/SopConfig");
   const { jobAdmissionService } = jest.requireMock("../services/jobAdmissionService");
+  const { idempotencyLockService } = jest.requireMock("../services/idempotencyLockService");
   const axios = require("axios");
 
   beforeEach(() => {
@@ -59,6 +67,8 @@ describe("comparison intake scope security", () => {
         lean: jest.fn().mockResolvedValue(null),
       }),
     });
+    idempotencyLockService.acquire.mockResolvedValue({ acquired: true });
+    idempotencyLockService.bindJob.mockResolvedValue(undefined);
     jobAdmissionService.check.mockResolvedValue({
       allow: true,
       status: "queued",

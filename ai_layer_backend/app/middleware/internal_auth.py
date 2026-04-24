@@ -39,6 +39,12 @@ def _signature_required() -> bool:
     return bool(settings.INTERNAL_CALLBACK_SIGNATURE_REQUIRED)
 
 
+def _allow_in_memory_nonce_fallback() -> bool:
+    if not settings.is_production:
+        return True
+    return bool(settings.INTERNAL_CALLBACK_ALLOW_IN_MEMORY_NONCE_FALLBACK_PROD)
+
+
 async def _get_redis_client():
     global _redis_client, _redis_init_attempted
     if _redis_init_attempted:
@@ -72,7 +78,7 @@ async def _check_and_store_nonce(nonce: str) -> bool:
         except Exception:
             pass
 
-    if settings.is_production:
+    if not _allow_in_memory_nonce_fallback():
         return False
 
     now = int(time.time())

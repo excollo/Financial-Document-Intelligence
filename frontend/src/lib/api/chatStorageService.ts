@@ -28,10 +28,22 @@ function saveAllChats(data: any) {
 }
 
 export const chatStorageService = {
+  normalizeChat(chat: any): ChatSession {
+    return {
+      ...chat,
+      messages: Array.isArray(chat?.messages) ? chat.messages : [],
+      updatedAt: chat?.updatedAt || new Date().toISOString(),
+      documentId: chat?.documentId || "",
+      title: chat?.title || "New Chat",
+      id: String(chat?.id || ""),
+    };
+  },
+
   async getChatsForDoc(documentId: string): Promise<ChatSession[]> {
     try {
       const chats = await chatService.getByDocumentId(documentId);
-      return Array.isArray(chats) ? chats : [];
+      if (!Array.isArray(chats)) return [];
+      return chats.map((chat: any) => this.normalizeChat(chat));
     } catch (error) {
       console.error("Error fetching chats:", error);
       return [];
@@ -44,12 +56,30 @@ export const chatStorageService = {
   ): Promise<ChatSession | undefined> {
     try {
       const chats = await chatService.getByDocumentId(documentId);
-      return Array.isArray(chats)
-        ? chats.find((chat) => chat.id === chatId)
-        : undefined;
+      if (!Array.isArray(chats)) return undefined;
+      const chat = chats.find((row: any) => row.id === chatId);
+      return chat ? this.normalizeChat(chat) : undefined;
     } catch (error) {
       console.error("Error fetching chat:", error);
       return undefined;
+    }
+  },
+
+  async getMessagesForChat(chatId: string): Promise<ChatMessage[]> {
+    try {
+      const rows = await chatService.getMessages(chatId, { limit: 200, offset: 0 });
+      if (!Array.isArray(rows)) return [];
+      return rows
+        .filter((m: any) => !!m?.id && typeof m?.content === "string")
+        .map((m: any) => ({
+          id: String(m.id),
+          content: String(m.content || ""),
+          isUser: Boolean(m.isUser),
+          timestamp: new Date(m.timestamp || Date.now()).toISOString(),
+        }));
+    } catch (error) {
+      console.error("Error fetching chat messages:", error);
+      return [];
     }
   },
 
@@ -85,9 +115,34 @@ export const chatStorageService = {
         });
         chat.id = newChat.id;
       } else {
+        const messages = Array.isArray(chat.messages) ? chat.messages : [];
+        const latestMessage =
+          messages.length > 0 ? messages[messages.length - 1] : undefined;
+        const { messages: _ignoredMessages, ...chatMetadata } = chat as any;
         try {
-          await chatService.update(chat.id, chat);
+          // Backend blocks message-array updates via PUT /chats/:id.
+          // Update only chat metadata, and persist message content through addMessage.
+          await chatService.update(chat.id, {
+            ...chatMetadata,
+            documentId,
+          });
+          if (latestMessage?.id && latestMessage?.content) {
+            await chatService.addMessage(chat.id, latestMessage);
+          }
         } catch (err: any) {
+          const immutableMessageUpdate =
+            err?.response?.status === 400 &&
+            err?.response?.data?.code === "CHAT_MESSAGES_IMMUTABLE";
+          if (immutableMessageUpdate) {
+            await chatService.update(chat.id, {
+              ...chatMetadata,
+              documentId,
+            });
+            if (latestMessage?.id && latestMessage?.content) {
+              await chatService.addMessage(chat.id, latestMessage);
+            }
+            return;
+          }
           if (err?.response?.status === 404) {
             const newChat = await chatService.create({
               ...chat,

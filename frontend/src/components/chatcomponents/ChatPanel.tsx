@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { n8nService } from "@/lib/api/n8nService";
+import { chatApiService } from "@/lib/api/chatApiService";
 import {
   ConversationMemory,
   MemoryContext,
@@ -26,6 +26,7 @@ import {
 import axios from "axios";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { io as socketIOClient } from "socket.io-client";
 
 interface Message {
   id: string;
@@ -133,6 +134,7 @@ export function ChatPanel({
   const [currentChatId, setCurrentChatId] = useState<string | null>(
     chatId || null
   );
+  const activeJobIdRef = useRef<string | null>(null);
   const [inputValue, setInputValue] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -240,8 +242,10 @@ export function ChatPanel({
           );
           const chat = chats.find((c) => c.id === chatId);
           if (chat && Array.isArray(chat.messages)) {
+            const fetchedMessages = await chatStorageService.getMessagesForChat(chat.id);
+            const effectiveMessages = fetchedMessages.length > 0 ? fetchedMessages : chat.messages;
             setMessages(
-              chat.messages.map((m) => ({
+              effectiveMessages.map((m) => ({
                 ...m,
                 timestamp: new Date(m.timestamp),
               }))
@@ -286,6 +290,35 @@ export function ChatPanel({
 
     loadChat();
   }, [currentDocument, chatId]);
+
+  useEffect(() => {
+    const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+    const socketUrl = apiUrl.endsWith("/api") ? apiUrl.slice(0, -4) : apiUrl;
+    const token = localStorage.getItem("accessToken");
+    const socket = socketIOClient(socketUrl, {
+      transports: ["websocket"],
+      auth: token ? { token: `Bearer ${token}` } : undefined,
+      extraHeaders: token ? { Authorization: `Bearer ${token}` } : undefined,
+    });
+
+    socket.on("chat_status", (data: { jobId?: string; status?: string; error?: any; chatId?: string }) => {
+      const status = String(data?.status || "").toLowerCase();
+      const jobId = String(data?.jobId || "");
+      const chatScopedMatch = Boolean(data?.chatId && currentChatId && data.chatId === currentChatId);
+      const jobScopedMatch = Boolean(activeJobIdRef.current && jobId && activeJobIdRef.current === jobId);
+      if (!chatScopedMatch && !jobScopedMatch) return;
+
+      if (status === "failed") {
+        setIsTyping(false);
+        onProcessingChange?.(false);
+        toast.error(data?.error?.message || data?.error || "Chat request failed");
+      }
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [currentChatId, onProcessingChange]);
 
   useEffect(() => {
     if (scrollAreaRef.current) {
@@ -388,6 +421,7 @@ export function ChatPanel({
         );
         chat = chats.find((c) => c.id === currentChatId);
         if (chat) {
+          chat.messages = Array.isArray(chat.messages) ? chat.messages : [];
           chat.messages.push(userMessage);
           chat.updatedAt = new Date().toISOString();
           await chatStorageService.saveChatForDoc(currentDocument.id, chat);
@@ -407,18 +441,22 @@ export function ChatPanel({
       }
       abortControllerRef.current = new AbortController();
 
-      const response = await n8nService.sendMessage(
+      const response = await chatApiService.sendMessage(
         inputValue,
         sessionData,
         conversationMemory,
         currentDocument.namespace,
         (currentDocument.type || "DRHP") as "DRHP" | "RHP",
+        newChatId || undefined,
         abortControllerRef.current.signal
       );
 
-      // Handle n8n-specific error response
+      // Handle API-side error response
       if (response.error) {
         throw new Error(response.error);
+      }
+      if (response.jobId) {
+        activeJobIdRef.current = response.jobId;
       }
 
       // Update memory context if provided
@@ -463,6 +501,7 @@ export function ChatPanel({
         );
         const chat = chats.find((c) => c.id === newChatId);
         if (chat) {
+          chat.messages = Array.isArray(chat.messages) ? chat.messages : [];
           chat.messages.push(aiResponse);
           chat.updatedAt = new Date().toISOString();
           await chatStorageService.saveChatForDoc(currentDocument.id, chat);
@@ -496,6 +535,7 @@ export function ChatPanel({
           );
           const chat = chats.find((c) => c.id === newChatId);
           if (chat) {
+            chat.messages = Array.isArray(chat.messages) ? chat.messages : [];
             chat.messages.push(errorMessage);
             chat.updatedAt = new Date().toISOString();
             await chatStorageService.saveChatForDoc(currentDocument.id, chat);

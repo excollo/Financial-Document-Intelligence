@@ -260,6 +260,14 @@ export const createJob = async (req: AuthRequest, res: Response) => {
             directoryId: jobData.directory_id,
           }
         };
+        console.log("[jobs.create] comparison dispatch start", {
+          jobId: job.id,
+          dispatchUrl,
+          tenantId: req.tenantId,
+          workspaceId: jobData.workspace_id,
+          drhpId,
+          rhpId,
+        });
       } else {
         payload.document_name = jobData.document_name;
         payload.s3_input_key = jobData.s3_input_key;
@@ -277,6 +285,15 @@ export const createJob = async (req: AuthRequest, res: Response) => {
         job.celery_task_id = pythonResponse.data.celery_task_id || pythonResponse.data.job_id;
         await job.save();
       }
+      if (isComparison) {
+        console.log("[jobs.create] comparison dispatch response", {
+          jobId: job.id,
+          status: pythonResponse?.status,
+          dataStatus: pythonResponse?.data?.status,
+          pythonJobId: pythonResponse?.data?.job_id || null,
+          celeryTaskId: pythonResponse?.data?.celery_task_id || null,
+        });
+      }
 
       await metricsService.emitQueueMetrics(req.tenantId!, queueName);
       await brokerQueueTelemetryService.emitBrokerQueueMetrics();
@@ -285,6 +302,10 @@ export const createJob = async (req: AuthRequest, res: Response) => {
       job.status = "failed";
       job.error_message = `Failed to dispatch to pipeline: ${dispatchError.message}`;
       await job.save();
+      await idempotencyLockService.releaseByJobId({
+        tenantId: String(req.tenantId),
+        jobId: String(job.id),
+      });
 
       return res.status(502).json({
         error: "Failed to dispatch job to processing pipeline",

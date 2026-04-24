@@ -20,7 +20,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import { cleanSummaryContent } from "@/lib/utils/markdownConverter";
-import { summaryN8nService } from "@/lib/api/summaryN8nService";
+import { summaryTriggerService } from "@/lib/api/summaryTriggerService";
 import { io as socketIOClient } from "socket.io-client";
 
 const buildDocxFileName = (
@@ -34,6 +34,7 @@ const buildDocxFileName = (
 
   return `${normalized || fallback}.docx`;
 };
+const SUMMARY_FOCUS_CHECK_COOLDOWN_MS = 15000;
 
 
 
@@ -74,7 +75,7 @@ interface SummaryResponse {
   output: string;
 }
 
-interface N8nResponse {
+interface SummaryEngineResponse {
   response: [SummaryResponse, { output: string }];
   memory_context?: any;
 }
@@ -144,10 +145,71 @@ export function SummaryPanel({
   const shownErrorToastsRef = useRef<Set<string>>(new Set());
   // Add a ref for the summary content
   const summaryRef = useRef<HTMLDivElement | null>(null);
+  const summaryPollTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const summaryPollAttemptsRef = useRef(0);
+  const lastSummaryFocusCheckAtRef = useRef(0);
 
   useEffect(() => {
     onProcessingChange(isSummarizing);
   }, [isSummarizing, onProcessingChange]);
+
+  const clearSummaryFallbackPolling = () => {
+    if (summaryPollTimerRef.current) {
+      clearTimeout(summaryPollTimerRef.current);
+      summaryPollTimerRef.current = null;
+    }
+    summaryPollAttemptsRef.current = 0;
+  };
+
+  const loadSummariesForCurrentDocument = async () => {
+    if (!currentDocument?.id) return [];
+    const summaries = await summaryService.getByDocumentId(currentDocument.id, linkToken);
+    setAllSummaries(summaries);
+    return summaries;
+  };
+
+  const scheduleSummaryFallbackPolling = (initialDelayMs = 15000) => {
+    if (!currentDocument?.id || !isSummarizing) return;
+    if (summaryPollTimerRef.current) return;
+
+    const maxAttempts = 10;
+    const runPoll = async () => {
+      summaryPollTimerRef.current = null;
+      if (!currentDocument?.id || !isSummarizing) return;
+      try {
+        const summaries = await loadSummariesForCurrentDocument();
+        const key = `summary_processing_${currentDocument.id}`;
+        const jobStartedAt = Number(localStorage.getItem(key));
+        const hasFreshSummary =
+          Boolean(jobStartedAt) &&
+          summaries.some(
+            (item) => new Date(item.updatedAt || 0).getTime() > jobStartedAt
+          );
+        if (hasFreshSummary) {
+          clearSummaryFallbackPolling();
+          setIsSummarizing(false);
+          localStorage.removeItem(key);
+          return;
+        }
+      } catch (pollError) {
+        console.error("Summary fallback poll failed:", pollError);
+      }
+
+      summaryPollAttemptsRef.current += 1;
+      if (summaryPollAttemptsRef.current >= maxAttempts) {
+        clearSummaryFallbackPolling();
+        return;
+      }
+
+      const nextDelay = Math.min(
+        15000 * Math.pow(2, summaryPollAttemptsRef.current),
+        60000
+      );
+      summaryPollTimerRef.current = setTimeout(runPoll, nextDelay);
+    };
+
+    summaryPollTimerRef.current = setTimeout(runPoll, initialDelayMs);
+  };
 
   useEffect(() => {
     // Cleanup on unmount
@@ -195,7 +257,7 @@ export function SummaryPanel({
     };
     fetchSummaries();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentDocument?.id]);
+  }, [currentDocument?.id, linkToken]);
 
   // When selectedSummaryId or allSummaries changes, update summary display
   useEffect(() => {
@@ -230,13 +292,17 @@ export function SummaryPanel({
     // On mount and on window focus, check if summary is ready
     const checkSummaryReady = async () => {
       if (!currentDocument?.id) return;
+      const now = Date.now();
+      if (now - lastSummaryFocusCheckAtRef.current < SUMMARY_FOCUS_CHECK_COOLDOWN_MS) return;
+      lastSummaryFocusCheckAtRef.current = now;
       const key = `summary_processing_${currentDocument.id}`;
       const jobStartedAt = Number(localStorage.getItem(key));
 
       if (jobStartedAt) {
         // Fetch summaries
         const summaries = await summaryService.getByDocumentId(
-          currentDocument.id
+          currentDocument.id,
+          linkToken
         );
         if (summaries && summaries.length > 0) {
           // Check if any summary was created after the job started
@@ -262,7 +328,7 @@ export function SummaryPanel({
     const onFocus = () => checkSummaryReady();
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
-  }, [currentDocument?.id, onSummarySelect]);
+  }, [currentDocument?.id, onSummarySelect, linkToken]);
 
   useEffect(() => {
     // On mount, check if summary processing is ongoing for this document
@@ -305,8 +371,10 @@ export function SummaryPanel({
     const baseURL = API_URL.replace(/\/api$/, "");
 
     // Connect to backend Socket.IO server
+    const token = localStorage.getItem("accessToken");
     const socket = socketIOClient(baseURL, {
-      transports: ["websocket", "polling"],
+      transports: ["websocket"],
+      auth: token ? { token: `Bearer ${token}` } : undefined,
       reconnection: true,
       reconnectionAttempts: 5,
       reconnectionDelay: 1000,
@@ -321,10 +389,12 @@ export function SummaryPanel({
 
     socket.on("connect_error", (error) => {
       console.error("Socket connection error:", error);
+      if (isSummarizing) scheduleSummaryFallbackPolling(2000);
     });
 
     socket.on("disconnect", (reason) => {
       console.log("Socket disconnected:", reason);
+      if (isSummarizing) scheduleSummaryFallbackPolling(2000);
     });
 
     socket.on("summary_status", (data) => {
@@ -333,8 +403,11 @@ export function SummaryPanel({
 
       console.log("Socket event received - summary_status:", { jobId, status, error, cleanStatus });
 
-      // Check if there's an error field even if status is not "failed"
-      const hasError = error !== undefined && error !== null && error !== "";
+      // Treat only meaningful error payloads as actual failures.
+      const hasError =
+        typeof error === "string"
+          ? error.trim().length > 0
+          : Boolean(error && (error.message || error.error || error.code));
 
       // Create a unique key for this event to prevent duplicates
       const eventKey = `${jobId || 'unknown'}-${cleanStatus}-${hasError ? 'error' : 'no-error'}`;
@@ -364,12 +437,11 @@ export function SummaryPanel({
       }
 
       if (cleanStatus === "success" || cleanStatus === "completed") {
+        clearSummaryFallbackPolling();
         // Refetch summaries for the current document
         if (currentDocument?.id) {
-          summaryService
-            .getByDocumentId(currentDocument.id, linkToken)
+          loadSummariesForCurrentDocument()
             .then((summaries) => {
-              setAllSummaries(summaries);
               toast.success("Summary generated!");
               setIsSummarizing(false);
               setLastSummaryId(summaries[0]?.id || null);
@@ -386,6 +458,7 @@ export function SummaryPanel({
           localStorage.removeItem(`summary_processing_${currentDocument.id}`);
       } else if (cleanStatus === "failed" || cleanStatus === "error" || hasError) {
         // Handle error status or any status with an error field
+        clearSummaryFallbackPolling();
         setIsSummarizing(false);
         setLastSummaryId(null);
         if (currentDocument?.id)
@@ -422,10 +495,17 @@ export function SummaryPanel({
         }
       } else if (cleanStatus === "processing" || cleanStatus === "in_progress") {
         setIsSummarizing(true);
-        if (currentDocument?.id)
-          localStorage.setItem(`summary_processing_${currentDocument.id}`, "1");
+        if (currentDocument?.id) {
+          const key = `summary_processing_${currentDocument.id}`;
+          const existing = Number(localStorage.getItem(key));
+          if (!existing) {
+            localStorage.setItem(key, Date.now().toString());
+          }
+        }
+        scheduleSummaryFallbackPolling(20000);
       } else {
         // For any other status, stop processing
+        clearSummaryFallbackPolling();
         setIsSummarizing(false);
         if (currentDocument?.id)
           localStorage.removeItem(`summary_processing_${currentDocument.id}`);
@@ -436,9 +516,10 @@ export function SummaryPanel({
       console.log("Cleaning up socket connection");
       socket.off("summary_status");
       socket.disconnect();
+      clearSummaryFallbackPolling();
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
-  }, [currentDocument?.id, onSummarySelect]);
+  }, [currentDocument?.id, onSummarySelect, isSummarizing, linkToken]);
 
   // Start the timeout when a new summary is requested
   const handleNewSummary = async () => {
@@ -471,12 +552,13 @@ export function SummaryPanel({
       // Start 10-minute timeout
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       timeoutRef.current = setTimeout(() => {
+        clearSummaryFallbackPolling();
         setIsSummarizing(false);
         toast.error(
           "Summary generation timed out after 30 minutes. Please try again."
         );
       }, 30 * 60 * 1000); // 30 minutes
-      await summaryN8nService.createSummary(
+      const triggerResult = await summaryTriggerService.createSummary(
         currentDocument.type === "RHP"
           ? "Generate RHP Doc Summary"
           : "Generate DRHP Doc Summary",
@@ -488,7 +570,23 @@ export function SummaryPanel({
         currentDocument.type, // Pass type for dynamic webhook
         currentDocument.rhpNamespace // Pass rhpNamespace for RHP documents
       );
+      if (triggerResult?.error) {
+        clearSummaryFallbackPolling();
+        setIsSummarizing(false);
+        localStorage.removeItem(`summary_processing_${currentDocument.id}`);
+        const overload =
+          triggerResult.httpStatus === 429 ||
+          triggerResult.errorCode === "QUEUE_OVERLOADED";
+        toast.error(
+          overload
+            ? "Queue overloaded, retry later."
+            : `Failed to create summary: ${triggerResult.error}`
+        );
+        return;
+      }
+      scheduleSummaryFallbackPolling(20000);
     } catch (error) {
+      clearSummaryFallbackPolling();
       toast.error("Failed to create new summary");
       setIsSummarizing(false);
       localStorage.removeItem(`summary_processing_${currentDocument.id}`);
@@ -606,37 +704,14 @@ export function SummaryPanel({
   };
 
   useEffect(() => {
-    // Polling for new summaries if processing is ongoing
-    if (!currentDocument?.id) return;
-    let interval: NodeJS.Timeout | null = null;
     if (isSummarizing) {
-      interval = setInterval(async () => {
-        const summaries = await summaryService.getByDocumentId(
-          currentDocument.id,
-          linkToken
-        );
-        setAllSummaries(summaries);
-      }, 5000); // Poll every 5 seconds
+      scheduleSummaryFallbackPolling(15000);
+    } else {
+      clearSummaryFallbackPolling();
     }
     return () => {
-      if (interval) clearInterval(interval);
+      clearSummaryFallbackPolling();
     };
-  }, [isSummarizing, currentDocument?.id]);
-
-  useEffect(() => {
-    // Refetch summaries on window focus if processing is ongoing
-    if (!currentDocument?.id) return;
-    const onFocus = async () => {
-      if (isSummarizing) {
-        const summaries = await summaryService.getByDocumentId(
-          currentDocument.id,
-          linkToken
-        );
-        setAllSummaries(summaries);
-      }
-    };
-    window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
   }, [isSummarizing, currentDocument?.id]);
 
   if (!isDocumentProcessed) {
