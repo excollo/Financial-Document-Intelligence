@@ -31,6 +31,7 @@ export interface SystemHealthReport {
             pinecone: ServiceStatus;
             cohere: ServiceStatus;
             perplexity?: ServiceStatus;
+            serper?: ServiceStatus;
         };
     };
 }
@@ -45,6 +46,7 @@ export interface HealthCheckToggles {
         pinecone: boolean;
         cohere: boolean;
         perplexity: boolean;
+        serper: boolean;
     };
 }
 
@@ -69,6 +71,7 @@ export class HealthService {
             pinecone: true,
             cohere: true,
             perplexity: false,
+            serper: true,
         },
     };
 
@@ -287,6 +290,7 @@ export class HealthService {
                     pinecone: externalServiceStatus("pinecone"),
                     cohere: externalServiceStatus("cohere"),
                     perplexity: externalServiceStatus("perplexity"),
+                    serper: externalServiceStatus("serper"),
                 }
             },
         };

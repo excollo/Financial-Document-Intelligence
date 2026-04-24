@@ -1,6 +1,7 @@
 import React from "react";
 import { 
   Folder as FolderIcon, 
+  GitCompareArrows,
   Pencil, 
   Share2, 
   Building2, 
@@ -57,6 +58,7 @@ export const DirectoryListItem: React.FC<DirectoryListItemProps> = ({
   onViewReports,
 }) => {
   const isRenaming = renamingId === directory.id;
+  const canCompare = !!documentTypes?.hasDrhp && !!documentTypes?.hasRhp;
 
   return (
     <div
@@ -142,20 +144,15 @@ export const DirectoryListItem: React.FC<DirectoryListItemProps> = ({
 
       <div className="col-span-1 flex items-center justify-end gap-1">
         <button
-          className={`text-[#4B2A06] p-1.5 rounded-md hover:bg-gray-100 transition-all ${compareLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+          className={`text-[#4B2A06] p-1.5 rounded-md hover:bg-gray-100 transition-all ${(!canCompare || compareLoading) ? 'opacity-50 cursor-not-allowed' : ''}`}
           onClick={(e) => {
             e.stopPropagation();
-            if (!compareLoading) onCompare(directory);
+            if (canCompare && !compareLoading) onCompare(directory);
           }}
-          disabled={compareLoading}
-          title="Compare documents"
+          disabled={!canCompare || compareLoading}
+          title={canCompare ? "Compare documents" : "Upload both DRHP and RHP to compare"}
         >
-          <img
-            className="h-3 w-3 object-contain"
-            src="https://img.icons8.com/ios/50/compare.png"
-            alt="compare"
-            style={{ display: 'block', minWidth: '12px', minHeight: '12px' }}
-          />
+          <GitCompareArrows className="h-3.5 w-3.5" />
         </button>
         <button
           className="text-[#4B2A06] p-1.5 rounded-md hover:bg-gray-100 transition-all"

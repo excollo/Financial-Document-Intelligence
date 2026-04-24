@@ -8,6 +8,7 @@ Matches n8n "Message a model2" node:
   - Returns: JSON in the exact structure expected by convert_research_json_to_markdown()
 """
 import json
+from datetime import datetime
 import re
 from typing import Dict, Any, Optional
 import openai
@@ -30,7 +31,11 @@ class ResearchService:
         self.model = "gpt-5-mini"
 
     async def research_company(
-        self, company_name: str, promoters: str = "", custom_sop: Optional[str] = None
+        self,
+        company_name: str,
+        promoters: str = "",
+        directory_name: str = "",
+        custom_sop: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Main research method called by pipeline.
@@ -51,27 +56,49 @@ class ResearchService:
         user_content = company_name.strip()
         if promoters:
             user_content += f"\nPromoters/Key Persons: {promoters}"
+        if directory_name:
+            user_content += f"\nDirectory/Deal Name: {directory_name}"
 
         try:
             # -----------------------------------------------------------------
-            # OpenAI Chat Completions with web_search_preview tool
-            # Matches n8n builtInTools.webSearch { searchContextSize: "medium" }
+            # n8n-compatible call style: Responses API + web_search_preview tool.
             # -----------------------------------------------------------------
-            response = await self.client.chat.completions.create(
+            response = await self.client.responses.create(
                 model=self.model,
-                messages=[
+                input=[
                     {"role": "system", "content": research_sop},
                     {"role": "user", "content": user_content},
-                ]
+                ],
+                tools=[{"type": "web_search_preview", "search_context_size": "medium"}],
             )
 
-            raw_text = response.choices[0].message.content or ""
-            usage = response.usage
-            input_tokens = usage.prompt_tokens if usage else 0
-            output_tokens = usage.completion_tokens if usage else 0
+            raw_text = getattr(response, "output_text", "") or ""
+            if not raw_text:
+                # Fallback extraction for SDK variants where output_text isn't populated.
+                output = getattr(response, "output", None) or []
+                chunks = []
+                for item in output:
+                    for c in getattr(item, "content", None) or []:
+                        if getattr(c, "type", None) in ("output_text", "text"):
+                            txt = getattr(c, "text", None)
+                            if txt:
+                                chunks.append(txt)
+                raw_text = "\n".join(chunks).strip()
+            usage = getattr(response, "usage", None)
+            input_tokens = int(getattr(usage, "input_tokens", 0) or 0)
+            output_tokens = int(getattr(usage, "output_tokens", 0) or 0)
 
             parsed = self._parse_json_from_text(raw_text)
             parsed["_usage"] = {"input": input_tokens, "output": output_tokens}
+            parsed_metadata = parsed.get("metadata") if isinstance(parsed.get("metadata"), dict) else {}
+            parsed_metadata["company"] = parsed_metadata.get("company") or company_name
+            if promoters and not parsed_metadata.get("promoters"):
+                parsed_metadata["promoters"] = promoters
+            if not parsed_metadata.get("investigation_date"):
+                parsed_metadata["investigation_date"] = datetime.utcnow().strftime("%Y-%m-%d")
+            if directory_name:
+                parsed_metadata["directory_name"] = directory_name
+            parsed["metadata"] = parsed_metadata
 
             logger.info(
                 "Research: Completed",
@@ -88,9 +115,11 @@ class ResearchService:
                 "Research: OpenAI research failed",
                 error=str(e),
             )
-            result = self._empty_result(f"Research failed: {str(e)}")
-            result["_usage"] = {"input": 0, "output": 0}
-            return result
+            return await self._research_fallback(
+                user_content=user_content,
+                original_error=str(e),
+                custom_sop=research_sop,
+            )
 
     async def _research_fallback(
         self, user_content: str, original_error: str, custom_sop: Optional[str] = None
@@ -112,6 +141,10 @@ class ResearchService:
             raw_text = response.choices[0].message.content or ""
             usage = response.usage
             parsed = self._parse_json_from_text(raw_text)
+            parsed_metadata = parsed.get("metadata") if isinstance(parsed.get("metadata"), dict) else {}
+            if not parsed_metadata.get("investigation_date"):
+                parsed_metadata["investigation_date"] = datetime.utcnow().strftime("%Y-%m-%d")
+            parsed["metadata"] = parsed_metadata
             parsed["_usage"] = {
                 "input": usage.prompt_tokens if usage else 0,
                 "output": usage.completion_tokens if usage else 0,

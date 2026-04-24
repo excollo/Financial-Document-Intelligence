@@ -37,35 +37,49 @@ class NewsMonitorCrawler:
         "https://www.moneycontrol.com/rss/business.xml",
         "https://www.ft.com/rss/companies"
     ]
+    NEGATIVE_KEYWORDS = [
+        "fraud", "scam", "arrest", "raid", "ed", "cbi", "sfio", "sebi",
+        "show cause", "penalty", "default", "insolvency", "bankruptcy",
+        "money laundering", "fema", "nclt", "forgery", "irregularities",
+        "probe", "investigation", "charge sheet", "court case", "lawsuit"
+    ]
     
     def __init__(self):
         self.client_db = MongoClient(settings.MONGODB_URI)
-        self.db = self.client_db[settings.MONGO_DB_NAME]
+        # Prefer database from URI so Node/Python always point to the same tenant DB.
+        try:
+            self.db = self.client_db.get_default_database()
+            if self.db is None:
+                raise ValueError("default database not present in URI")
+        except Exception:
+            self.db = self.client_db[settings.MONGO_DB_NAME]
         self.domains_collection = self.db["domains"]
         self.articles_collection = self.db["newsarticles"]
         logger.info("Initialized NewsMonitorCrawler (GPT + Serper mode).")
 
     def search_with_serper(self, query: str, entities: Optional[Dict[str, List[str]]] = None) -> List[Dict[str, Any]]:
-        """Search the web using Serper API (News mode) with focus on adverse findings."""
+        """Search last 7 days news using robust query variants per company."""
         if not settings.SERPER_API_KEY:
             logger.warning("SERPER_API_KEY not found. Skipping Serper search.")
             return []
             
         url = "https://google.serper.dev/search"
         
-        # Build a robust query covering promoters and group companies if provided
+        # Build one robust query with company + related entities.
         search_terms = [query]
         if entities:
-            # Add up to 2 promoters and 2 group companies to the query to avoid it being too long
             search_terms.extend(entities.get("promoters", [])[:2])
+            search_terms.extend(entities.get("kmp", [])[:2])
+            search_terms.extend(entities.get("directors", [])[:2])
             search_terms.extend(entities.get("group_companies", [])[:2])
-        
-        # Focused negative search terms
-        base_query = " OR ".join([f'"{term}"' for term in search_terms])
-        full_query = f"({base_query}) (fraud OR SEBI OR "
-        full_query += '"show cause" OR "investigation" OR "arrest" OR "default" OR "irregularities" OR "penalty")'
-        
-        payload = json.dumps({"q": full_query, "tbm": "nws", "num": 10})
+
+        # Focused negative search terms + 7 day window
+        base_query = " OR ".join([f'"{term}"' for term in search_terms if term])
+        negative_terms = " OR ".join([f'"{kw}"' for kw in self.NEGATIVE_KEYWORDS])
+        query_variants = [
+            f"({base_query}) ({negative_terms})",
+            f'"{query}" (fraud OR scam OR CBI OR ED OR SEBI OR arrest OR investigation OR raid)'
+        ]
         headers = {
             'X-API-KEY': settings.SERPER_API_KEY,
             'Content-Type': 'application/json'
@@ -73,23 +87,55 @@ class NewsMonitorCrawler:
         
         try:
             with httpx.Client(timeout=30.0) as client:
-                response = client.post(url, headers=headers, data=payload)
-                response.raise_for_status()
-                data = response.json()
-                
                 results = []
-                for news in data.get("news", []):
-                    results.append({
-                        "title": news.get("title", ""),
-                        "url": news.get("link", ""),
-                        "description": news.get("snippet", ""),
-                        "source": news.get("source", ""),
-                        "publishedDate": news.get("date", ""),
-                        "sourceType": "serper"
+                seen_urls = set()
+                for full_query in query_variants:
+                    payload = json.dumps({
+                        "q": full_query,
+                        "tbm": "nws",
+                        "num": 20,
+                        "tbs": "qdr:w"  # Last 7 days
                     })
+                    response = client.post(url, headers=headers, data=payload)
+                    response.raise_for_status()
+                    data = response.json()
+
+                    # Primary: news results
+                    for news in data.get("news", []):
+                        url_value = (news.get("link", "") or "").strip().lower()
+                        if url_value and url_value in seen_urls:
+                            continue
+                        if url_value:
+                            seen_urls.add(url_value)
+                        results.append({
+                            "title": news.get("title", ""),
+                            "url": news.get("link", ""),
+                            "description": news.get("snippet", ""),
+                            "source": news.get("source", ""),
+                            "publishedDate": news.get("date", ""),
+                            "sourceType": "serper",
+                            "queriedAt": datetime.now(timezone.utc).isoformat()
+                        })
+
+                    # Fallback: if news section is empty, use top organic snippets
+                    if not data.get("news"):
+                        for item in data.get("organic", [])[:8]:
+                            url_value = (item.get("link", "") or "").strip().lower()
+                            if not url_value or url_value in seen_urls:
+                                continue
+                            seen_urls.add(url_value)
+                            results.append({
+                                "title": item.get("title", ""),
+                                "url": item.get("link", ""),
+                                "description": item.get("snippet", ""),
+                                "source": "serper-organic",
+                                "publishedDate": "",
+                                "sourceType": "serper",
+                                "queriedAt": datetime.now(timezone.utc).isoformat()
+                            })
                 return results
         except Exception as e:
-            logger.error(f"Serper Search Error query='{full_query}': {e}")
+            logger.error(f"Serper Search Error query='{query}': {e}")
             return []
 
 
@@ -157,20 +203,104 @@ class NewsMonitorCrawler:
                 
         return adverse_articles
 
+    def rule_based_negative_filter(self, articles: List[Dict[str, Any]], company: str, entities: Optional[Dict[str, List[str]]] = None) -> List[Dict[str, Any]]:
+        """Deterministic fallback when LLM misses true adverse results."""
+        if not articles:
+            return []
+
+        related_terms = [company]
+        if entities:
+            related_terms.extend(entities.get("promoters", []))
+            related_terms.extend(entities.get("kmp", []))
+            related_terms.extend(entities.get("directors", []))
+            related_terms.extend(entities.get("group_companies", []))
+
+        def has_related_entity(text: str) -> bool:
+            lowered = text.lower()
+            return any((term or "").strip().lower() in lowered for term in related_terms if term)
+
+        filtered = []
+        for article in articles:
+            text = f"{article.get('title', '')} {article.get('description', '')}".lower()
+            matched_keywords = [kw for kw in self.NEGATIVE_KEYWORDS if kw.lower() in text]
+            if matched_keywords and has_related_entity(text):
+                risk = "HIGH"
+                if any(k in text for k in ["arrest", "charge sheet", "ed", "cbi", "sfio", "money laundering", "fraud"]):
+                    risk = "CRITICAL"
+                category = "legal"
+                if any(k in text for k in ["sebi", "show cause", "penalty", "rbi"]):
+                    category = "regulatory"
+                if any(k in text for k in ["default", "insolvency", "bankruptcy"]):
+                    category = "financial"
+                item = article.copy()
+                item.update({
+                    "sentiment": "negative",
+                    "riskLevel": risk,
+                    "category": category,
+                    "findings": f"Flagged by keyword match: {', '.join(matched_keywords[:5])}",
+                    "company": company
+                })
+                filtered.append(item)
+        return filtered
+
+    def search_web_context_with_serper(self, company_name: str) -> str:
+        """Fetch quick web snippets for entity discovery (promoters/directors/KMP/group)."""
+        if not settings.SERPER_API_KEY:
+            return ""
+
+        url = "https://google.serper.dev/search"
+        payload = json.dumps({
+            "q": f'"{company_name}" promoters directors CEO CFO KMP group companies India',
+            "num": 10
+        })
+        headers = {
+            'X-API-KEY': settings.SERPER_API_KEY,
+            'Content-Type': 'application/json'
+        }
+
+        try:
+            with httpx.Client(timeout=30.0) as client:
+                response = client.post(url, headers=headers, data=payload)
+                response.raise_for_status()
+                data = response.json()
+
+            snippets = []
+            for item in data.get("organic", [])[:10]:
+                text = " | ".join(filter(None, [
+                    item.get("title", ""),
+                    item.get("snippet", ""),
+                    item.get("link", "")
+                ]))
+                if text:
+                    snippets.append(text)
+            return "\n".join(snippets)
+        except Exception as e:
+            logger.warning(f"Serper context search failed for {company_name}: {e}")
+            return ""
+
     def discover_entities_gpt(self, company_name: str) -> Dict[str, List[str]]:
-        """Discover Promoters and Group Companies using GPT."""
-        default_data = {"promoters": [], "kmp": [], "group_companies": []}
+        """Discover promoters, directors, KMP and group companies using Serper + GPT."""
+        default_data = {"promoters": [], "kmp": [], "directors": [], "group_companies": []}
         if not settings.OPENAI_API_KEY:
             return default_data
-            
+
+        web_context = self.search_web_context_with_serper(company_name)
         prompt = f"""
-        Identify the following for the Indian company '{company_name}':
+        Identify the following for the Indian company '{company_name}' using the provided web context:
         1. Promoters (Individuals or entities)
-        2. Subsidiary or Group Companies
-        
+        2. KMP (CEO/CFO/CS and other key management people)
+        3. Directors (including independent/whole-time directors where available)
+        4. Subsidiary or Group Companies
+
+        Web context:
+        {web_context if web_context else "No context available"}
+
+        Return only entities that are reasonably likely to be related to this company.
         Return the result as a strictly valid JSON object with the following structure:
         {{
             "promoters": ["Name 1", "Name 2"],
+            "kmp": ["Name 1", "Name 2"],
+            "directors": ["Name 1", "Name 2"],
             "group_companies": ["Company 1", "Company 2"]
         }}
         """
@@ -192,7 +322,13 @@ class NewsMonitorCrawler:
                 resp.raise_for_status()
                 data = json.loads(resp.json()["choices"][0]["message"]["content"])
                 
-                logger.info(f"Entities discovered for {company_name}: P:{len(data.get('promoters', []))}, G:{len(data.get('group_companies', []))}")
+                logger.info(
+                    f"Entities discovered for {company_name}: "
+                    f"P:{len(data.get('promoters', []))}, "
+                    f"K:{len(data.get('kmp', []))}, "
+                    f"D:{len(data.get('directors', []))}, "
+                    f"G:{len(data.get('group_companies', []))}"
+                )
                 return data
         except Exception as e:
             logger.error(f"Error discovering entities for {company_name}: {e}")
@@ -247,81 +383,83 @@ class NewsMonitorCrawler:
                     
         return all_articles
 
-    def filter_rss_by_companies(self, articles: List[Dict[str, Any]], monitored_companies: List[str]) -> List[Dict[str, Any]]:
-        """Filter articles to only those mentioning monitored companies."""
-        if not monitored_companies:
+    def filter_rss_by_company_entities(self, articles: List[Dict[str, Any]], company_entities: Dict[str, Dict[str, List[str]]]) -> List[Dict[str, Any]]:
+        """Filter RSS articles by company + related promoter/director/KMP/group entities."""
+        if not company_entities:
             return []
-            
+
         filtered = []
-        # Create regex patterns for whole word matching
-        patterns = [re.compile(rf'\b{re.escape(company)}\b', re.IGNORECASE) for company in monitored_companies]
-        
+        seen_urls = set()
+
+        def _matches_term(text: str, term: str) -> bool:
+            if not term:
+                return False
+            if term.isalnum():
+                return re.search(rf'\b{re.escape(term)}\b', text, re.IGNORECASE) is not None
+            return term.lower() in text
+
         for article in articles:
-            text_to_search = f"{article.get('title', '')} {article.get('description', '')}".lower()
-            for company in monitored_companies:
-                # Use a more flexible search that handles companies with special chars like '&'
-                # Check for either whole word or exact containment if it contains special chars
-                if company.lower() in text_to_search:
-                    # Double check it's not a substring of another word if it's alphanumeric
-                    if company.isalnum():
-                        if re.search(rf'\b{re.escape(company)}\b', text_to_search, re.IGNORECASE):
-                            article["company"] = company
-                            filtered.append(article)
-                            break
-                    else:
-                        article["company"] = company
-                        filtered.append(article)
-                        break
-        
+            text_to_search = f"{article.get('title', '')} {article.get('description', '')}"
+            url_key = (article.get("url") or "").strip().lower()
+
+            for company, entities in company_entities.items():
+                related_terms = [company]
+                related_terms.extend(entities.get("promoters", []))
+                related_terms.extend(entities.get("kmp", []))
+                related_terms.extend(entities.get("directors", []))
+                related_terms.extend(entities.get("group_companies", []))
+
+                if any(_matches_term(text_to_search, term) for term in related_terms):
+                    article_copy = article.copy()
+                    article_copy["company"] = company
+                    if not url_key or url_key not in seen_urls:
+                        filtered.append(article_copy)
+                        if url_key:
+                            seen_urls.add(url_key)
+                    break
+
         logger.info(f"RSS Filter: {len(articles)} total -> {len(filtered)} matching companies")
         return filtered
 
 
     def merge_articles(self, articles: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Deduplicate and merge articles by company name."""
+        """Deduplicate same article across sources and retain all citation links."""
         if not articles:
             return []
-            
+
         merged = {}
         for art in articles:
             company = art.get("company") or art.get("entityName") or "Unknown"
-            if company not in merged:
-                # First time seeing this company
-                merged[company] = art.copy()
-                # Ensure we have a list for URLs if we want to show multiple
-                if "url" in art:
-                    merged[company]["citations"] = [art["url"]]
-            else:
-                # Merge logic
-                existing = merged[company]
-                
-                # Combine descriptions/findings
-                new_desc = art.get("description") or art.get("summary") or ""
-                if new_desc and new_desc not in existing.get("description", ""):
-                    existing["description"] = existing.get("description", "") + " | " + new_desc
-                    existing["findings"] = existing.get("findings", "") + " | " + new_desc
-                
-                # Combine URLs
-                new_url = art.get("url")
-                if "citations" not in existing:
-                    existing["citations"] = [existing.get("url")] if existing.get("url") else []
-                
-                if new_url and new_url not in existing["citations"]:
-                    existing["citations"].append(new_url)
-                    # Update primary url to the most recent one
-                    existing["url"] = new_url
-                
-                # Update source to show multiple if different
-                new_source = art.get("source")
-                if new_source and new_source not in existing.get("source", ""):
-                    existing["source"] = existing.get("source", "") + ", " + new_source
-                    
-                # Pick higher risk if applicable
-                risk_map = {"CLEAR": 0, "LOW": 1, "MEDIUM": 2, "HIGH": 3, "CRITICAL": 4}
-                current_risk = risk_map.get(existing.get("riskLevel", "LOW"), 1)
-                new_risk = risk_map.get(art.get("riskLevel", "LOW"), 1)
-                if new_risk > current_risk:
-                    existing["riskLevel"] = art.get("riskLevel")
+            url = (art.get("url") or "").strip().lower()
+            title_norm = re.sub(r"\s+", " ", (art.get("title") or "").strip().lower())
+            key = f"url::{url}" if url else f"title::{company.lower()}::{title_norm}"
+
+            if key not in merged:
+                item = art.copy()
+                item["company"] = company
+                item["citations"] = [art["url"]] if art.get("url") else []
+                merged[key] = item
+                continue
+
+            existing = merged[key]
+            new_desc = art.get("description") or art.get("summary") or ""
+            if new_desc and new_desc not in (existing.get("description") or ""):
+                existing["description"] = f"{existing.get('description', '')} | {new_desc}".strip(" |")
+                existing["findings"] = f"{existing.get('findings', '')} | {new_desc}".strip(" |")
+
+            new_url = art.get("url")
+            if new_url and new_url not in existing["citations"]:
+                existing["citations"].append(new_url)
+
+            new_source = art.get("source")
+            if new_source and new_source not in (existing.get("source") or ""):
+                existing["source"] = f"{existing.get('source', '')}, {new_source}".strip(", ")
+
+            risk_map = {"CLEAR": 0, "LOW": 1, "MEDIUM": 2, "HIGH": 3, "CRITICAL": 4}
+            current_risk = risk_map.get(existing.get("riskLevel", "LOW"), 1)
+            new_risk = risk_map.get(art.get("riskLevel", "LOW"), 1)
+            if new_risk > current_risk:
+                existing["riskLevel"] = art.get("riskLevel")
 
         return list(merged.values())
 
@@ -520,14 +658,30 @@ class NewsMonitorCrawler:
         total_articles = 0
         errors = []
         
-        # Step 1: RSS Feeds + Fast Filtering (Code based match)
+        # Discover related entities once per company for both RSS and Serper flows.
+        company_entities: Dict[str, Dict[str, List[str]]] = {}
+        for company in monitored_companies:
+            company_entities[company] = self.discover_entities_gpt(company)
+            time.sleep(0.2)
+
+        # Step 1: RSS Feeds + entity-based filtering
         logger.info("Step 1: Checking RSS Feeds...")
         rss_articles = self.fetch_rss_articles()
-        filtered_rss = self.filter_rss_by_companies(rss_articles, monitored_companies)
+        filtered_rss = self.filter_rss_by_company_entities(rss_articles, company_entities)
         
         if filtered_rss:
             logger.info(f"Found {len(filtered_rss)} matching RSS items. Analyzing sentiment with GPT...")
             rss_adverse = self.analyze_findings_with_gpt(filtered_rss, monitored_companies)
+            if not rss_adverse:
+                # GPT can occasionally miss direct adverse snippets; apply deterministic fallback.
+                for company in monitored_companies:
+                    rss_adverse.extend(
+                        self.rule_based_negative_filter(
+                            [a for a in filtered_rss if a.get("company") == company],
+                            company,
+                            company_entities.get(company, {})
+                        )
+                    )
             if rss_adverse:
                 all_news.extend(rss_adverse)
                 logger.info(f"Step 1 Complete: Found {len(rss_adverse)} adverse RSS findings.")
@@ -539,8 +693,8 @@ class NewsMonitorCrawler:
         for company in monitored_companies:
             logger.info(f"Processing company: {company}")
             
-            # Sub-step A: Discover entities (Promoters/Group companies) using GPT
-            entities = self.discover_entities_gpt(company)
+            # Sub-step A: Use already discovered entities (Promoters/KMP/Directors/Group companies)
+            entities = company_entities.get(company, {})
             
             # Sub-step B: Search Serper with improved query for Company + Promoters + Groups
             logger.info(f"Searching Serper for {company} and associated entities...")
@@ -552,6 +706,8 @@ class NewsMonitorCrawler:
                 
                 # Sub-step C: Filter and analyze with GPT
                 deep_adverse = self.analyze_findings_with_gpt(serper_results, [company])
+                if not deep_adverse:
+                    deep_adverse = self.rule_based_negative_filter(serper_results, company, entities)
                 if deep_adverse:
                     search_findings.extend(deep_adverse)
             

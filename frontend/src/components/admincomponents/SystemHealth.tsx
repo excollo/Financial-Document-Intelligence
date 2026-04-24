@@ -244,6 +244,7 @@ export const SystemHealth: React.FC = () => {
                 <ServiceCard title="Pinecone DB" status={report?.services?.external_ai?.pinecone} loading={loading} toggleKey="external_ai.pinecone" />
                 <ServiceCard title="Cohere API" status={report?.services?.external_ai?.cohere} loading={loading} toggleKey="external_ai.cohere" />
                 <ServiceCard title="Perplexity API" status={report?.services?.external_ai?.perplexity} loading={loading} toggleKey="external_ai.perplexity" />
+                <ServiceCard title="Serper API" status={report?.services?.external_ai?.serper} loading={loading} toggleKey="external_ai.serper" />
             </div>
 
             <Card>

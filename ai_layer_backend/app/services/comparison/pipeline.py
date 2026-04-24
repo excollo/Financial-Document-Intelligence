@@ -10,7 +10,7 @@ from app.core.logging import get_logger
 from app.services.vector_store import vector_store_service
 from app.services.embedding import EmbeddingService
 from app.services.rerank import rerank_service
-from app.services.comparison.prompts import COMPARISON_SYSTEM_PROMPT, COMPARISON_QUERIES
+from app.services.comparison.prompts import COMPARISON_SYSTEM_PROMPT
 from app.services.comparison.formatter import comparison_formatter
 import openai
 
@@ -133,13 +133,18 @@ class ComparisonPipeline:
         start_time = time.time()
         logger.info("Starting DRHP vs RHP Comparison Pipeline", 
                     drhp=drhp_namespace, rhp=rhp_namespace)
-        
+
+        # Retrieval is intentionally prompt-driven.
+        # We avoid static keyword query lists and use the comparison prompt itself
+        # so context fetching aligns with report-generation instructions.
+        retrieval_queries = [COMPARISON_SYSTEM_PROMPT]
+
         # Parallel retrieval from both indexes
         drhp_task = self._retrieve_context_from_index(
-            COMPARISON_QUERIES, drhp_namespace, drhp_index, drhp_host, metadata_filter=drhp_filter
+            retrieval_queries, drhp_namespace, drhp_index, drhp_host, metadata_filter=drhp_filter
         )
         rhp_task = self._retrieve_context_from_index(
-            COMPARISON_QUERIES, rhp_namespace, rhp_index, rhp_host, metadata_filter=rhp_filter
+            retrieval_queries, rhp_namespace, rhp_index, rhp_host, metadata_filter=rhp_filter
         )
         
         drhp_context, rhp_context = await asyncio.gather(drhp_task, rhp_task)

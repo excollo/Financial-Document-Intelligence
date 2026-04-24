@@ -128,15 +128,81 @@ export const newsArticleController = {
                 if (endDate) query.crawledAt.$lte = new Date(endDate as string);
             }
 
-            // Execute query with pagination
+            // Return one consolidated card per company with merged source links.
             const skip = (Number(page) - 1) * Number(limit);
+            const riskOrderExpr = {
+                $switch: {
+                    branches: [
+                        { case: { $eq: ['$riskLevel', 'CRITICAL'] }, then: 4 },
+                        { case: { $eq: ['$riskLevel', 'HIGH'] }, then: 3 },
+                        { case: { $eq: ['$riskLevel', 'MEDIUM'] }, then: 2 },
+                        { case: { $eq: ['$riskLevel', 'LOW'] }, then: 1 },
+                    ],
+                    default: 0,
+                }
+            };
 
-            const articles = await NewsArticle.find(query)
-                .sort({ crawledAt: -1 })
-                .skip(skip)
-                .limit(Number(limit));
+            const groupedRows = await NewsArticle.aggregate([
+                { $match: query },
+                {
+                    $addFields: {
+                        _riskRank: riskOrderExpr,
+                        _publishedDateSafe: { $ifNull: ['$publishedDate', '$crawledAt'] },
+                    }
+                },
+                // Sort so first item in each group is newest + highest risk.
+                { $sort: { company: 1, _riskRank: -1, _publishedDateSafe: -1, crawledAt: -1 } },
+                {
+                    $group: {
+                        _id: '$company',
+                        representative: { $first: '$$ROOT' },
+                        maxRisk: { $max: '$_riskRank' },
+                        urls: { $addToSet: '$url' },
+                        sources: { $addToSet: '$source' },
+                        descriptions: { $addToSet: '$description' },
+                        findingsList: { $addToSet: '$findings' },
+                        sentiments: { $addToSet: '$sentiment' },
+                        categories: { $addToSet: '$category' },
+                    }
+                },
+                { $sort: { 'representative.crawledAt': -1 } },
+                { $skip: skip },
+                { $limit: Number(limit) },
+            ]);
 
-            const total = await NewsArticle.countDocuments(query);
+            const riskByRank: Record<number, 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'> = {
+                1: 'LOW',
+                2: 'MEDIUM',
+                3: 'HIGH',
+                4: 'CRITICAL',
+            };
+
+            const articles = groupedRows.map((row: any) => {
+                const rep = row.representative || {};
+                const cleanUrls = (row.urls || []).filter((u: any) => typeof u === 'string' && u.trim().length > 0);
+                const cleanSources = (row.sources || []).filter((s: any) => typeof s === 'string' && s.trim().length > 0);
+                const cleanFindings = (row.findingsList || []).filter((f: any) => typeof f === 'string' && f.trim().length > 0);
+                const mergedFinding = cleanFindings.length > 0
+                    ? cleanFindings.slice(0, 3).join(' | ')
+                    : rep.findings || rep.description || '';
+
+                return {
+                    ...rep,
+                    company: row._id,
+                    url: cleanUrls[0] || rep.url,
+                    citations: cleanUrls,
+                    source: cleanSources.join(', ') || rep.source,
+                    findings: mergedFinding,
+                    riskLevel: riskByRank[row.maxRisk] || rep.riskLevel || 'LOW',
+                };
+            });
+
+            const groupedTotalRows = await NewsArticle.aggregate([
+                { $match: query },
+                { $group: { _id: '$company' } },
+                { $count: 'total' }
+            ]);
+            const total = groupedTotalRows[0]?.total || 0;
 
             res.json({
                 articles,
@@ -174,31 +240,36 @@ export const newsArticleController = {
                 if (endDate) baseQuery.crawledAt.$lte = new Date(endDate as string);
             }
 
-            const [
-                totalArticles,
-                sentimentCounts,
-                riskCounts,
-                companyCounts,
-                recentArticles,
-            ] = await Promise.all([
-                NewsArticle.countDocuments(baseQuery),
-                NewsArticle.aggregate([
-                    { $match: baseQuery },
-                    { $group: { _id: '$sentiment', count: { $sum: 1 } } },
-                ]),
-                NewsArticle.aggregate([
-                    { $match: { ...baseQuery, riskLevel: { $exists: true } } },
-                    { $group: { _id: '$riskLevel', count: { $sum: 1 } } },
-                ]),
-                NewsArticle.aggregate([
-                    { $match: baseQuery },
-                    { $group: { _id: '$company', count: { $sum: 1 } } },
-                    { $sort: { count: -1 } },
-                    { $limit: 10 },
-                ]),
-                NewsArticle.find(baseQuery)
-                    .sort({ crawledAt: -1 })
-                    .limit(5),
+            const riskOrderExpr = {
+                $switch: {
+                    branches: [
+                        { case: { $eq: ['$riskLevel', 'CRITICAL'] }, then: 4 },
+                        { case: { $eq: ['$riskLevel', 'HIGH'] }, then: 3 },
+                        { case: { $eq: ['$riskLevel', 'MEDIUM'] }, then: 2 },
+                        { case: { $eq: ['$riskLevel', 'LOW'] }, then: 1 },
+                    ],
+                    default: 0,
+                }
+            };
+
+            const companySummaries = await NewsArticle.aggregate([
+                { $match: baseQuery },
+                {
+                    $addFields: {
+                        _riskRank: riskOrderExpr,
+                        _publishedDateSafe: { $ifNull: ['$publishedDate', '$crawledAt'] },
+                    }
+                },
+                { $sort: { company: 1, _riskRank: -1, _publishedDateSafe: -1, crawledAt: -1 } },
+                {
+                    $group: {
+                        _id: '$company',
+                        representative: { $first: '$$ROOT' },
+                        maxRisk: { $max: '$_riskRank' },
+                        sentiment: { $first: '$sentiment' },
+                    }
+                },
+                { $sort: { 'representative.crawledAt': -1 } },
             ]);
 
             // Format sentiment counts
@@ -207,8 +278,11 @@ export const newsArticleController = {
                 negative: 0,
                 neutral: 0,
             };
-            sentimentCounts.forEach((item: any) => {
-                sentimentSummary[item._id as keyof typeof sentimentSummary] = item.count;
+            companySummaries.forEach((item: any) => {
+                const sentiment = item.sentiment as keyof typeof sentimentSummary;
+                if (sentimentSummary[sentiment] !== undefined) {
+                    sentimentSummary[sentiment] += 1;
+                }
             });
 
             // Format risk counts
@@ -218,9 +292,19 @@ export const newsArticleController = {
                 HIGH: 0,
                 CRITICAL: 0,
             };
-            riskCounts.forEach((item: any) => {
-                riskDistribution[item._id as keyof typeof riskDistribution] = item.count;
+            companySummaries.forEach((item: any) => {
+                if (item.maxRisk >= 4) riskDistribution.CRITICAL += 1;
+                else if (item.maxRisk === 3) riskDistribution.HIGH += 1;
+                else if (item.maxRisk === 2) riskDistribution.MEDIUM += 1;
+                else if (item.maxRisk === 1) riskDistribution.LOW += 1;
             });
+
+            const companyCounts = companySummaries.slice(0, 10).map((item: any) => ({
+                _id: item._id,
+                count: 1,
+            }));
+            const recentArticles = companySummaries.slice(0, 5).map((item: any) => item.representative);
+            const totalArticles = companySummaries.length;
 
             res.json({
                 totalArticles,
