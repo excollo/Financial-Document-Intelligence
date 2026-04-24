@@ -18,7 +18,7 @@ import asyncio
 import os
 import re
 import time
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Set
 from datetime import datetime
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -195,13 +195,15 @@ class SummaryPipeline:
         job_id: str = None,
         namespace: str = None,
         page_range: Optional[tuple] = None,
+        subsection: Optional[str] = None,
+        subsection_range: Optional[str] = None,
         min_cells: int = 15,
         max_tables: Optional[int] = None,
         max_chars: Optional[int] = None,
     ) -> str:
         """
         Retrieve structured tables from MongoDB extraction_results.
-        Supports page_range=(start, end).
+        Supports direct subsection filters (subsection + subsection_range) and page_range fallback.
         min_cells: Minimum number of pipe characters to consider valid table (default 15).
         """
         try:
@@ -215,6 +217,17 @@ class SummaryPipeline:
                 
             if page_range:
                 query["page"] = {"$gte": page_range[0], "$lte": page_range[1]}
+
+            if subsection:
+                query["subsection"] = {
+                    "$regex": f"^\\s*{re.escape(subsection.strip())}\\s*$",
+                    "$options": "i",
+                }
+            if subsection_range:
+                query["subsection_range"] = {
+                    "$regex": f"^\\s*{re.escape(subsection_range.strip())}\\s*$",
+                    "$options": "i",
+                }
 
             # EXCLUSION: Skip RPT tables so Pinecone can handle them in Section X
             rpt_keywords = ["Related Party", "Transactions with Related Party", "Nature of Transaction", "RPT"]
@@ -283,6 +296,162 @@ class SummaryPipeline:
         except Exception as e:
             logger.warning(f"Failed to retrieve tables: {str(e)}")
             return ""
+
+    @staticmethod
+    def _build_toc_guided_queries(
+        base_queries: List[str],
+        toc: List[Dict[str, Any]],
+        target_terms: List[str],
+        max_entries: int = 8,
+    ) -> List[str]:
+        """
+        Expand retrieval queries with TOC-guided hints so vector search prioritizes
+        the exact subsection names and page spans where data is expected.
+        """
+        expanded = [q for q in base_queries if isinstance(q, str) and q.strip()]
+        if not toc:
+            return expanded
+
+        matched_entries: List[str] = []
+        for item in toc:
+            title = str(item.get("title", "")).strip()
+            if not title:
+                continue
+            title_upper = title.upper()
+            if not any(term in title_upper for term in target_terms):
+                continue
+            ps, pe = SummaryPipeline._toc_page_span(item)
+            matched_entries.append(f"Subsection: {title} | Page range: {ps}-{pe}")
+            if len(matched_entries) >= max_entries:
+                break
+
+        if matched_entries:
+            expanded.append(
+                "Prioritize extraction from these TOC-identified subsections and page ranges:\n"
+                + "\n".join(f"- {entry}" for entry in matched_entries)
+            )
+        return expanded
+
+    @staticmethod
+    def _usage_payload(response: Any) -> Dict[str, int]:
+        """Normalize token usage from model response."""
+        usage = getattr(response, "usage", None)
+        return {
+            "input": int(getattr(usage, "prompt_tokens", 0) or 0),
+            "output": int(getattr(usage, "completion_tokens", 0) or 0),
+        }
+
+    @staticmethod
+    def _to_int(value: Any) -> int:
+        if value is None:
+            return 0
+        if isinstance(value, (int, float)):
+            return int(value)
+        s = re.sub(r"[^\d]", "", str(value))
+        return int(s) if s else 0
+
+    @staticmethod
+    def _to_pct(value: Any) -> float:
+        if value is None:
+            return 0.0
+        s = re.sub(r"[^\d.]", "", str(value))
+        try:
+            return float(s) if s else 0.0
+        except ValueError:
+            return 0.0
+
+    @staticmethod
+    def _extract_preissue_split_from_section6_markdown(section6_md: str) -> tuple[int, float]:
+        if not section6_md:
+            return 0, 0.0
+        m = re.search(
+            r"\|\s*-\s*Individual Promoters\s*\|\s*([\d,]+)\s*\|\s*([0-9.]+)",
+            section6_md,
+            flags=re.IGNORECASE,
+        )
+        if not m:
+            return 0, 0.0
+        sh = SummaryPipeline._to_int(m.group(1))
+        pct = SummaryPipeline._to_pct(m.group(2))
+        return sh, pct
+
+    def _build_section6_preissue_table_from_investor(self, investor_json: Dict[str, Any], section6_md: str = "") -> str:
+        rows = investor_json.get("section_a_extracted_investors", []) if isinstance(investor_json, dict) else []
+        if not isinstance(rows, list) or not rows:
+            return ""
+
+        promoters_total_sh = promoters_sh = promoter_group_sh = public_sh = total_sh = 0
+        promoters_total_pct = promoters_pct = promoter_group_pct = public_pct = total_pct = 0.0
+
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            name = str(row.get("investor_name", "")).strip().lower()
+            sh = self._to_int(row.get("number_of_equity_shares"))
+            pct = self._to_pct(
+                row.get("percentage_of_pre_issue_capital")
+                or row.get("percentage")
+                or row.get("shareholding_percentage")
+            )
+            if "total" in name and ("(a+b)" in name or name == "total"):
+                total_sh, total_pct = sh, pct
+            elif "promoters and promoter group" in name:
+                promoters_total_sh, promoters_total_pct = sh, pct
+            elif "promoter group" in name and "promoters and promoter group" not in name:
+                promoter_group_sh, promoter_group_pct = sh, pct
+            elif "promoter" in name:
+                promoters_sh, promoters_pct = sh, pct
+            elif "public" in name:
+                public_sh, public_pct = sh, pct
+
+        if promoters_total_sh == 0:
+            promoters_total_sh = promoters_sh + promoter_group_sh
+        if promoters_total_pct == 0 and (promoters_pct or promoter_group_pct):
+            promoters_total_pct = promoters_pct + promoter_group_pct
+
+        # Try to recover individual promoter split from agent-2 markdown if missing.
+        if promoters_sh == 0:
+            md_promoters_sh, md_promoters_pct = self._extract_preissue_split_from_section6_markdown(section6_md)
+            if md_promoters_sh > 0:
+                promoters_sh = md_promoters_sh
+                if md_promoters_pct > 0:
+                    promoters_pct = md_promoters_pct
+
+        # Derive promoter group split from A+B minus individual promoters when needed.
+        if promoter_group_sh == 0 and promoters_total_sh > 0 and promoters_sh > 0 and promoters_total_sh >= promoters_sh:
+            promoter_group_sh = promoters_total_sh - promoters_sh
+        if promoter_group_pct == 0 and promoters_total_pct > 0 and promoters_pct > 0 and promoters_total_pct >= promoters_pct:
+            promoter_group_pct = promoters_total_pct - promoters_pct
+
+        if total_sh == 0:
+            total_sh = promoters_total_sh + public_sh
+        if total_pct == 0:
+            total_pct = 100.0 if total_sh > 0 else 0.0
+
+        # If percentages are still missing but shares are available, compute from total.
+        if total_sh > 0:
+            if promoters_total_pct == 0 and promoters_total_sh > 0:
+                promoters_total_pct = (promoters_total_sh / total_sh) * 100
+            if promoters_pct == 0 and promoters_sh > 0:
+                promoters_pct = (promoters_sh / total_sh) * 100
+            if promoter_group_pct == 0 and promoter_group_sh > 0:
+                promoter_group_pct = (promoter_group_sh / total_sh) * 100
+            if public_pct == 0 and public_sh > 0:
+                public_pct = (public_sh / total_sh) * 100
+
+        if total_sh == 0:
+            return ""
+
+        return (
+            "### Pre-Issue Shareholding Table (Corrected from Shareholding Pattern)\n\n"
+            "| Shareholder Category | Number of Equity Shares | Percentage (%) |\n"
+            "|---|---:|---:|\n"
+            f"| Promoters & Promoter Group | {promoters_total_sh:,} | {promoters_total_pct:.2f} |\n"
+            f"| - Individual Promoters | {promoters_sh:,} | {promoters_pct:.2f} |\n"
+            f"| - Promoter Group Entities | {promoter_group_sh:,} | {promoter_group_pct:.2f} |\n"
+            f"| Public Shareholders | {public_sh:,} | {public_pct:.2f} |\n"
+            f"| Total | {total_sh:,} | {total_pct:.2f} |\n"
+        )
 
     async def _get_toc(self, namespace: str) -> List[Dict[str, Any]]:
         """
@@ -401,6 +570,19 @@ class SummaryPipeline:
         
         # Retrieve context (50 chunks, reranked via Cohere)
         investor_query = custom_subqueries or ["Extract complete shareholding pattern, investor list, and capital structure from DRHP"]
+        toc = await self._get_toc(namespace)
+        investor_query = self._build_toc_guided_queries(
+            investor_query,
+            toc,
+            target_terms=[
+                "CAPITAL STRUCTURE",
+                "SHAREHOLDING",
+                "PRE-ISSUE SHAREHOLDING",
+                "POST-ISSUE SHAREHOLDING",
+                "CAPITALISATION",
+                "ISSUE STRUCTURE",
+            ],
+        )
         context = await self._retrieve_context(
             investor_query,
             namespace,
@@ -472,6 +654,19 @@ class SummaryPipeline:
         capital_query = capital_query + [
             "Extract COMPLETE share capital history table across all pages with every row and every column, including bonus/subdivision/allotment rounds and valuation fields."
         ]
+        toc = await self._get_toc(namespace)
+        capital_query = self._build_toc_guided_queries(
+            capital_query,
+            toc,
+            target_terms=[
+                "CAPITAL STRUCTURE",
+                "SHARE CAPITAL",
+                "EQUITY SHARE CAPITAL",
+                "HISTORY OF SHARE CAPITAL",
+                "CHANGES IN SHARE CAPITAL",
+                "CAPITAL HISTORY",
+            ],
+        )
         context = await self._retrieve_context(
             capital_query,
             namespace,
@@ -536,12 +731,45 @@ class SummaryPipeline:
         index_name: str = None,
         host: str = None,
         metadata_filter: Optional[Dict[str, Any]] = None
-    ) -> str:
+    ) -> Dict[str, Any]:
         """Agent 4: Section I & II Generator"""
         logger.info("Agent 4: Section I & II Starting")
         # SUBQUERIES[0] = Section I, SUBQUERIES[1] = Section II
         queries = custom_subqueries or [SUBQUERIES[0], SUBQUERIES[1]]
-        context = await self._retrieve_context(queries, namespace, index_name, host, vector_top_k=8, metadata_filter=metadata_filter)
+        queries = queries + [
+            "Extract complete key document information exactly: statutory and peer review auditors, registrar to the issue, book running lead manager, banker to our company, bankers to the issue / refund banker / sponsor bank, issue opening date, issue closing date, RHP filing date.",
+            "Focus on sections/tables titled GENERAL INFORMATION, KEY DOCUMENT INFORMATION, STATUTORY AND PEER REVIEW AUDITORS, REGISTRAR TO THE ISSUE, BANKER TO OUR COMPANY, BANKERS TO THE ISSUE.",
+            "Banker synonyms to search: bankers, banking partners, escrow bank, collecting bank, sponsor bank, refund banker, SCSB, self certified syndicate bank.",
+            "Extract ISIN exactly using keywords/synonyms: ISIN, International Securities Identification Number, security code/identifier.",
+            "Extract filing date exactly with doc-type aware keywords: RHP Filing Date, DRHP Filing Date, date of filing this red herring prospectus, filed with ROC/SEBI.",
+        ]
+        toc = await self._get_toc(namespace)
+        queries = self._build_toc_guided_queries(
+            queries,
+            toc,
+            target_terms=[
+                "GENERAL INFORMATION",
+                "COMPANY INFORMATION",
+                "KEY DOCUMENT INFORMATION",
+                "REGISTRAR",
+                "BOOK RUNNING LEAD MANAGER",
+                "BANKER",
+                "AUDITOR",
+            ],
+            max_entries=12,
+        )
+        context = await self._retrieve_context(queries, namespace, index_name, host, vector_top_k=28, metadata_filter=metadata_filter)
+        if not context.strip():
+            relaxed_filter = dict(metadata_filter or {})
+            relaxed_filter.pop("type", None)
+            context = await self._retrieve_context(
+                queries,
+                namespace,
+                index_name,
+                host,
+                vector_top_k=34,
+                metadata_filter=relaxed_filter,
+            )
         context = self._clip_chunk_context(
             context,
             SUMMARY_AGENT_CONTEXT_MAX_CHARS,
@@ -557,9 +785,9 @@ class SummaryPipeline:
             temperature=0.1,
             max_tokens=8192
         )
-        usage = response.usage
-        logger.info("Agent 4: Completed", input_tokens=usage.prompt_tokens, output_tokens=usage.completion_tokens)
-        return response.choices[0].message.content
+        usage = self._usage_payload(response)
+        logger.info("Agent 4: Completed", input_tokens=usage["input"], output_tokens=usage["output"])
+        return {"content": response.choices[0].message.content or "", "_usage": usage}
 
     async def _agent_5_generator(
         self,
@@ -570,12 +798,76 @@ class SummaryPipeline:
         index_name: str = None,
         host: str = None,
         metadata_filter: Optional[Dict[str, Any]] = None
-    ) -> str:
-        """Agent 5: Section IV & V Generator"""
+    ) -> Dict[str, Any]:
+        """Agent 5: Section IV & V Generator (Pinecone semantic-only)"""
         logger.info("Agent 5: Section IV & V Starting")
-        # SUBQUERIES[2] = Section IV, SUBQUERIES[3] = Section V
-        queries = custom_subqueries or [SUBQUERIES[2], SUBQUERIES[3]]
-        context = await self._retrieve_context(queries, namespace, index_name, host, vector_top_k=15, metadata_filter=metadata_filter)
+        # Build dedicated retrieval paths for Section IV and Section V to reduce context contamination.
+        toc = await self._get_toc(namespace)
+        base_queries = custom_subqueries or [SUBQUERIES[2], SUBQUERIES[3]]
+        section4_query = base_queries[0] if base_queries else SUBQUERIES[2]
+        section5_query = base_queries[1] if len(base_queries) > 1 else SUBQUERIES[3]
+
+        section4_queries = self._build_toc_guided_queries(
+            [
+                section4_query,
+                "Extract SECTION IV only: industry size in India, global and domestic trends, projected growth/CAGR, government policies/support, market share, market opportunities, industry risk factors, and exact peer comparison disclosures.",
+                "For peer comparison, extract only the table titled 'Comparison of accounting ratios with Industry Peers' or equivalent wording and do not substitute financial performance tables.",
+            ],
+            toc,
+            target_terms=[
+                "INDUSTRY OVERVIEW",
+                "ABOUT OUR INDUSTRY",
+                "BASIS FOR ISSUE PRICE",
+                "MARKET OVERVIEW",
+                "COMPARISON OF ACCOUNTING RATIOS WITH INDUSTRY PEERS",
+                "COMPARISON OF KPIS WITH LISTED INDUSTRY PEERS",
+            ],
+            max_entries=16,
+        )
+        section5_queries = self._build_toc_guided_queries(
+            [
+                section5_query,
+                "Extract SECTION V only: complete promoters/directors/KMP profiles including age, education, experience, previous employment, pre-offer shareholding.",
+                "Compensation is mandatory for each promoter/director/KMP. Search compensation synonyms: remuneration, managerial remuneration, salary, perquisites, commission, sitting fees, benefits, emoluments, pay package, annual compensation in Rs lakh.",
+                "Focus on sections/tables titled OUR MANAGEMENT, OUR PROMOTERS AND PROMOTER GROUP, REMUNERATION, KEY MANAGERIAL PERSONNEL, KMP.",
+            ],
+            toc,
+            target_terms=[
+                "OUR MANAGEMENT",
+                "OUR PROMOTERS",
+                "PROMOTER GROUP",
+                "REMUNERATION",
+                "COMPENSATION",
+                "KMP",
+                "KEY MANAGERIAL PERSONNEL",
+                "DIRECTORS",
+            ],
+            max_entries=16,
+        )
+
+        section4_ctx = await self._retrieve_context(section4_queries, namespace, index_name, host, vector_top_k=22, metadata_filter=metadata_filter)
+        section5_ctx = await self._retrieve_context(section5_queries, namespace, index_name, host, vector_top_k=24, metadata_filter=metadata_filter)
+        context = f"--- SECTION IV RETRIEVAL CONTEXT ---\n{section4_ctx}\n\n--- SECTION V RETRIEVAL CONTEXT ---\n{section5_ctx}"
+        if not context.strip() or (not section4_ctx.strip() and not section5_ctx.strip()):
+            relaxed_filter = dict(metadata_filter or {})
+            relaxed_filter.pop("type", None)
+            section4_ctx = await self._retrieve_context(
+                section4_queries,
+                namespace,
+                index_name,
+                host,
+                vector_top_k=28,
+                metadata_filter=relaxed_filter,
+            )
+            section5_ctx = await self._retrieve_context(
+                section5_queries,
+                namespace,
+                index_name,
+                host,
+                vector_top_k=30,
+                metadata_filter=relaxed_filter,
+            )
+            context = f"--- SECTION IV RETRIEVAL CONTEXT ---\n{section4_ctx}\n\n--- SECTION V RETRIEVAL CONTEXT ---\n{section5_ctx}"
         context = self._clip_chunk_context(
             context,
             SUMMARY_AGENT_CONTEXT_MAX_CHARS,
@@ -591,9 +883,9 @@ class SummaryPipeline:
             temperature=0.1,
             max_tokens=8192
         )
-        usage = response.usage
-        logger.info("Agent 5: Completed", input_tokens=usage.prompt_tokens, output_tokens=usage.completion_tokens)
-        return response.choices[0].message.content
+        usage = self._usage_payload(response)
+        logger.info("Agent 5: Completed", input_tokens=usage["input"], output_tokens=usage["output"])
+        return {"content": response.choices[0].message.content or "", "_usage": usage}
 
     async def _agent_6_generator(
         self,
@@ -604,47 +896,81 @@ class SummaryPipeline:
         index_name: str = None,
         host: str = None,
         metadata_filter: Optional[Dict[str, Any]] = None
-    ) -> str:
-        """Agent 6: Section VII Generator (Financials)"""
+    ) -> Dict[str, Any]:
+        """Agent 6: Section VII Generator (Financials, Pinecone semantic-only)"""
         logger.info("Agent 6: Section VII Starting")
         # SUBQUERIES[5] = Section VII
         queries = custom_subqueries or [SUBQUERIES[5]]
-        context = await self._retrieve_context(queries, namespace, index_name, host, vector_top_k=12, metadata_filter=metadata_filter)
+        queries = queries + [
+            "Extract the exact Financial Ratios table from Financial Information / Restated Financial Information subsection. Preserve row names, columns, period labels, units, and values exactly as shown.",
+            "Search specifically in subsection: RESTATED CONSOLIDATED FINANCIAL INFORMATION. Also search synonyms: Restated Financial Information, Key Financial Ratios, significant changes (25% or more), ratio analysis.",
+            "Extract table heading variants: 'The following are the key financial ratios...' and ratio table containing columns like Numerator, Denominator, period-end dates, and Variance.",
+            "Extract the exact Utilisation of Net Proceeds tables from Objects of the Issue subsection, including 'Utilisation of Net Proceeds' and 'Proposed schedule of deployment of Net Proceeds'. Preserve values and notes exactly.",
+        ]
+        toc = await self._get_toc(namespace)
+        queries = self._build_toc_guided_queries(
+            queries,
+            toc,
+            target_terms=[
+                "FINANCIAL PERFORMANCE",
+                "FINANCIAL INFORMATION",
+                "RESTATED FINANCIAL",
+                "RESTATED CONSOLIDATED FINANCIAL INFORMATION",
+                "FINANCIAL INDICATORS",
+                "KEY FINANCIAL RATIOS",
+                "SIGNIFICANT CHANGES",
+                "RATIOS",
+                "CASH FLOW",
+                "OBJECTS OF THE ISSUE",
+                "UTILISATION OF NET PROCEEDS",
+                "DEPLOYMENT OF NET PROCEEDS",
+            ],
+            max_entries=20,
+        )
+        context = await self._retrieve_context(queries, namespace, index_name, host, vector_top_k=20, metadata_filter=metadata_filter)
+        context = self._clip_chunk_context(
+            context,
+            SUMMARY_AGENT_CONTEXT_MAX_CHARS,
+            "[Additional retrieved chunks omitted for length.]",
+        )
+        if not context.strip():
+            # Fallback retry with lighter metadata filter in case strict type/doc filters suppress valid chunks.
+            relaxed_filter = dict(metadata_filter or {})
+            relaxed_filter.pop("type", None)
+            context = await self._retrieve_context(
+                queries,
+                namespace,
+                index_name,
+                host,
+                vector_top_k=32,
+                metadata_filter=relaxed_filter,
+            )
         context = self._clip_chunk_context(
             context,
             SUMMARY_AGENT_CONTEXT_MAX_CHARS,
             "[Additional retrieved chunks omitted for length.]",
         )
 
-        # Mongo extraction tables: Agent 6 only (Section VII financials)
-        job_id = metadata_filter.get("job_id") if metadata_filter else None
-        mongo_tables = await self._retrieve_tables(
-            job_id=job_id,
-            namespace=namespace,
-            min_cells=4,
-            max_tables=SUMMARY_MONGO_AGENT6_MAX_TABLES,
-            max_chars=SUMMARY_MONGO_AGENT6_MAX_CHARS,
-        )
-        if mongo_tables:
-            context = f"--- STRUCTURED FINANCIAL TABLES ---\n{mongo_tables}\n\n{context}"
-        context = self._clip_chunk_context(
-            context,
-            SUMMARY_AGENT_CONTEXT_MAX_CHARS,
-            "[Additional context after financial tables omitted for length.]",
-        )
-
         response = await self.client.chat.completions.create(
             model="gpt-4.1-mini",
             messages=[
                 {"role": "system", "content": self._localize_prompt(custom_prompt or AGENT_6_SECTION_VII_PROMPT, doc_type)},
-                {"role": "user", "content": f"Context:\n\n{context}"}
+                {"role": "user", "content": (
+                    "Generate SECTION VII using ONLY these two table groups from the retrieved context:\n"
+                    "1) Financial Ratios table from Financial Statements / Financial Information section.\n"
+                    "2) Utilisation of Net Proceeds tables from Objects of the Issue subsection.\n"
+                    "Do not substitute with other financial tables. Reproduce these tables verbatim with exact periods, units, values, and notes.\n"
+                    "For Financial Ratios: prioritize the exact table from 'RESTATED CONSOLIDATED FINANCIAL INFORMATION'.\n"
+                    "Do NOT create additional rows, do NOT expand into a generic ratio matrix, and do NOT fill 'Information not found' for ratios that are not present in that exact source table.\n\n"
+                    f"Context:\n\n{context}"
+                )}
             ],
             temperature=0.0,
             max_tokens=16384
         )
-        usage = response.usage
-        logger.info("Agent 6: Completed", input_tokens=usage.prompt_tokens, output_tokens=usage.completion_tokens)
-        return response.choices[0].message.content
+        usage = self._usage_payload(response)
+        logger.info("Agent 6: Completed", input_tokens=usage["input"], output_tokens=usage["output"])
+        return {"content": response.choices[0].message.content or "", "_usage": usage}
 
     async def _agent_7_generator(
         self,
@@ -655,12 +981,65 @@ class SummaryPipeline:
         index_name: str = None,
         host: str = None,
         metadata_filter: Optional[Dict[str, Any]] = None
-    ) -> str:
+    ) -> Dict[str, Any]:
         """Agent 7: Section VIII & IX Generator"""
         logger.info("Agent 7: Section VIII & IX Starting")
         # SUBQUERIES[6] = VIII, SUBQUERIES[7] = IX
         queries = custom_subqueries or [SUBQUERIES[6], SUBQUERIES[7]]
-        context = await self._retrieve_context(queries, namespace, index_name, host, vector_top_k=12, metadata_filter=metadata_filter)
+        toc = await self._get_toc(namespace)
+        queries = queries + [
+            "Extract the exact table titled 'Summary of outstanding litigations' (or close variant) from Legal and Other Information section.",
+            "Search specifically under headings/subsections: SUMMARY OF THE ISSUE DOCUMENTS, SUMMARY OF THE OFFER DOCUMENTS, OUTSTANDING LITIGATION AND MATERIAL DEVELOPMENTS, Summary of outstanding litigations.",
+            "Preserve all row groups exactly: Company, Directors, Promoters, KMPs, SMPs, Subsidiaries and both 'By' and 'Against' rows, including aggregate amount involved.",
+            "Do not merge rows, do not infer values, and do not convert units.",
+        ]
+        queries = self._build_toc_guided_queries(
+            queries,
+            toc,
+            target_terms=[
+                "LEGAL AND OTHER INFORMATION",
+                "SUMMARY OF THE ISSUE DOCUMENTS",
+                "SUMMARY OF THE OFFER DOCUMENTS",
+                "OUTSTANDING LITIGATION",
+                "MATERIAL DEVELOPMENTS",
+                "SUMMARY OF OUTSTANDING LITIGATIONS",
+            ],
+            max_entries=18,
+        )
+        context = await self._retrieve_context(queries, namespace, index_name, host, vector_top_k=20, metadata_filter=metadata_filter)
+        if not context.strip():
+            relaxed_filter = dict(metadata_filter or {})
+            relaxed_filter.pop("type", None)
+            context = await self._retrieve_context(
+                queries,
+                namespace,
+                index_name,
+                host,
+                vector_top_k=20,
+                metadata_filter=relaxed_filter,
+            )
+        # Reduce hallucination risk: keep litigation-focused chunks for table reconstruction.
+        if context:
+            chunks = [c.strip() for c in context.split("\n---\n") if c.strip()]
+            litigation_keywords = [
+                "summary of outstanding litigation",
+                "outstanding litigation",
+                "materiality policy",
+                "aggregate amount involved",
+                "by the company",
+                "against the company",
+                "directors",
+                "promoters",
+                "kmps",
+                "smps",
+                "subsidiaries",
+            ]
+            focused = [
+                c for c in chunks
+                if any(k in c.lower() for k in litigation_keywords)
+            ]
+            if focused:
+                context = "\n---\n".join(focused)
         context = self._clip_chunk_context(
             context,
             SUMMARY_AGENT_CONTEXT_MAX_CHARS,
@@ -671,14 +1050,20 @@ class SummaryPipeline:
             model="gpt-4.1-mini",
             messages=[
                 {"role": "system", "content": self._localize_prompt(custom_prompt or AGENT_7_SECTION_VIII_IX_PROMPT, doc_type)},
-                {"role": "user", "content": f"Context:\n\n{context}"}
+                {"role": "user", "content": (
+                    "For SECTION IX litigation analysis, reproduce the exact 'Summary of outstanding litigations' table from context.\n"
+                    "Prefer the table under 'SUMMARY OF THE ISSUE/OFFER DOCUMENTS' if present.\n"
+                    "Do not synthesize additional rows, do not aggregate beyond source, do not recompute totals, and keep original amounts/units as-is.\n"
+                    "If exact row values are not visible in context, leave those specific cells as '*Information not found in provided chunks.*' rather than guessing.\n\n"
+                    f"Context:\n\n{context}"
+                )}
             ],
-            temperature=0.1,
+            temperature=0.0,
             max_tokens=8192
         )
-        usage = response.usage
-        logger.info("Agent 7: Completed", input_tokens=usage.prompt_tokens, output_tokens=usage.completion_tokens)
-        return response.choices[0].message.content
+        usage = self._usage_payload(response)
+        logger.info("Agent 7: Completed", input_tokens=usage["input"], output_tokens=usage["output"])
+        return {"content": response.choices[0].message.content or "", "_usage": usage}
 
     async def _agent_8_generator(
         self,
@@ -689,7 +1074,7 @@ class SummaryPipeline:
         index_name: str = None,
         host: str = None,
         metadata_filter: Optional[Dict[str, Any]] = None
-    ) -> str:
+    ) -> Dict[str, Any]:
         """Agent 8: Section X Generator"""
         logger.info("Agent 8: Section X Starting")
         # SUBQUERIES[8] = X
@@ -710,9 +1095,9 @@ class SummaryPipeline:
             temperature=0.1,
             max_tokens=8192
         )
-        usage = response.usage
-        logger.info("Agent 8: Completed", input_tokens=usage.prompt_tokens, output_tokens=usage.completion_tokens)
-        return response.choices[0].message.content
+        usage = self._usage_payload(response)
+        logger.info("Agent 8: Completed", input_tokens=usage["input"], output_tokens=usage["output"])
+        return {"content": response.choices[0].message.content or "", "_usage": usage}
 
     async def _agent_9_generator(
         self,
@@ -723,12 +1108,46 @@ class SummaryPipeline:
         index_name: str = None,
         host: str = None,
         metadata_filter: Optional[Dict[str, Any]] = None
-    ) -> str:
+    ) -> Dict[str, Any]:
         """Agent 9: Section XI & XII Generator"""
         logger.info("Agent 9: Section XI & XII Starting")
         # SUBQUERIES[9] = XI, SUBQUERIES[10] = XII
         queries = custom_subqueries or [SUBQUERIES[9], SUBQUERIES[10]]
-        context = await self._retrieve_context(queries, namespace, index_name, host, vector_top_k=10, metadata_filter=metadata_filter)
+        toc = await self._get_toc(namespace)
+        queries = queries + [
+            "For SECTION XI extract awards and recognitions, certifications/accreditations (ISO/HACCP/Halal/Kosher/NSF etc.), CSR initiatives, R&D activities/facilities, and international operations/global presence exactly from source.",
+            "Use synonyms: awards, recognitions, accolades, certifications, accreditations, approvals, registrations, quality certificates, compliance certificates, CSR, corporate social responsibility, R&D, research and development, innovation, global operations, exports, international markets.",
+        ]
+        queries = self._build_toc_guided_queries(
+            queries,
+            toc,
+            target_terms=[
+                "ADDITIONAL INFORMATION",
+                "AWARDS",
+                "RECOGNITIONS",
+                "CERTIFICATIONS",
+                "ACCREDITATIONS",
+                "CSR",
+                "CORPORATE SOCIAL RESPONSIBILITY",
+                "RESEARCH AND DEVELOPMENT",
+                "R&D",
+                "INTERNATIONAL OPERATIONS",
+                "GLOBAL PRESENCE",
+            ],
+            max_entries=16,
+        )
+        context = await self._retrieve_context(queries, namespace, index_name, host, vector_top_k=22, metadata_filter=metadata_filter)
+        if not context.strip():
+            relaxed_filter = dict(metadata_filter or {})
+            relaxed_filter.pop("type", None)
+            context = await self._retrieve_context(
+                queries,
+                namespace,
+                index_name,
+                host,
+                vector_top_k=20,
+                metadata_filter=relaxed_filter,
+            )
         context = self._clip_chunk_context(
             context,
             SUMMARY_AGENT_CONTEXT_MAX_CHARS,
@@ -744,9 +1163,9 @@ class SummaryPipeline:
             temperature=0.1,
             max_tokens=16384
         )
-        usage = response.usage
-        logger.info("Agent 9: Completed", input_tokens=usage.prompt_tokens, output_tokens=usage.completion_tokens)
-        return response.choices[0].message.content
+        usage = self._usage_payload(response)
+        logger.info("Agent 9: Completed", input_tokens=usage["input"], output_tokens=usage["output"])
+        return {"content": response.choices[0].message.content or "", "_usage": usage}
 
     async def _agent_3_business_table_extractor(
         self,
@@ -756,7 +1175,7 @@ class SummaryPipeline:
         index_name: str = None,
         host: str = None,
         metadata_filter: Optional[Dict[str, Any]] = None,
-    ) -> str:
+    ) -> Dict[str, Any]:
         """
         A-3: Section III Business Table Extractor
         Matches n8n node: "A-3: Section III Table Extractor"
@@ -764,7 +1183,7 @@ class SummaryPipeline:
         Uses 16 dedicated extraction queries ((custom_business_subqueries if custom_business_subqueries else BUSINESS_EXTRACTION_QUERIES)) focused
         exclusively on the "Our Business" chapter. Retrieves topK=12 chunks per query
         (matches n8n DRHP/RHP Vector Store - Business Chapter topK: 12).
-        Returns the extracted markdown string of all tables.
+        Returns extracted markdown plus token usage.
         """
         logger.info("A-3 Business Table Extractor: Starting", namespace=namespace)
 
@@ -786,16 +1205,28 @@ class SummaryPipeline:
             "2. Extract EVERY table that matches the query\n"
             "3. Return tables in perfect Markdown format\n"
             "4. Preserve all data exactly as shown\n\n"
+            "MANDATORY COVERAGE CHECKLIST (never skip if present in context):\n"
+            "- Properties/Facilities (owned/leased/registered office/units)\n"
+            "- Manufacturing/Plant & Machinery\n"
+            "- Installed Capacity / Actual Production / Capacity Utilization\n"
+            "- Customer Concentration tables (Top 1/5/10, major/key)\n"
+            "- Supplier Concentration tables (Top 1/5/10, major/key)\n"
+            "- Employees / Human Resources tables\n"
+            "- Intellectual Property (trademark/patent/IPR) tables\n"
+            "- Projects / Order book / pipeline tables\n"
+            "- Product/Service and Raw Material tables\n\n"
+            "If a category is truly absent from retrieved context, write exactly: "
+            "'*Information not found in provided chunks.*' and do not fabricate.\n\n"
             "Queries to process:\n"
             + "\n\n".join(extraction_queries)
         )
 
         # 1. PRE-COLLECT MONGO TABLES (High-Fidelity)
-        job_id = metadata_filter.get("job_id") if metadata_filter else None
-        
         # Try to find "Our Business" page range from TOC to focus the high-fidelity extraction
         toc = await self._get_toc(namespace)
-        matched_ranges = []
+        matched_subsections: List[Dict[str, str]] = []
+        matched_ranges: List[tuple[int, int]] = []
+        primary_our_business_range: Optional[str] = None
         business_toc_terms = [
             "OUR BUSINESS",
             "BUSINESS MODEL",
@@ -812,24 +1243,115 @@ class SummaryPipeline:
             "HOSPITAL",
         ]
         for item in toc:
-            title = str(item.get("title", "")).upper()
+            raw_title = str(item.get("title", "")).strip()
+            title = raw_title.upper()
+            if title == "OUR BUSINESS" and primary_our_business_range is None:
+                ps, pe = self._toc_page_span(item)
+                primary_our_business_range = f"{ps}-{pe}"
             if any(term in title for term in business_toc_terms):
                 ps, pe = self._toc_page_span(item)
                 matched_ranges.append((ps, pe))
+                matched_subsections.append({
+                    "subsection": raw_title,
+                    "subsection_range": f"{ps}-{pe}",
+                })
 
-        page_range = None
-        if matched_ranges:
+        if matched_subsections:
+            logger.info(
+                "A-3: Using subsection keyed high-fidelity extraction",
+                subsection_count=len(matched_subsections),
+            )
+
+        # Strict subsection retrieval for Agent-3:
+        # exactly these keys -> filename(namespace) + subsection + subsection_range.
+        mongo_table_parts: List[str] = []
+        seen_table_blocks: Set[str] = set()
+        remaining_chars = SUMMARY_MONGO_AGENT3_MAX_CHARS
+        # Primary exact query requested by user:
+        # { filename: "...", subsection: "OUR BUSINESS", subsection_range: "start-end" }
+        if primary_our_business_range:
+            logger.info(
+                "A-3 Mongo primary exact query",
+                filename=namespace,
+                subsection="OUR BUSINESS",
+                subsection_range=primary_our_business_range,
+            )
+            primary_block = await self._retrieve_tables(
+                namespace=namespace,
+                subsection="OUR BUSINESS",
+                subsection_range=primary_our_business_range,
+                min_cells=2,
+                max_tables=1000,
+                max_chars=None,
+            )
+            if primary_block:
+                for table_block in primary_block.split("\n\n### "):
+                    normalized = table_block.strip()
+                    if not normalized:
+                        continue
+                    if not normalized.startswith("### "):
+                        normalized = f"### {normalized}"
+                    if normalized in seen_table_blocks:
+                        continue
+                    seen_table_blocks.add(normalized)
+                    mongo_table_parts.append(normalized)
+                    remaining_chars -= len(normalized) + 2
+                    if remaining_chars <= 0:
+                        break
+        for sub_entry in matched_subsections:
+            if remaining_chars <= 0:
+                break
+            logger.info(
+                "A-3 Mongo subsection query",
+                filename=namespace,
+                subsection=sub_entry["subsection"],
+                subsection_range=sub_entry["subsection_range"],
+            )
+            block = await self._retrieve_tables(
+                namespace=namespace,
+                subsection=sub_entry["subsection"],
+                subsection_range=sub_entry["subsection_range"],
+                min_cells=2,
+                max_tables=SUMMARY_MONGO_AGENT3_MAX_TABLES,
+                max_chars=remaining_chars,
+            )
+            if not block:
+                # Fallback 1: keep filename + subsection (ignore subsection_range mismatch).
+                block = await self._retrieve_tables(
+                    namespace=namespace,
+                    subsection=sub_entry["subsection"],
+                    min_cells=2,
+                    max_tables=SUMMARY_MONGO_AGENT3_MAX_TABLES,
+                    max_chars=remaining_chars,
+                )
+            if not block:
+                continue
+            for table_block in block.split("\n\n### "):
+                normalized = table_block.strip()
+                if not normalized:
+                    continue
+                if not normalized.startswith("### "):
+                    normalized = f"### {normalized}"
+                if normalized in seen_table_blocks:
+                    continue
+                seen_table_blocks.add(normalized)
+                mongo_table_parts.append(normalized)
+                remaining_chars -= len(normalized) + 2
+                if remaining_chars <= 0:
+                    break
+
+        mongo_tables = "\n\n".join(mongo_table_parts)
+        if not mongo_tables and matched_ranges:
+            # Fallback 2: broad capture of our-business page window if subsection labels are inconsistent.
             page_range = (min(r[0] for r in matched_ranges), max(r[1] for r in matched_ranges))
-            logger.info("A-3: Focused high-fidelity extraction for Our Business / Capacity", page_range=page_range)
-        
-        mongo_tables = await self._retrieve_tables(
-            job_id=job_id,
-            namespace=namespace,
-            page_range=page_range,
-            min_cells=3,
-            max_tables=SUMMARY_MONGO_AGENT3_MAX_TABLES,
-            max_chars=SUMMARY_MONGO_AGENT3_MAX_CHARS,
-        )
+            logger.info("A-3 Mongo fallback query by page range", filename=namespace, page_range=page_range)
+            mongo_tables = await self._retrieve_tables(
+                namespace=namespace,
+                page_range=page_range,
+                min_cells=2,
+                max_tables=SUMMARY_MONGO_AGENT3_MAX_TABLES,
+                max_chars=SUMMARY_MONGO_AGENT3_MAX_CHARS,
+            )
         
         all_context_parts = []
         if mongo_tables:
@@ -859,9 +1381,78 @@ class SummaryPipeline:
             except Exception as qe:
                 logger.warning(f"A-3: Query {i+1}/{total_queries} failed", error=str(qe))
 
+        # 3. MANDATORY CATEGORY COVERAGE RETRY (SME-focused)
+        # If core table families are missing, run targeted semantic retrieval passes.
+        combined_context = "\n\n".join(all_context_parts).lower()
+        mandatory_category_queries = {
+            "properties_facilities": (
+                ["owned", "leased", "property", "properties", "facility", "facilities", "registered office", "manufacturing unit"],
+                "OUR BUSINESS: Extract all owned/leased properties, facilities, manufacturing units, warehouses, and office/location tables verbatim with full rows and columns."
+            ),
+            "manufacturing_capacity": (
+                ["capacity utilization", "installed capacity", "actual production", "plant", "machinery"],
+                "OUR BUSINESS: Extract plant/machinery and capacity utilization tables exactly (Installed Capacity, Actual Production, Capacity Utilization)."
+            ),
+            "customer_concentration": (
+                ["customer concentration", "top 5 customers", "top 10 customers", "major customers", "key customers"],
+                "OUR BUSINESS: Extract customer concentration tables (top 1/5/10, customer names, contribution amounts and percentages) verbatim."
+            ),
+            "supplier_concentration": (
+                ["supplier concentration", "top 5 suppliers", "top 10 suppliers", "major suppliers", "key suppliers"],
+                "OUR BUSINESS: Extract supplier concentration tables (top 1/5/10, supplier names, purchase amounts and percentages) verbatim."
+            ),
+            "employees_hr": (
+                ["employee", "employees", "human resource", "hr", "department-wise"],
+                "OUR BUSINESS: Extract employee and HR tables (department-wise strength, employee counts, workforce composition) verbatim."
+            ),
+            "intellectual_property": (
+                ["intellectual property", "trademark", "patent", "copyright", "ipr"],
+                "OUR BUSINESS: Extract intellectual property tables (trademarks/patents/registrations) verbatim."
+            ),
+            "projects_orderbook": (
+                ["project", "order book", "pipeline", "ongoing projects", "contract"],
+                "OUR BUSINESS: Extract projects/order-book/pipeline tables with project names and values verbatim."
+            ),
+            "products_services": (
+                ["products", "services", "product mix", "product wise", "product-wise"],
+                "OUR BUSINESS: Extract products/services and product-wise revenue tables verbatim."
+            ),
+            "raw_materials": (
+                ["raw material", "materials consumed", "domestic", "imported", "procurement"],
+                "OUR BUSINESS: Extract raw material/procurement tables including domestic vs imported and percentages verbatim."
+            ),
+        }
+
+        retry_queries: List[str] = []
+        for category, (keywords, query_text) in mandatory_category_queries.items():
+            if not any(k in combined_context for k in keywords):
+                retry_queries.append(query_text)
+
+        if retry_queries:
+            logger.info("A-3: Running mandatory coverage retry", missing_categories=len(retry_queries))
+            for rq in retry_queries:
+                try:
+                    extra_ctx = await self._retrieve_context(
+                        [rq],
+                        namespace,
+                        index_name,
+                        host,
+                        vector_top_k=20,
+                        rerank_top_n=20,
+                        metadata_filter=metadata_filter,
+                    )
+                    if extra_ctx:
+                        for chunk in extra_ctx.split("\n---\n"):
+                            c = chunk.strip()
+                            if c and c not in seen:
+                                all_context_parts.append(c)
+                                seen.add(c)
+                except Exception as re_try_err:
+                    logger.warning("A-3: Coverage retry query failed", error=str(re_try_err))
+
         if not all_context_parts:
             logger.warning("A-3: No business chapter context found")
-            return ""
+            return {"content": "", "_usage": {"input": 0, "output": 0}}
 
         full_context = "\n\n---\n\n".join(all_context_parts)
         full_context = self._clip_chunk_context(
@@ -888,12 +1479,12 @@ class SummaryPipeline:
                 max_tokens=16384,
             )
             section3_content = response.choices[0].message.content or ""
-            usage = response.usage
+            usage = self._usage_payload(response)
             logger.info(
                 "A-3: Completed",
                 output_chars=len(section3_content),
-                input_tokens=usage.prompt_tokens,
-                output_tokens=usage.completion_tokens,
+                input_tokens=usage["input"],
+                output_tokens=usage["output"],
             )
 
             # Clean output: Remove any repeating subqueries (OUR BUSINESS: ...)
@@ -902,10 +1493,10 @@ class SummaryPipeline:
                 cleaned_lines = [l for l in lines if not l.strip().startswith("OUR BUSINESS:")]
                 section3_content = '\n'.join(cleaned_lines).strip()
 
-            return section3_content
+            return {"content": section3_content, "_usage": usage}
         except Exception as e:
             logger.error("A-3: Failed", error=str(e), exc_info=True)
-            return ""
+            return {"content": "", "_usage": {"input": 0, "output": 0}}
 
     @staticmethod
     def _insert_section3_into_summary(full_summary: str, section3_content: str) -> str:
@@ -1082,13 +1673,13 @@ class SummaryPipeline:
             (
                 investor_json, 
                 capital_json, 
-                section3_md, 
-                section1_2_md,
-                section4_5_md,
-                section7_md,
-                section8_9_md,
-                section10_md,
-                section11_12_md
+                section3_res, 
+                section1_2_res,
+                section4_5_res,
+                section7_res,
+                section8_9_res,
+                section10_res,
+                section11_12_res
             ) = await asyncio.gather(
                 investor_task, 
                 capital_task, 
@@ -1102,28 +1693,64 @@ class SummaryPipeline:
                 return_exceptions=True
             )
             maybe_collect(stage="summary.phase1_parallel_complete", size_hint_mb=220.0)
-            
-            # Handle possible exceptions
-            results = [section1_2_md, section4_5_md, section7_md, section8_9_md, section10_md, section11_12_md, section3_md]
-            for i, res in enumerate(results):
-                if isinstance(res, Exception):
-                    logger.error(f"Agent task failed at index {i}", error=str(res))
-                    results[i] = f"\n\n> Error generating this section: {str(res)}\n\n"
-
-            # Re-assign cleaned results
-            section1_2_md, section4_5_md, section7_md, section8_9_md, section10_md, section11_12_md, section3_md = results
 
             # Extract Section VI from Agent 2
             section6_md = ""
             total_usage = {"input": 0, "output": 0}
+            usage_breakdown: Dict[str, Dict[str, int]] = {}
+
+            def unpack_section_result(res: Any, agent_name: str) -> str:
+                if isinstance(res, Exception):
+                    logger.error(f"{agent_name} task failed", error=str(res))
+                    usage_breakdown[agent_name] = {"input": 0, "output": 0}
+                    return f"\n\n> Error generating this section: {str(res)}\n\n"
+                if isinstance(res, dict):
+                    usage = res.get("_usage", {"input": 0, "output": 0})
+                    usage_breakdown[agent_name] = usage
+                    total_usage["input"] += int(usage.get("input", 0) or 0)
+                    total_usage["output"] += int(usage.get("output", 0) or 0)
+                    return str(res.get("content", "") or "")
+                usage_breakdown[agent_name] = {"input": 0, "output": 0}
+                return str(res or "")
+
+            section3_md = unpack_section_result(section3_res, "agent3")
+            section1_2_md = unpack_section_result(section1_2_res, "agent4")
+            section4_5_md = unpack_section_result(section4_5_res, "agent5")
+            section7_md = unpack_section_result(section7_res, "agent6")
+            section8_9_md = unpack_section_result(section8_9_res, "agent7")
+            section10_md = unpack_section_result(section10_res, "agent8")
+            section11_12_md = unpack_section_result(section11_12_res, "agent9")
+
             if isinstance(capital_json, dict):
                 section6_md = capital_json.get("_markdown_summary", "")
                 u = capital_json.get("_usage", {"input": 0, "output": 0})
-                total_usage["input"] += u["input"]; total_usage["output"] += u["output"]
+                agent2_in = int(u.get("input", 0) or 0)
+                agent2_out = int(u.get("output", 0) or 0)
+                usage_breakdown["agent2"] = {"input": agent2_in, "output": agent2_out}
+                total_usage["input"] += agent2_in; total_usage["output"] += agent2_out
             
             if isinstance(investor_json, dict):
                 u = investor_json.get("_usage", {"input": 0, "output": 0})
-                total_usage["input"] += u["input"]; total_usage["output"] += u["output"]
+                agent1_in = int(u.get("input", 0) or 0)
+                agent1_out = int(u.get("output", 0) or 0)
+                usage_breakdown["agent1"] = {"input": agent1_in, "output": agent1_out}
+                total_usage["input"] += agent1_in; total_usage["output"] += agent1_out
+                corrected_preissue_table = self._build_section6_preissue_table_from_investor(investor_json, section6_md)
+                if corrected_preissue_table:
+                    # Avoid duplicating corrected table if already present.
+                    section6_md = re.sub(
+                        r"### Pre-Issue Shareholding Table \(Corrected from Shareholding Pattern\)[\s\S]*?(?=\n## |\n### |\Z)",
+                        "",
+                        section6_md,
+                        flags=re.IGNORECASE,
+                    ).strip()
+                    section6_md = f"{section6_md}\n\n{corrected_preissue_table}"
+
+            logger.info(
+                "Summary token usage aggregated",
+                total_input_tokens=total_usage["input"],
+                total_output_tokens=total_usage["output"],
+            )
 
             # =====================================================================
             # PHASE 2: Final Sequential Assembly
@@ -1143,7 +1770,21 @@ class SummaryPipeline:
             company_name = namespace.replace('.pdf', '').replace('_', ' ')
             
             if adverse_enabled:
-                research_res = await research_service.research_company(company_name)
+                directory_name = ""
+                if metadata:
+                    directory_name = (
+                        metadata.get("directoryName")
+                        or metadata.get("directory_name")
+                        or metadata.get("directoryId")
+                        or metadata.get("directory_id")
+                        or ""
+                    )
+                promoters_context = section4_5_md[:6000] if section4_5_md else ""
+                research_res = await research_service.research_company(
+                    company_name,
+                    promoters=promoters_context,
+                    directory_name=directory_name,
+                )
                 if research_res and "error" not in research_res:
                     adverse_md = self.md_converter.convert_research_json_to_markdown(research_res)
                     # Use MarkdownConverter utility or manual insertion to place before Section XII
@@ -1180,7 +1821,6 @@ class SummaryPipeline:
             dateTime = datetime.now().strftime("%d/%m/%Y, %I:%M:%S %p")
             header_metadata = f"---\nGenerated: {dateTime}\n---\n\n"
             final_markdown = header_metadata + final_markdown
-            
             duration = time.time() - start_time
             logger.info("Pipeline completed successfully", duration=f"{duration:.2f}s")
             
@@ -1189,7 +1829,12 @@ class SummaryPipeline:
                 "markdown": final_markdown,
                 "html": final_markdown,
                 "duration": duration,
-                "usage": total_usage
+                "usage": {
+                    "input": total_usage["input"],
+                    "output": total_usage["output"],
+                    "total": total_usage,
+                    "by_agent": usage_breakdown
+                }
             }
 
         except Exception as e:

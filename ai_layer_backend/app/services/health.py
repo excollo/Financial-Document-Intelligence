@@ -7,6 +7,7 @@ from typing import Dict, Any, List
 import openai
 from pinecone import Pinecone
 import cohere
+import httpx
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.mongo import mongodb
@@ -156,6 +157,54 @@ class HealthService:
                 "error_code": "PERPLEXITY_CONNECTION_ERROR"
             }
 
+    async def check_serper(self) -> Dict[str, Any]:
+        """Check Serper connectivity."""
+        if not settings.SERPER_API_KEY:
+            return {
+                "status": "not_configured",
+                "message": "Serper API key not provided"
+            }
+
+        start_time = time.time()
+        try:
+            headers = {
+                "X-API-KEY": settings.SERPER_API_KEY,
+                "Content-Type": "application/json"
+            }
+            payload = {"q": "finance fraud india", "num": 1}
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.post("https://google.serper.dev/search", headers=headers, json=payload)
+
+            if resp.status_code == 200:
+                return {
+                    "status": "operational",
+                    "latency": round(time.time() - start_time, 3),
+                    "message": "Successfully connected to Serper"
+                }
+            if resp.status_code == 401:
+                return {
+                    "status": "error",
+                    "message": "Invalid Serper API key",
+                    "error_code": "AUTH_ERROR"
+                }
+            if resp.status_code == 429:
+                return {
+                    "status": "degraded",
+                    "message": "Serper rate limit exceeded or quota reached",
+                    "error_code": "QUOTA_EXCEEDED"
+                }
+            return {
+                "status": "error",
+                "message": f"Serper API returned {resp.status_code}",
+                "error_code": "SERPER_ERROR"
+            }
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": str(e),
+                "error_code": "SERPER_CONNECTION_ERROR"
+            }
+
     async def check_gemini(self) -> Dict[str, Any]:
         """Check Gemini connectivity and quota status."""
         if not settings.GEMINI_API_KEY:
@@ -251,6 +300,7 @@ class HealthService:
         cohere_status = await self.check_cohere()
         perplexity_status = await self.check_perplexity()
         gemini_status = await self.check_gemini()
+        serper_status = await self.check_serper()
 
         # Overall health logic
         overall = "operational"
@@ -279,7 +329,8 @@ class HealthService:
                 "pinecone": pinecone_status,
                 "cohere": cohere_status,
                 "perplexity": perplexity_status,
-                "gemini": gemini_status
+                "gemini": gemini_status,
+                "serper": serper_status
             }
         }
 

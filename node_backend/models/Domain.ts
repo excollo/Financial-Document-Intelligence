@@ -87,6 +87,7 @@ const domainSchema = new mongoose.Schema({
       pinecone: { type: Boolean, default: true },
       cohere: { type: Boolean, default: true },
       perplexity: { type: Boolean, default: false },
+      serper: { type: Boolean, default: true },
     },
   },
 

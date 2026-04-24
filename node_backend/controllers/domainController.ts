@@ -493,7 +493,8 @@ export const domainController = {
             });
         } catch (error: any) {
             console.error("Error triggering manual news crawl:", error.response?.data || error.message);
-            res.status(500).json({
+            const statusCode = error.response?.status || 500;
+            res.status(statusCode).json({
                 error: "Failed to trigger news crawl",
                 details: error.response?.data || error.message
             });

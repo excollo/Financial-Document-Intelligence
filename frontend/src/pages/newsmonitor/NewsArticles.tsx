@@ -57,6 +57,8 @@ const NewsArticles: React.FC = () => {
     const [domainId, setDomainId] = useState<string | null>(null);
     const initialLoadDone = React.useRef(false);
 
+    const getAuthToken = () => localStorage.getItem('accessToken') || localStorage.getItem('token');
+
     // Force reload when navigating to this page
     useEffect(() => {
         const isRefresh = sessionStorage.getItem('newsMonitorJustReloaded');
@@ -101,7 +103,11 @@ const NewsArticles: React.FC = () => {
     const fetchStats = async () => {
         try {
             const workspaceId = localStorage.getItem('workspaceId') || 'ws_1758689602670_z3pxonjqn';
-            const token = localStorage.getItem('token');
+            const token = getAuthToken();
+            if (!token) {
+                console.error('Auth token missing while fetching news stats');
+                return;
+            }
 
             // Add date range based on time filter
             const params: any = {};
@@ -158,7 +164,12 @@ const NewsArticles: React.FC = () => {
         try {
             setLoading(true);
             const workspaceId = localStorage.getItem('workspaceId') || 'ws_1758689602670_z3pxonjqn';
-            const token = localStorage.getItem('token');
+            const token = getAuthToken();
+            if (!token) {
+                console.error('Auth token missing while fetching news articles');
+                setArticles([]);
+                return;
+            }
 
             const params: any = { limit: 50 };
             if (selectedCompany) params.company = selectedCompany;
@@ -265,7 +276,11 @@ const NewsArticles: React.FC = () => {
 
         try {
             const workspaceId = localStorage.getItem('workspaceId') || 'ws_1758689602670_z3pxonjqn';
-            const token = localStorage.getItem('token');
+            const token = getAuthToken();
+            if (!token) {
+                toast.error('Session expired. Please login again.');
+                return;
+            }
 
             await axios.delete(`${API_URL}/news-articles/${id}`, {
                 headers: {
@@ -349,7 +364,11 @@ const NewsArticles: React.FC = () => {
             }
 
             setIsCrawling(true);
-            const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
+            const token = getAuthToken();
+            if (!token) {
+                toast.error('Session expired. Please login again.');
+                return;
+            }
             
             toast.info("Starting news crawl... This may take a minute.");
             
@@ -373,7 +392,13 @@ const NewsArticles: React.FC = () => {
             }
         } catch (error: any) {
             console.error('Error triggering news monitor:', error);
-            const errorMsg = error.response?.data?.detail || "Failed to trigger monitor";
+            const details = error.response?.data?.details;
+            const errorMsg =
+                error.response?.data?.detail ||
+                (typeof details === 'string'
+                    ? details
+                    : details?.detail?.error || details?.detail || details?.error) ||
+                "Failed to trigger monitor";
             toast.error(errorMsg);
         } finally {
             setIsCrawling(false);

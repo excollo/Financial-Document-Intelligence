@@ -42,44 +42,70 @@ class MarkdownConverter:
         if not investor_json or not isinstance(investor_json, dict):
             return ""
 
+        def to_int(value: Any) -> int:
+            if value is None:
+                return 0
+            if isinstance(value, (int, float)):
+                return int(value)
+            s = str(value).replace(",", "").strip()
+            s = re.sub(r"[^\d]", "", s)
+            return int(s) if s else 0
+
+        def to_pct_str(value: Any) -> str:
+            if value is None:
+                return ""
+            s = str(value).strip().replace("%", "")
+            s = re.sub(r"[^\d.]", "", s)
+            if not s:
+                return ""
+            try:
+                return f"{float(s):.2f}%"
+            except ValueError:
+                return ""
+
         company_name = investor_json.get("company_name", "Not explicitly stated in the provided text")
-        total_share_issue = investor_json.get("total_share_issue", 0)
+        total_share_issue = to_int(investor_json.get("total_share_issue", 0))
         investors = self._safe_get_list(investor_json, "section_a_extracted_investors")
 
-        # -- Step 1: Build processed list --
-        processed_investors = [inv for inv in investors if isinstance(inv, dict)]
+        # Build processed list from shareholding-pattern rows only.
+        processed_investors: List[Dict[str, Any]] = [inv.copy() for inv in investors if isinstance(inv, dict)]
 
-        # -- Step 2: Add Others row if needed (matches n8n addOthersRowIfNeeded) --
-        total_extracted_shares = sum(
-            inv.get("number_of_equity_shares", 0) for inv in processed_investors
-        )
-        
-        if total_share_issue > 0 and total_extracted_shares < total_share_issue:
-            others_shares = total_share_issue - total_extracted_shares
-            processed_investors.append(
-                {
-                    "investor_name": "Others",
-                    "number_of_equity_shares": others_shares,
-                    "investor_category": "Public",
-                    "is_others_row": True,
-                }
+        # Resolve total shares from explicit "Total" row first (shareholding table source of truth).
+        total_row_shares = 0
+        for inv in processed_investors:
+            name = str(inv.get("investor_name", "")).strip().lower()
+            if name in {"total", "grand total"}:
+                total_row_shares = to_int(inv.get("number_of_equity_shares", 0))
+                break
+        if total_row_shares > 0:
+            total_share_issue = total_row_shares
+
+        # Never synthesize an "Others" row; keep table faithful to extracted shareholding pattern.
+        for inv in processed_investors:
+            inv["number_of_equity_shares"] = to_int(inv.get("number_of_equity_shares", 0))
+            existing_pct = (
+                inv.get("percentage_of_pre_issue_capital")
+                or inv.get("percentage")
+                or inv.get("shareholding_percentage")
             )
-            # Re-sum after adding others
-            total_extracted_shares = total_share_issue
-
-        # -- Step 3: Recalculate percentages --
-        if total_share_issue > 0:
-            for inv in processed_investors:
-                shares = inv.get("number_of_equity_shares", 0)
-                pct_value = (shares / total_share_issue) * 100
-                pct_str = f"{pct_value:.2f}%"
+            pct_str = to_pct_str(existing_pct)
+            if pct_str:
                 inv["percentage_of_pre_issue_capital"] = pct_str
+                inv["_calculated_percentage"] = float(pct_str.replace("%", ""))
+            elif total_share_issue > 0 and inv["number_of_equity_shares"] >= 0:
+                pct_value = (inv["number_of_equity_shares"] / total_share_issue) * 100
+                inv["percentage_of_pre_issue_capital"] = f"{pct_value:.2f}%"
                 inv["_calculated_percentage"] = pct_value
+            else:
+                inv["percentage_of_pre_issue_capital"] = ""
+                inv["_calculated_percentage"] = 0.0
+
+        total_extracted_shares = sum(inv.get("number_of_equity_shares", 0) for inv in processed_investors)
 
         # -- Section A totals --
-        total_pct_numeric = sum(
-            inv.get("_calculated_percentage", 0) for inv in processed_investors
-        )
+        # If an explicit Total row exists, show 100%; otherwise sum row percentages.
+        has_total_row = any(str(inv.get("investor_name", "")).strip().lower() in {"total", "grand total"} for inv in processed_investors)
+        total_pct_numeric = 100.0 if has_total_row and total_share_issue > 0 else sum(inv.get("_calculated_percentage", 0) for inv in processed_investors)
         total_pct_str = f"{total_pct_numeric:.2f}%"
 
         # -- Step 4: Match against TARGET_INVESTORS --
@@ -88,8 +114,6 @@ class MarkdownConverter:
 
         matched_investors = []
         for inv in processed_investors:
-            if inv.get("is_others_row"):
-                continue
             name = inv.get("investor_name", "")
             if not name:
                 continue
@@ -140,52 +164,48 @@ class MarkdownConverter:
         markdown += "\n"
 
         # -- Section B: Matched Target Investors --
-        # Logic Pivot: Use the markdown table generated by the LLM (Agent 1)
-        # fallback to the old post-processing if not present.
-        llm_matched_md = investor_json.get("section_b_matched_investors_markdown", "")
-        if llm_matched_md:
-            markdown += llm_matched_md + "\n"
+        # Always render deterministic markdown from parsed investor rows only.
+        # This avoids noisy/free-form LLM text from leaking into the final summary.
+        matched_total_shares = sum(
+            m["number_of_equity_shares"] for m in matched_investors
+        )
+        matched_total_pct_numeric = sum(
+            float(str(m["percentage_of_capital"]).replace("%", ""))
+            for m in matched_investors
+            if m["percentage_of_capital"]
+        )
+        matched_total_pct_str = f"{matched_total_pct_numeric:.2f}%"
+
+        markdown += "## SECTION B: MATCHED TARGET INVESTORS\n\n"
+
+        if matched_investors:
+            matched_status = "MATCH_FOUND"
+            markdown += (
+                f"**Matched Status:** {matched_status}  \n"
+                f"**Total Matched Investors:** {len(matched_investors)}\n\n"
+            )
+            markdown += (
+                "| Investor Name | Number of Equity Shares "
+                "| % of Capital | Investor Category |\n"
+                "|---|---|---|---|\n"
+            )
+            for m in matched_investors:
+                markdown += (
+                    f"| {m['investor_name']} "
+                    f"| {m['number_of_equity_shares']:,} "
+                    f"| {m['percentage_of_capital']} "
+                    f"| {m['investor_category']} |\n"
+                )
+            markdown += (
+                f"| **TOTAL** | **{matched_total_shares:,}** "
+                f"| **{matched_total_pct_str}** | - |\n"
+            )
         else:
-            matched_total_shares = sum(
-                m["number_of_equity_shares"] for m in matched_investors
+            markdown += (
+                "**Matched Status:** NO_MATCH_FOUND  \n"
+                "No investors from the TARGET_INVESTORS list were found "
+                "in the extracted investor list.\n"
             )
-            matched_total_pct_numeric = sum(
-                float(str(m["percentage_of_capital"]).replace("%", ""))
-                for m in matched_investors
-                if m["percentage_of_capital"]
-            )
-            matched_total_pct_str = f"{matched_total_pct_numeric:.2f}%"
-
-            markdown += "## SECTION B: MATCHED TARGET INVESTORS\n\n"
-
-            if matched_investors:
-                matched_status = "MATCH_FOUND"
-                markdown += (
-                    f"**Matched Status:** {matched_status}  \n"
-                    f"**Total Matched Investors:** {len(matched_investors)}\n\n"
-                )
-                markdown += (
-                    "| Investor Name | Number of Equity Shares "
-                    "| % of Capital | Investor Category |\n"
-                    "|---|---|---|---|\n"
-                )
-                for m in matched_investors:
-                    markdown += (
-                        f"| {m['investor_name']} "
-                        f"| {m['number_of_equity_shares']:,} "
-                        f"| {m['percentage_of_capital']} "
-                        f"| {m['investor_category']} |\n"
-                    )
-                markdown += (
-                    f"| **TOTAL** | **{matched_total_shares:,}** "
-                    f"| **{matched_total_pct_str}** | - |\n"
-                )
-            else:
-                markdown += (
-                    "**Matched Status:** NO_MATCH_FOUND  \n"
-                    "No investors from the TARGET_INVESTORS list were found "
-                    "in the extracted investor list.\n"
-                )
 
         markdown += "\n"
         return markdown
@@ -323,6 +343,7 @@ class MarkdownConverter:
         # Metadata
         company            = metadata.get("company", "Unknown Company")
         promoters          = metadata.get("promoters", "Not Available")
+        directory_name     = metadata.get("directory_name", "N/A")
         investigation_date = metadata.get("investigation_date", "N/A")
         jurisdictions      = metadata.get("jurisdictions_searched") or []
         total_sources      = metadata.get("total_sources_checked", 0)
@@ -483,6 +504,7 @@ class MarkdownConverter:
 | Field | Value |
 |-------|-------|
 | **Company** | {company} |
+| **Directory Name** | {directory_name} |
 | **Investigation Date** | {investigation_date} |
 | **Adverse Flag** | {"⚠️ YES" if adverse_flag else "✅ NO"} |
 | **Overall Risk Level** | {formatted_risk} |
@@ -493,7 +515,7 @@ class MarkdownConverter:
 
 {key_findings}
 
-**Promoters/Key Persons:** {promoter_list}
+**Promoters/Directors/Key Persons:** {promoter_list}
 
 ---
 

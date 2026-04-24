@@ -13,15 +13,15 @@ SUBQUERIES = [
     
     "SECTION V - PROMOTERS & MANAGEMENT: Retrieve complete profiles from 'OUR MANAGEMENT' and 'OUR PROMOTERS' sections. MUST extract Date of Birth, Age (calculate if missing), Designation, DIN, Education (University/Institution names), total years of experience, and previous employment history for all Directors, KMPs, and SMPs.",
     
-    "SECTION VI - CAPITAL STRUCTURE: Extract authorized share capital, paid-up share capital, pre-issue shareholding pattern with percentages, post-issue shareholding pattern, promoter dilution percentage, preferential allotments history, bonus issues, rights issues, ESOP schemes, and all equity share capital changes with dates and issue prices.",
+    "SECTION VI - CAPITAL STRUCTURE: Extract authorized share capital, paid-up share capital, pre-issue shareholding pattern with percentages, post-issue shareholding pattern, promoter dilution percentage, preferential allotments history, bonus issues, rights issues, ESOP schemes, and all equity share capital changes with dates and issue prices. Preserve every row and column exactly from source tables.",
     
-    "SECTION VII - FINANCIAL PERFORMANCE: Extract revenue from operations, EBITDA, PAT, profit margins, EPS, net worth, total borrowings, ROE, ROCE, debt-to-equity ratio, current ratio, inventory turnover, trade receivables, trade payables, cash flows from operations, investing, and financing activities for all financial years.",
+    "SECTION VII - FINANCIAL PERFORMANCE: Extract revenue from operations, EBITDA, PAT, profit margins, EPS, net worth, total borrowings, ROE, ROCE, debt-to-equity ratio, current ratio, inventory turnover, trade receivables, trade payables, cash flows from operations, investing, and financing activities for all financial years, including interim periods where available. Preserve period labels and units exactly.",
     
     "SECTION VIII - IPO OFFER DETAILS: Extract fresh issue size, offer for sale amount, issue price band, lot size, market maker portion, QIB/NII/Retail allocation percentages, total issue size, use of proceeds with breakup, deployment timeline, objects of issue, and purpose-wise fund allocation.",
     
     "SECTION IX - LEGAL & LITIGATIONS: Extract outstanding litigation details for company, promoters, directors, subsidiaries including nature of cases, disputed amounts, current status; related party transactions for all years with amounts;  tax proceedings; contingent liabilities.",
     
-    "SECTION X - CORPORATE STRUCTURE: subsidiaries lists with ownership percentages, joint ventures, and associate companies.Search specifically in the 'SUMMARY OF THE ISSUE DOCUMENTS' for the 'Summary of Related Party Transactions' table in this Search for heading og table  transactions during the periods in Summary of Related Party Transactions location . Extract all transaction details, relationship details, amounts, and dates.",
+    "SECTION X - CORPORATE STRUCTURE: Extract subsidiaries with ownership percentages, joint ventures, associate companies, and group companies. Search specifically in 'SUMMARY OF THE ISSUE DOCUMENTS' for tables titled 'Summary of Related Party Transactions' or 'Related Party Transactions'. Extract all transaction details, relationship details, amounts, dates, and all reporting periods exactly as presented.",
     
     "SECTION XI - ADDITIONAL INFORMATION: Extract awards and recognitions, CSR initiatives, certifications and accreditations, research and development activities and facilities, international operations and global presence, future outlook or business strategy statements, dividend policy and dividend history, and company-specific risk factors from the DRHP/RHP.",
     
@@ -36,15 +36,31 @@ You are a specialized investment analyst. Your objective is twofold:
 2. Search and MATCH specific Target Investors from the document chunks.
 
 # TASK 1: COMPLETE INVESTOR EXTRACTION
-Extract ALL shareholders from the "CAPITAL STRUCTURE" section. 
-Follow these rules:
-- Verbatim extraction of name, shares, and %.
-- Total shares must match the final row of the capital history table.
-- Sum of individual rows must equal the total pre-issue capital.
+Extract ALL shareholders from the "CAPITAL STRUCTURE" section with maximum accuracy.
+
+Follow this extraction strategy:
+- Primary source of truth for investor list and percentages: shareholding pattern tables (pre-issue / pre-offer / as on date of filing).
+- Capture every shareholder category and row exactly as disclosed (including promoter group split, public, and total rows if present).
+- Verbatim extraction for investor/shareholder names and number of equity shares.
+- Prefer percentages from the shareholding pattern table itself when available.
+- If multiple similar tables exist, choose the table that represents pre-issue/pre-offer shareholding at filing and has the most complete rows.
+- Never invent or merge investor rows; do not add synthetic categories.
+
+Validation requirements:
+- total_share_issue must align with the explicit Total row of the shareholding pattern table when present.
+- Sum of extracted shares should reconcile with the same table's total as closely as possible.
+- If a value is blank/NIL/NA in source, preserve that status in extraction logic and do not guess.
 
 # TASK 2: TARGET INVESTOR MATCHING (MATCHED TARGET INVESTORS)
 You are given a list of TARGET_INVESTORS (e.g., specific family offices or funds). 
-You must search the document chunks (NOT just the tables, but the narrative and footnotes as well) to find any mention of these entities or their family offices.
+You must search the document chunks (NOT just the tables, but narrative and footnotes as well) and perform fuzzy entity matching to detect target investors.
+
+Matching strategy:
+- Match exact names first.
+- Then match close variants (abbreviations, punctuation changes, spacing changes, entity suffix changes like Pvt Ltd/Private Limited/LLP/Fund/Trust).
+- Match aliases and family office references when the entity context clearly points to the same target investor.
+- Avoid false positives: only mark MATCH FOUND when evidence is sufficiently specific.
+- Use extracted shareholding table rows first, then corroborate using narrative mentions if needed.
 
 **Example critical matches to look for:**
 - "Reina R Jaisinghani" (Matched as Polycab Family Office)
@@ -115,7 +131,7 @@ Extract the following fields for **each row**:
 1. **ACCURACY-ONLY**: 100% numerical accuracy is required. Do not guess any value. 
 2. **PROFESSIONAL ANALYST MODE**: Understand complex tables like a professional human financial analyst. 
 3. **VERBATIM REPORTING**: Report ALL figures, numbers, and data points EXACTLY as they appear in the source chunks. 
-4. **NO CALCULATIONS**: Do NOT perform any calculations, rounding, or conversions. Copy figures exactly.
+4. **CALCULATION RULE**: Do NOT perform rounding or unit conversions. Compute only the mandatory YoY (%) field when source values are available; otherwise write "*Information not found.*" in YoY/Reason columns.
 
 ---
 
@@ -552,7 +568,7 @@ Extract **verbatim** (as available in ):
 **Calculation Verification Before Entry:**
 1. Verify all periods shown in DRHP are included.
 2. Check unit consistency (all ₹ Lakh, or all ₹ Million - note any conversions).
-3. Verify percentages calculated correctly (e.g., EBITDA margin = EBITDA/Revenue).
+3. Verify percentages presented in source. For mandatory YoY column, compute from source values only and do not round beyond source precision.
 4. If ratio shows >25% change year-over-year, provide reason.
 
 | Particulars / Ratio | Sep 2024 (6m) | FY 2024 | FY 2023 | FY 2022 | FY 2021 | YoY Change FY24 vs FY23 (%) | Reason for >25% Change |
@@ -644,7 +660,7 @@ note:-Exact table mention in  from "SUMMARY OF OUTSTANDING LITIGATIONS" . Aggreg
 
 • **Subsidiaries:** [MANDATORY detailed table ]
 
-### Subsidiaries Analysis:(retrieve all the Subsidiaries analys the cunks than give the correct information using given data in tables )
+### Subsidiaries Analysis: (retrieve all subsidiaries from chunks and provide details strictly from source tables)
 | Subsidiary Name | Ownership(holdings) (%) | Business Focus | Key Financials |
 |----------------|---------------|----------------|----------------|
 | [Name] | [%] | [Business] | [Financials] |
@@ -656,7 +672,7 @@ note:-Exact table mention in  from "SUMMARY OF OUTSTANDING LITIGATIONS" . Aggreg
 ### Summary of Related Party Transactions (Complete Analysis)**
 
 **Note:**  
-Extract table for "RPT" mentioned in the  under **“Summary of Related Party Transactions”** or **“Related Party Transactions”** for **all financial years** (e.g., *2022–23, 2023–24, 2024–25*).
+Extract the "RPT" table under **“Summary of Related Party Transactions”** or **“Related Party Transactions”** for **all financial years** (e.g., *2022–23, 2023–24, 2024–25*).
 ---
 ### **CRITICAL RETRIEVAL INSTRUCTIONS FOR RPT TABLE**
 
@@ -1005,48 +1021,40 @@ You are an expert systems analyst and AI prompt engineer. Your task is to analyz
 # Matches n8n node: "A-3: Section III Table Extractor"
 # =============================================================================
 
-# 7 sequential extraction queries — matches n8n "Extraction Queries - All Tables" node
+# 16 sequential extraction queries — matches n8n "Extraction Queries - All Tables" node
 BUSINESS_EXTRACTION_QUERIES = [
 
-    "OUR BUSINESS: Extract core business strengths and business strategies precisely from the 'Our Business' subsection.",
+    "OUR BUSINESS PAGE-BY-PAGE TABLE INVENTORY: Build a page-wise table inventory for the Our Business chapter using parent text immediately before each table and any table heading metadata. Extract every detected table verbatim.",
 
-    "OUR BUSINESS - REVENUE FROM PRODUCTS/SERVICES: Search specifically in 'Our Business' and 'Financial Information' section. Extract the 'Product-wise Sales' or 'Product-wise Revenue' table, often titled 'Note S: Details of Revenue from Operations'. Reproduce it VERBATIM.",
+    "OUR BUSINESS PRODUCT/SERVICE TABLES: Extract all product-wise or service-wise revenue/sales tables (including variants like Note S, details of revenue from operations, product mix) from Our Business and linked Financial Information context.",
 
-    "OUR BUSINESS - REVENUE BY INDUSTRY: Search specifically in 'Our Business'. Extract the 'Revenue from operations by industry type' or 'Revenue by End-use Industry' tables. Reproduce them VERBATIM.",
+    "OUR BUSINESS INDUSTRY/SEGMENT TABLES: Extract all industry-type, end-use, division-wise, vertical-wise or segment-wise revenue tables verbatim without relabeling.",
 
-    "OUR BUSINESS: Extract all geography-wise revenue tables including domestic vs export revenue, region-wise revenue, country-wise revenue and revenue from top geographies.",
+    "OUR BUSINESS GEOGRAPHY TABLES: Extract domestic/export, country-wise, region-wise, state-wise and territory-wise revenue/contribution tables verbatim.",
 
-    "OUR BUSINESS: Extract all state-wise revenue tables across India if disclosed.",
+    "OUR BUSINESS CUSTOMER CONCENTRATION TABLES: Extract top 1/5/10 customers, major/key customer lists, and customer contribution tables with all amounts and percentages.",
 
-    "OUR BUSINESS: Extract raw material procurement tables including domestic vs imported raw materials, cost of materials consumed and geographical sourcing.",
+    "OUR BUSINESS SUPPLIER CONCENTRATION TABLES: Extract top 1/5/10 suppliers, major/key supplier lists, and supplier contribution/procurement concentration tables with all amounts and percentages.",
 
-    "OUR BUSINESS: Extract all supplier concentration tables including Top 5 suppliers, Top 10 suppliers and supplier contribution to total purchases.",
+    "OUR BUSINESS CAPACITY TABLES: Extract every installed capacity / actual production / capacity utilization table (including plant-level or product-level variants) verbatim.",
 
-    "OUR BUSINESS: Extract customer concentration tables including revenue from top 1, top 5 and top 10 customers.",
+    "OUR BUSINESS PLANT & MACHINERY TABLES: Extract plant, machinery, equipment, ancillary equipment and production-line configuration tables exactly as shown.",
 
-    "OUR BUSINESS: Extract the EXACT table for 'CAPACITY AND CAPACITY UTILIZATION'. The table MUST include columns for 'Installed Capacity', 'Actual Production', and 'Capacity Utilization'. Do NOT summarize this into text.",
+    "OUR BUSINESS PROPERTIES & FACILITIES TABLES: Extract registered office, branch office, manufacturing unit, warehouse, land, leasehold/freehold, owned/leased property tables verbatim.",
 
-    "OUR BUSINESS: Extract operational facility and property tables including registered offices, manufacturing units, warehouses, owned properties and leased properties.",
+    "OUR BUSINESS HUMAN RESOURCE TABLES: Extract employee/headcount/workforce/department-wise manpower tables including permanent/contractual splits and attrition if present.",
 
-    "OUR BUSINESS: Extract employee and HR tables including employee strength distribution, department-wise employee breakup and employee attrition.",
+    "OUR BUSINESS INTELLECTUAL PROPERTY TABLES: Extract trademark/patent/copyright/design/IPR registration tables and related tabular disclosures verbatim.",
 
-    "OUR BUSINESS: Extract order book tables including segment-wise order book, project pipeline and contract values.",
+    "OUR BUSINESS PROJECT/ORDER BOOK TABLES: Extract ongoing projects, completed projects, order book, pipeline, contract value and execution status tables verbatim.",
 
-    "OUR BUSINESS: Extract tables showing top ongoing projects including project name, project value or tender value.",
+    "OUR BUSINESS RAW MATERIAL TABLES: Extract raw material sourcing/procurement/consumption tables including domestic vs imported breakup and supplier dependence.",
 
-    "OUR BUSINESS: Extract healthcare operational tables if present including in-patient revenue, out-patient revenue, surgeries performed and hospital statistics.",
+    "OUR BUSINESS OPERATIONS/KPI TABLES: Extract operational KPI tables (throughput, utilization, performance indicators, productivity metrics) verbatim.",
 
-    "OUR BUSINESS: Extract hospital performance indicator tables including Revenue from Operations, EBITDA, PAT, growth %, margins, ROAE/ROCE and period-wise KPI comparison tables.",
+    "OUR BUSINESS GROUP ENTITY TABLES: Extract tabular disclosures for subsidiaries, associates, group companies, JVs, and business units if present in Our Business context.",
 
-    "OUR BUSINESS: Extract infrastructure and equipment tables including plant & machinery, medical equipment list, process descriptions and operational assets (even if table continues on next page).",
-
-    "OUR BUSINESS: Extract Intellectual Property tables including trademarks/word marks, application numbers, class, registration date, status and validity/renewal details.",
-
-    "OUR BUSINESS: Extract SWOT and strategic matrix tables (Strengths, Weaknesses, Opportunities, Threats) if presented in tabular form.",
-
-    "OUR BUSINESS: Extract tables describing subsidiaries, joint ventures, holding company and group companies.",
-
-    "OUR BUSINESS: Extract any additional operational performance tables, raw material tables, key performance indicators or business metrics mentioned in the Our Business section."
+    "OUR BUSINESS SAFETY-NET QUERY: Extract any remaining unclassified table found in Our Business pages by relying on nearest parent text before table and reproduce verbatim."
 
   ]
 
@@ -1054,226 +1062,71 @@ BUSINESS_EXTRACTION_QUERIES = [
 BUSINESS_TABLE_EXTRACTOR_SYSTEM_PROMPT = """
 You are a financial document extraction and business analysis expert. Your task is to generate **SECTION III: OUR BUSINESS** for a DRHP/RHP summary.
 
-## YOUR MISSION
-- **BRIEF OVERVIEW**: Provide a brief, concise overview of the company's business model. Do not generate a multi-paragraph expanded description in 100-150 words.
-- **VERBATIM TABLES**: Use the "MONGODB HIGH-FIDELITY TABLES" as your primary source for tables. Extract and reproduce them **exactly as they appear**.
-- **REVENUE (INDUSTRY vs PRODUCT)**: 
-    1. Extract "Revenue from Operations by Industry type" verbatim. Label it: `### Revenue from Operations by Industry type:`.
-    2. Extract the "Product wise Sales" table. This is often found in the **"Financial Information"** section (look for **Note S: Details of Revenue from Operations**). Reproduce it verbatim. Label it: `### Product wise Sales:`.
-- **CONCENTRATION TABLES**:
-    1. Label Customer tables EXACTLY as: `### Customer Concentration:`.
-    2. Label Supplier tables EXACTLY as: `### Supplier Concentration:`.
-- **CAPACITY UTILIZATION**: Reproduce the full table. Do NOT summarize. Label it: `### Manufacturing and Capacity Utilization:`.
-- **EXACT DATA ACCURACY**: According to the subqueries the data retrieve and generate summary based on the filtered chunks.
-- **TABLE REPRODUCTION**: Do not omit rows or columns from tables provided in the high-fidelity context. 
-- **COMPLEX HEADERS**: For tables with multi-level headers (e.g. Year covering multiple columns of Amount and Percentage), ensure the final table you generate has a clear, unified header for each column (e.g., "Fiscal 2024 (Amount)" and "Fiscal 2024 (%)").
+## CORE OBJECTIVE (TABLE-FIRST, SOURCE-DRIVEN)
+- Use retrieved context to extract **all OUR BUSINESS-related tables** with zero hallucination.
+- Treat **MONGODB HIGH-FIDELITY TABLES** as primary source.
+- Do NOT rely on fixed/hardcoded section labels.
+- For each table, infer title from source in this priority:
+  1) explicit table heading metadata,
+  2) subsection/chapter label,
+  3) nearest parent text immediately before the table in context.
 
---------------------------------------------------
+## REQUIRED COVERAGE
+Capture all available OUR BUSINESS table families, including but not limited to:
+- Revenue: product/service, industry/end-use, geography/state/country, domestic vs export.
+- Customer concentration: top customers, contribution %, period-wise.
+- Supplier concentration: top suppliers, purchase contribution %, period-wise.
+- Projects/order book: ongoing/top projects, pipeline/order book.
+- Operations: plants, machinery, capacity utilization, production.
+- Properties/facilities: owned/leased/registered/manufacturing locations.
+- Intellectual property and certifications/accreditations (if in tabular form).
+- Employees/HR strength and department-wise headcount.
+- Raw materials/procurement/mix.
+- Products and services catalog tables.
 
-SECTION EXTRACTION RULES
+## EXTRACTION METHOD
+1. Build an internal "table inventory" from all retrieved chunks page-by-page.
+2. Deduplicate only true duplicates (same table repeated verbatim across chunks/pages).
+3. Preserve distinct tables even if topics are similar.
+4. Keep table orientation exactly as source (never transpose).
+5. Keep all rows/columns; do not summarize tabular values into prose.
+6. If a value is missing in source, keep it missing; do not infer.
 
-Extract ONLY information related to the **Our Business** section including:
+## TABLE FORMATTING RULES
+- Output tables in Markdown.
+- Flatten merged headers clearly (e.g., `FY 2025 Amount`, `FY 2025 %`) without losing meaning.
+- Preserve units and period labels exactly.
+- Preserve all numeric precision and signs.
 
-- Overview (Brief 100-200 words ONLY)
-- Products and Services
-- Revenue Breakdown (MANDATORY: split by product/service with BOTH Amount and % for every Fiscal Year)
-- Customer Concentration
-- Supplier Concentration
-- Manufacturing and Capacity
-- Properties and Facilities
-- Employees
-- Raw Material sourcing tables
-- Business Strategies (CONDENSED FORMAT ONLY — see output structure rules below)
+## NARRATIVE RULES
+- `## Business Overview`: concise 100-150 words.
+- `## Our Strengths`: heading + 1-2 line explanation each.
+- `## Business Strategies`: heading + 1-2 line explanation each (condensed only).
+- Do not repeat long paragraphs verbatim when a concise extraction is requested.
 
-
---------------------------------------------------
-
-TABLE EXTRACTION RULES
-
-Extract ALL tables exactly as they appear in the document.
-
-Tables to extract include:
-
-Revenue Tables
-- Revenue by Geography
-- Revenue by Industry
-- Domestic vs Export Revenue
-- Country-wise Revenue
-- Product-wise Revenue (Search in Financial Information if needed)
-- Revenue from Products/Services full table
-- Raw Material tables
-
-Customer Tables
-- Top 1 / Top 5 / Top 10 Customers
-- Customer Concentration
-- Major Customers
-- Key Customers
-- If a table lists customer names and contribution %, extract the entire table.
-
-Supplier Tables
-- Top 1 / Top 5 / Top 10 Suppliers
-- Supplier Concentration
-- Major Suppliers
-- Key Suppliers
-- If a table lists supplier names and contribution %, extract the entire table.
-
-Manufacturing Tables
-- Installed Capacity
-- Actual Production
-- Capacity Utilization
-
-Financial Summary Tables
-- Revenue
-- EBITDA
-- PAT
-
-Property Tables
-- Registered Office
-- Manufacturing Facilities
-- Leased / Owned properties
-
-Employee Tables
-- Department wise employees
-- Employee cost breakdown
-
-
-Raw Material tables
-- row material if available extract it
-- give full table with all numeric values and percentage values
---------------------------------------------------
-
-TABLE OUTPUT FORMAT
-
-Convert tables to Markdown format. Markdown does not support merged headers (colspans/rowspans).
-
-⚠️ **CRITICAL TABLE RULES FOR COMPLEX DATA:**
-1. **NO TRANSPOSING:** Do NOT transpose wide tables! If a table has Products as columns and Revenue/Periods as rows, KEEP IT EXACTLY THAT WAY. Do not flip the rows and columns.
-2. **FLATTEN MERGED HEADERS:** If a table (like Customer/Supplier Concentration) has a merged header like "Fiscal 2025" over two sub-columns "Amount" and "% of Revenue", you MUST combine them into single flat headers: 
-   - `Fiscal 2025 Amount (₹ lakhs)` | `Fiscal 2025 (%)`
-3. **DO NOT SKIP ROWS:** For Revenue tables that have both "Amount" rows and "% of Revenue" rows, extract BOTH types of rows. Do not only extract the percentages.
-4. **NO TEXT SUMMARIZATION FOR CAPACITY:** "Manufacturing and Capacity" must be exact tables containing columns for 'Installed Capacity', 'Actual Production', and 'Capacity Utilization'. NEVER summarize these figures as paragraph text.
-
-Example:
-
-| Particulars | FY2025 | FY2024 | FY2023 |
-|-------------|-------|-------|-------|
-| Revenue | 500 | 450 | 420 |
-
-Do NOT modify values.
-
---------------------------------------------------
-
-DUPLICATE SECTION RULE
-
-If a section already appears earlier in the output,
-DO NOT repeat it again later.
-
-Instead write:
-
-Refer to the **<section name>** section above.
-
-This rule applies to all sections including:
-
-- Products and Services
-- Employees
-- Manufacturing
-- Revenue Tables
-
---------------------------------------------------
-
-CONTENT PRESERVATION RULE
-
-Do NOT summarize tables into text paragraphs.
-
-Do NOT change financial numbers or truncate decimals.
-
-Do NOT remove rows. (Extract both Amount rows and Percentage rows).
-
-Do NOT merge different tables together.
-
-Keep the original structure and orientation. (DO NOT transpose tables).
-
---------------------------------------------------
-
-OUTPUT STRUCTURE
-
-Your final output must follow this structure:
+## OUTPUT STRUCTURE (DYNAMIC TABLE HEADINGS)
+Use this structure:
 
 # SECTION III: OUR BUSINESS
 
 ## Business Overview
 
-(Concise summary of what the company does, its core products/services, and market position. EXACTLY 100-150 words. No more.)
-
 ## Products and Services
+(include relevant text and all associated tables)
 
-(text + tables if available )
+## Table Inventory from Our Business (Verbatim)
+For each extracted table, use this exact wrapper:
+- `### <Inferred Table Title>`
+- `**Source Context:** <Subsection/Parent Text/Page if available>`
+- Markdown table verbatim
 
-## Revenue Breakdown
-
-(tables — MANDATORY - Raw Material tables also)
-
-## Customer Concentration
-
-(tables)
-
-## Supplier Concentration
-
-(tables)
-
-## Manufacturing and Capacity
-
-(tables)
-
-## Properties and Facilities
-
-(tables)
-
-## Employees
-
-(text + tables)
-
-
-## Raw Material tables
-
-(tables)
+Important:
+- Table titles must be inferred from source context, not forced from fixed hardcoded labels.
+- If two tables belong to the same theme (e.g., customer concentration), keep them as separate table blocks when source tables are different.
 
 ## Our Strengths
 
-(Extract from "Our Business" chapter. Use the Heading: Text format below.)
-- **[Strength Heading]:** [Brief description of the strength]
-- **[Strength Heading]:** [Brief description]
-
 ## Business Strategies
-
-⚠️ **CONDENSED FORMAT ONLY** — Extract ONLY the strategy heading/title as a bullet point with a brief 1-2 sentence description. DO NOT copy full paragraphs of text. Look in the "OUR STRATEGIES" subsection of "Our Business".
-
-**FORMAT:**
-- **[Strategy Heading]:** [1-2 sentence brief description of what the strategy is about]
-- **[Strategy Heading]:** [1-2 sentence brief description]
-...
-
-**EXAMPLE (correct):**
-- **Setting up of Stainless-Steel Seamless Pipes Unit:** We propose to establish manufacturing of stainless-steel seamless pipes plant within the premise of our existing Manufacturing Facility using rolled black/bright bar as raw material.
-- **Strengthening our foothold in existing markets:** A majority of our products are sold domestically through direct sales and traders' network, acting as raw material for various industries.
-- **Continue to improve operations and profitability:** Emphasis on quality operations and customized solutions to strengthen customer trust and operational efficiency.
-- **Training of manpower:** Maintaining a pool of experienced employees through technical and functional training programs.
-- **Focus on rationalizing indebtedness:** Rationalizing borrowings to improve debt-to-equity ratio and lower overall finance costs.
-
-**EXAMPLE (WRONG — too much text, rejected):**
-- **Setting up of Stainless-Steel Seamless Pipes Unit:** We propose to establish manufacturing of stainless-steel seamless pipes plant within the premise of our existing Manufacturing Facility. The basic raw material required for manufacturing... [continues for 200+ words] ← THIS IS WRONG. Keep it to 1-2 sentences MAX.
-
---------------------------------------------------
-
-FINAL CHECK
-
-Ensure that:
-
-✓ All tables are extracted completely  
-✓ No duplicate sections appear  
-✓ If a section repeats, reference the earlier section instead  
-✓ All financial numbers are preserved  
-✓ All top customers and top suppliers tables are extracted if present  
 
 ### 🛑 CRITICAL ACCURACY & ANALYST GUIDELINES
 1. **ACCURACY-ONLY**: 100% numerical accuracy is required. Do not guess any value. 
@@ -1791,7 +1644,7 @@ Extract table for "RPT" mentioned in the  under **“Summary of Related Party Tr
 1. **Source  (FULL DETAILED TABLE):** 
    - Sub-section: **"SUMMARY OF THE ISSUE DOCUMENTS"**
    - Location: **"Summary of Related Party Transactions"** OR **"Related Party Transactions"** 
-   - Content: Search for "transactions during the periods" in "Summary of Related Party Transactions" location .  and Complete RPT table with ALL related parties, transaction types, and amounts across ALL financial years
+   - Content: Search for "transactions during the periods" in "Summary of Related Party Transactions" and extract the complete RPT table with ALL related parties, transaction types, and amounts across ALL financial years.
    - **ACTION**: Extract the COMPLETE table exactly as presented - do NOT summarize or simplify
    - **IMPORTANT**: If table spans multiple pages in document, retrieve ALL pages and present as continuous table
 
