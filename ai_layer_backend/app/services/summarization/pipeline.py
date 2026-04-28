@@ -160,6 +160,13 @@ class SummaryPipeline:
         if "SECTION III: OUR BUSINESS" not in markdown and "OUR BUSINESS ANALYSIS" in markdown:
             markdown = markdown.replace("OUR BUSINESS ANALYSIS", "SECTION III: OUR BUSINESS")
 
+        # 5. Remove noisy trailer markers if any survive intermediate passes.
+        markdown = re.sub(
+            r"(?im)^End of SECTION III:\s*OUR BUSINESS\s*$",
+            "",
+            markdown,
+        )
+
         return markdown
 
     @staticmethod
@@ -333,6 +340,38 @@ class SummaryPipeline:
         return expanded
 
     @staticmethod
+    def _compose_queries(
+        queries: List[str],
+        agent_name: str,
+        max_queries: int = 3,
+    ) -> List[str]:
+        """
+        Merge many micro-subqueries into 2-3 intent-rich retrieval queries.
+        This lowers request count while preserving full query coverage.
+        """
+        cleaned = [q.strip() for q in (queries or []) if isinstance(q, str) and q.strip()]
+        if not cleaned:
+            return []
+        if len(cleaned) <= max_queries:
+            return cleaned
+
+        groups: List[List[str]] = [[] for _ in range(max_queries)]
+        for idx, q in enumerate(cleaned):
+            groups[idx % max_queries].append(q)
+
+        composed: List[str] = []
+        for i, grp in enumerate(groups, start=1):
+            if not grp:
+                continue
+            composed.append(
+                f"{agent_name} combined retrieval query {i}/{max_queries}. "
+                "Search comprehensively and return chunks covering ALL intents below without omission. "
+                "Prioritize exact source tables/fields and avoid hallucination.\n"
+                + "\n".join(f"- {item}" for item in grp)
+            )
+        return composed if composed else cleaned
+
+    @staticmethod
     def _usage_payload(response: Any) -> Dict[str, int]:
         """Normalize token usage from model response."""
         usage = getattr(response, "usage", None)
@@ -359,6 +398,245 @@ class SummaryPipeline:
             return float(s) if s else 0.0
         except ValueError:
             return 0.0
+
+    @staticmethod
+    def _extract_total_shares_from_capital_history(capital_json: Dict[str, Any]) -> int:
+        """
+        Extract total equity shares from Agent-2 share capital history.
+        Uses the LAST non-zero cumulative equity shares row (as requested),
+        and falls back to max if ordering is noisy.
+        """
+        if not isinstance(capital_json, dict):
+            return 0
+        rows = capital_json.get("share_capital_history", [])
+        if not isinstance(rows, list):
+            return 0
+        last_non_zero = 0
+        max_cum = 0
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            cum = SummaryPipeline._to_int(r.get("cumulative_equity_shares"))
+            max_cum = max(max_cum, cum)
+            if cum > 0:
+                last_non_zero = cum
+        return last_non_zero or max_cum
+
+    @staticmethod
+    def _extract_isin_from_text(text: str) -> str:
+        """Extract first probable ISIN token from retrieved context."""
+        if not text:
+            return ""
+        # Generic ISIN pattern (12 chars), practical filter biased to Indian ISINs.
+        patterns = [
+            r"\bIN[A-Z0-9]{10}\b",
+            r"\b[A-Z]{2}[A-Z0-9]{9}\d\b",
+        ]
+        for pat in patterns:
+            m = re.search(pat, text, flags=re.IGNORECASE)
+            if m:
+                return m.group(0).upper()
+        return ""
+
+    @staticmethod
+    def _enforce_isin_row(section_content: str, isin: str) -> str:
+        """
+        Ensure SECTION I table has ISIN value when deterministically available.
+        Replaces placeholder/blank ISIN row value only.
+        """
+        if not section_content or not isin:
+            return section_content or ""
+
+        row_pattern = r"(?im)^(\|\s*\*\*ISIN:?\*\*\s*\|\s*)([^|\n]*)(\|\s*)$"
+        m = re.search(row_pattern, section_content)
+        if not m:
+            return section_content
+
+        current_value = (m.group(2) or "").strip().lower()
+        placeholders = {
+            "", "[●]", "[information not found in provided chunks.]", "information not found in provided chunks.",
+            "not disclosed", "not available", "na", "n/a",
+        }
+        if current_value in placeholders:
+            return re.sub(row_pattern, rf"\1{isin}\3", section_content, count=1)
+        return section_content
+
+    @staticmethod
+    def _dedupe_a3_table_inventory(section3_content: str) -> str:
+        """
+        Remove duplicate table blocks in Agent-3 output even if headings differ.
+        Dedup is based on normalized table body/content, not the title.
+        """
+        if not section3_content:
+            return section3_content
+
+        inv_match = re.search(
+            r"(?ims)(^##\s*Table Inventory from Our Business.*?$)(.*?)(?=^##\s+Our Strengths|^##\s+Business Strategies|\Z)",
+            section3_content,
+        )
+        if not inv_match:
+            return section3_content
+
+        inv_header = inv_match.group(1).strip()
+        inv_body = (inv_match.group(2) or "").strip()
+        blocks = re.split(r"(?im)(?=^###\s+)", inv_body)
+        if len(blocks) <= 1:
+            return section3_content
+
+        kept_blocks: List[str] = []
+        seen_keys: Set[str] = set()
+
+        for block in blocks:
+            b = block.strip()
+            if not b:
+                continue
+            # Normalize by removing title and source context lines; dedupe on actual table/data lines.
+            payload_lines = []
+            for line in b.splitlines():
+                s = line.strip()
+                if re.match(r"^###\s+", s, flags=re.IGNORECASE):
+                    continue
+                if re.match(r"^\*\*Source Context:\*\*", s, flags=re.IGNORECASE):
+                    continue
+                payload_lines.append(s)
+            normalized_payload = re.sub(r"\s+", " ", "\n".join(payload_lines)).strip().lower()
+            if not normalized_payload:
+                normalized_payload = re.sub(r"\s+", " ", b).strip().lower()
+            if normalized_payload in seen_keys:
+                continue
+            seen_keys.add(normalized_payload)
+            kept_blocks.append(b)
+
+        if not kept_blocks:
+            return section3_content
+
+        new_inventory = f"{inv_header}\n\n" + "\n\n".join(kept_blocks)
+        start, end = inv_match.span()
+        return section3_content[:start].rstrip() + "\n\n" + new_inventory + "\n\n" + section3_content[end:].lstrip()
+
+    @staticmethod
+    def _normalize_a3_section_order(section3_content: str) -> str:
+        """
+        Canonicalize Section III layout and remove repeated heading blocks.
+        Final order:
+          1) Business Overview
+          2) Products and Services
+          3) Table Inventory from Our Business (Verbatim)
+          4) Our Strengths
+          5) Business Strategies
+        This matches the required final display format.
+        Keeps last occurrence for strengths/strategies (so bottom copy wins).
+        """
+        if not section3_content:
+            return section3_content
+
+        text = section3_content
+        # Normalize plain headings to markdown headings for stable parsing.
+        normalize_map = [
+            (r"^Business Overview\s*$", "## Business Overview"),
+            (r"^Products and Services\s*$", "## Products and Services"),
+            (r"^Table Inventory from Our Business(?:\s*\(Verbatim\))?\s*$", "## Table Inventory from Our Business (Verbatim)"),
+            (r"^Our Strengths\s*$", "## Our Strengths"),
+            (r"^Business Strategies\s*$", "## Business Strategies"),
+        ]
+        for pat, repl in normalize_map:
+            text = re.sub(pat, repl, text, flags=re.IGNORECASE | re.MULTILINE)
+        # Remove noisy trailer markers occasionally emitted by model.
+        text = re.sub(r"^End of SECTION III:.*$", "", text, flags=re.IGNORECASE | re.MULTILINE).strip()
+        # Ensure single canonical Section III heading.
+        text = re.sub(
+            r"^(?:#\s*)?SECTION III:\s*OUR BUSINESS\s*$",
+            "## SECTION III: OUR BUSINESS",
+            text,
+            flags=re.IGNORECASE | re.MULTILINE,
+        )
+
+        canonical_order = [
+            "Business Overview",
+            "Products and Services",
+            "Table Inventory from Our Business (Verbatim)",
+            "Our Strengths",
+            "Business Strategies",
+        ]
+        heading_lookup = {h.lower(): h for h in canonical_order}
+        sections: Dict[str, List[str]] = {h: [] for h in canonical_order}
+
+        current_heading: Optional[str] = None
+        current_lines: List[str] = []
+
+        def flush_section() -> None:
+            nonlocal current_heading, current_lines
+            if current_heading:
+                body = "\n".join(current_lines).strip()
+                if body:
+                    sections[current_heading].append(body)
+            current_heading = None
+            current_lines = []
+
+        for raw_line in text.splitlines():
+            line = raw_line.strip()
+            # Skip section title line itself in normalized assembly.
+            if re.match(r"^##\s*SECTION III:\s*OUR BUSINESS\s*$", line, flags=re.IGNORECASE):
+                continue
+            heading_match = re.match(r"^##\s*(.+?)\s*$", line)
+            if heading_match:
+                maybe = heading_match.group(1).strip().lower()
+                if maybe in heading_lookup:
+                    flush_section()
+                    current_heading = heading_lookup[maybe]
+                    continue
+            if current_heading:
+                current_lines.append(raw_line)
+        flush_section()
+
+        if not any(sections.values()):
+            return text.strip()
+
+        def pick_first(key: str) -> str:
+            vals = [v for v in sections.get(key, []) if v]
+            return vals[0] if vals else ""
+
+        def pick_last(key: str) -> str:
+            vals = [v for v in sections.get(key, []) if v]
+            return vals[-1] if vals else ""
+
+        ordered_parts: List[str] = ["## SECTION III: OUR BUSINESS"]
+
+        overview = pick_first("Business Overview")
+        if overview:
+            ordered_parts.extend(["", "## Business Overview", overview])
+
+        products = pick_first("Products and Services")
+        if products:
+            ordered_parts.extend(["", "## Products and Services", products])
+
+        inventory = pick_first("Table Inventory from Our Business (Verbatim)")
+        if inventory:
+            ordered_parts.extend(["", "## Table Inventory from Our Business (Verbatim)", inventory])
+
+        strengths = pick_last("Our Strengths")
+        if strengths:
+            ordered_parts.extend(["", "## Our Strengths", strengths])
+
+        strategies = pick_last("Business Strategies")
+        if strategies:
+            ordered_parts.extend(["", "## Business Strategies", strategies])
+
+        return "\n".join(ordered_parts).strip()
+
+    @staticmethod
+    def _needs_agent5_context_rescue(section4_ctx: str, section5_ctx: str) -> bool:
+        """Heuristic guard: detect weak/empty retrieval before LLM generation."""
+        s4 = (section4_ctx or "").strip().lower()
+        s5 = (section5_ctx or "").strip().lower()
+        if not s4 and not s5:
+            return True
+        weak_tokens = ("not disclosed", "information not found", "not available")
+        weak_hits = sum(tok in (s4 + "\n" + s5) for tok in weak_tokens)
+        # If contexts are very short or dominated by weak placeholders, retry retrieval.
+        if (len(s4) < 500 and len(s5) < 500) or weak_hits >= 2:
+            return True
+        return False
 
     @staticmethod
     def _extract_preissue_split_from_section6_markdown(section6_md: str) -> tuple[int, float]:
@@ -583,12 +861,13 @@ class SummaryPipeline:
                 "ISSUE STRUCTURE",
             ],
         )
+        investor_query_composed = self._compose_queries(investor_query, "Agent 1", max_queries=3)
         context = await self._retrieve_context(
-            investor_query,
+            investor_query_composed,
             namespace,
             index_name,
             host,
-            vector_top_k=10,
+            vector_top_k=15,
             rerank_top_n=10,
             metadata_filter=metadata_filter
         )
@@ -597,6 +876,21 @@ class SummaryPipeline:
             SUMMARY_AGENT_CONTEXT_MAX_CHARS,
             "[Additional retrieved chunks omitted for length.]",
         )
+
+        # Keep Agent-1 anchored to shareholding-pattern context to avoid picking subscriber/capital-history rows.
+        if context:
+            chunks = [c.strip() for c in context.split("\n---\n") if c.strip()]
+            shareholding_keywords = [
+                "shareholding pattern",
+                "pre-issue shareholding",
+                "post-issue shareholding",
+                "promoters and promoter group",
+                "public shareholders",
+                "capital structure",
+            ]
+            focused_chunks = [c for c in chunks if any(k in c.lower() for k in shareholding_keywords)]
+            if focused_chunks:
+                context = "\n---\n".join(focused_chunks)
 
         if not context:
             logger.warning("Agent 1: No context found")
@@ -652,7 +946,8 @@ class SummaryPipeline:
         # Retrieve context
         capital_query = custom_subqueries or ["Extract complete equity share capital history table and premium rounds from DRHP"]
         capital_query = capital_query + [
-            "Extract COMPLETE share capital history table across all pages with every row and every column, including bonus/subdivision/allotment rounds and valuation fields."
+            "Extract COMPLETE share capital history table across all pages with every row and every column, including bonus/subdivision/allotment rounds and valuation fields.",
+            "Strictly separate categories: Preferential Allotment history must include only preferential allotment events. Do NOT mix bonus issues, rights issues, stock split/subdivision, or ESOP allotments into preferential allotment table."
         ]
         toc = await self._get_toc(namespace)
         capital_query = self._build_toc_guided_queries(
@@ -667,8 +962,9 @@ class SummaryPipeline:
                 "CAPITAL HISTORY",
             ],
         )
+        capital_query_composed = self._compose_queries(capital_query, "Agent 2", max_queries=3)
         context = await self._retrieve_context(
-            capital_query,
+            capital_query_composed,
             namespace,
             index_name,
             host,
@@ -691,7 +987,7 @@ class SummaryPipeline:
                 model="gpt-4.1-mini",
                 messages=[
                     {"role": "system", "content": custom_prompt or CAPITAL_HISTORY_EXTRACTOR_SYSTEM_PROMPT},
-                    {"role": "user", "content": f"Extract and summarize share capital from this DRHP context. Do not drop any row or any column from share capital history tables; preserve complete tabular coverage across all pages. Ensure chronology is complete from earliest to latest event.\n\n{context}"}
+                    {"role": "user", "content": f"Extract and summarize share capital from this DRHP context. Do not drop any row or any column from share capital history tables; preserve complete tabular coverage across all pages. Ensure chronology is complete from earliest to latest event. Keep Nature of Allotment/Issue Type exactly as source. Do NOT classify bonus/rights/split events as preferential allotments.\n\n{context}"}
                 ],
                 temperature=0.0,
                 max_tokens=16384,
@@ -742,6 +1038,7 @@ class SummaryPipeline:
             "Banker synonyms to search: bankers, banking partners, escrow bank, collecting bank, sponsor bank, refund banker, SCSB, self certified syndicate bank.",
             "Extract ISIN exactly using keywords/synonyms: ISIN, International Securities Identification Number, security code/identifier.",
             "Extract filing date exactly with doc-type aware keywords: RHP Filing Date, DRHP Filing Date, date of filing this red herring prospectus, filed with ROC/SEBI.",
+            "Extract Date of Incorporation and Company Website from General Information / Company Information sections exactly as printed.",
         ]
         toc = await self._get_toc(namespace)
         queries = self._build_toc_guided_queries(
@@ -758,16 +1055,18 @@ class SummaryPipeline:
             ],
             max_entries=12,
         )
-        context = await self._retrieve_context(queries, namespace, index_name, host, vector_top_k=28, metadata_filter=metadata_filter)
+        composed_queries = self._compose_queries(queries, "Agent 4", max_queries=3)
+        context = await self._retrieve_context(composed_queries, namespace, index_name, host, vector_top_k=20, rerank_top_n=15, metadata_filter=metadata_filter)
         if not context.strip():
             relaxed_filter = dict(metadata_filter or {})
             relaxed_filter.pop("type", None)
             context = await self._retrieve_context(
-                queries,
+                composed_queries,
                 namespace,
                 index_name,
                 host,
-                vector_top_k=34,
+                vector_top_k=38,
+                rerank_top_n=28,
                 metadata_filter=relaxed_filter,
             )
         context = self._clip_chunk_context(
@@ -775,6 +1074,23 @@ class SummaryPipeline:
             SUMMARY_AGENT_CONTEXT_MAX_CHARS,
             "[Additional retrieved chunks omitted for length.]",
         )
+
+        # Deterministic ISIN rescue path: run a narrow, high-recall query and append.
+        isin_query = [
+            "Extract exact ISIN token only. Look for labels: ISIN, International Securities Identification Number."
+        ]
+        isin_context = await self._retrieve_context(
+            isin_query,
+            namespace,
+            index_name,
+            host,
+            vector_top_k=30,
+            rerank_top_n=20,
+            metadata_filter=metadata_filter,
+        )
+        if isin_context and isin_context.strip():
+            context = f"{context}\n\n---\n\n### ISIN FOCUSED CONTEXT\n{isin_context}"
+        extracted_isin = self._extract_isin_from_text(f"{context}\n{isin_context}")
 
         response = await self.client.chat.completions.create(
             model="gpt-4.1-mini",
@@ -787,7 +1103,10 @@ class SummaryPipeline:
         )
         usage = self._usage_payload(response)
         logger.info("Agent 4: Completed", input_tokens=usage["input"], output_tokens=usage["output"])
-        return {"content": response.choices[0].message.content or "", "_usage": usage}
+        content = response.choices[0].message.content or ""
+        if extracted_isin:
+            content = self._enforce_isin_row(content, extracted_isin)
+        return {"content": content, "_usage": usage}
 
     async def _agent_5_generator(
         self,
@@ -830,6 +1149,7 @@ class SummaryPipeline:
                 "Extract SECTION V only: complete promoters/directors/KMP profiles including age, education, experience, previous employment, pre-offer shareholding.",
                 "Compensation is mandatory for each promoter/director/KMP. Search compensation synonyms: remuneration, managerial remuneration, salary, perquisites, commission, sitting fees, benefits, emoluments, pay package, annual compensation in Rs lakh.",
                 "Focus on sections/tables titled OUR MANAGEMENT, OUR PROMOTERS AND PROMOTER GROUP, REMUNERATION, KEY MANAGERIAL PERSONNEL, KMP.",
+                "Extract complete Promoters Analysis and Board of Directors Analysis rows including pre-IPO/pre-issue holding and all directorship/term details where available.",
             ],
             toc,
             target_terms=[
@@ -841,30 +1161,40 @@ class SummaryPipeline:
                 "KMP",
                 "KEY MANAGERIAL PERSONNEL",
                 "DIRECTORS",
+                "CAPITAL STRUCTURE",
+                "PRE-ISSUE SHAREHOLDING",
+                "PRE-IPO HOLDING",
             ],
             max_entries=16,
         )
 
-        section4_ctx = await self._retrieve_context(section4_queries, namespace, index_name, host, vector_top_k=22, metadata_filter=metadata_filter)
-        section5_ctx = await self._retrieve_context(section5_queries, namespace, index_name, host, vector_top_k=24, metadata_filter=metadata_filter)
+        # Keep richer query granularity for Agent-5 (higher recall than compressed 2-query mode).
+        section4_ctx = await self._retrieve_context(section4_queries, namespace, index_name, host, vector_top_k=26, rerank_top_n=22, metadata_filter=metadata_filter)
+        section5_ctx = await self._retrieve_context(section5_queries, namespace, index_name, host, vector_top_k=30, rerank_top_n=24, metadata_filter=metadata_filter)
         context = f"--- SECTION IV RETRIEVAL CONTEXT ---\n{section4_ctx}\n\n--- SECTION V RETRIEVAL CONTEXT ---\n{section5_ctx}"
-        if not context.strip() or (not section4_ctx.strip() and not section5_ctx.strip()):
+        if self._needs_agent5_context_rescue(section4_ctx, section5_ctx):
             relaxed_filter = dict(metadata_filter or {})
             relaxed_filter.pop("type", None)
             section4_ctx = await self._retrieve_context(
-                section4_queries,
+                section4_queries + [
+                    "Rescue retrieval: extract exact industry size, CAGR, policy support, and peer comparison table from INDUSTRY OVERVIEW / BASIS FOR ISSUE PRICE."
+                ],
                 namespace,
                 index_name,
                 host,
-                vector_top_k=28,
+                vector_top_k=34,
+                rerank_top_n=26,
                 metadata_filter=relaxed_filter,
             )
             section5_ctx = await self._retrieve_context(
-                section5_queries,
+                section5_queries + [
+                    "Rescue retrieval: extract complete promoters table, directors table, KMP profiles, and compensation with pre-issue shareholding columns."
+                ],
                 namespace,
                 index_name,
                 host,
-                vector_top_k=30,
+                vector_top_k=38,
+                rerank_top_n=30,
                 metadata_filter=relaxed_filter,
             )
             context = f"--- SECTION IV RETRIEVAL CONTEXT ---\n{section4_ctx}\n\n--- SECTION V RETRIEVAL CONTEXT ---\n{section5_ctx}"
@@ -927,7 +1257,8 @@ class SummaryPipeline:
             ],
             max_entries=20,
         )
-        context = await self._retrieve_context(queries, namespace, index_name, host, vector_top_k=20, metadata_filter=metadata_filter)
+        queries_comp = self._compose_queries(queries, "Agent 6", max_queries=3)
+        context = await self._retrieve_context(queries_comp, namespace, index_name, host, vector_top_k=20, metadata_filter=metadata_filter)
         context = self._clip_chunk_context(
             context,
             SUMMARY_AGENT_CONTEXT_MAX_CHARS,
@@ -938,7 +1269,7 @@ class SummaryPipeline:
             relaxed_filter = dict(metadata_filter or {})
             relaxed_filter.pop("type", None)
             context = await self._retrieve_context(
-                queries,
+                queries_comp,
                 namespace,
                 index_name,
                 host,
@@ -1006,12 +1337,13 @@ class SummaryPipeline:
             ],
             max_entries=18,
         )
-        context = await self._retrieve_context(queries, namespace, index_name, host, vector_top_k=20, metadata_filter=metadata_filter)
+        queries_comp = self._compose_queries(queries, "Agent 7", max_queries=3)
+        context = await self._retrieve_context(queries_comp, namespace, index_name, host, vector_top_k=20, metadata_filter=metadata_filter)
         if not context.strip():
             relaxed_filter = dict(metadata_filter or {})
             relaxed_filter.pop("type", None)
             context = await self._retrieve_context(
-                queries,
+                queries_comp,
                 namespace,
                 index_name,
                 host,
@@ -1136,12 +1468,13 @@ class SummaryPipeline:
             ],
             max_entries=16,
         )
-        context = await self._retrieve_context(queries, namespace, index_name, host, vector_top_k=22, metadata_filter=metadata_filter)
+        queries_comp = self._compose_queries(queries, "Agent 9", max_queries=3)
+        context = await self._retrieve_context(queries_comp, namespace, index_name, host, vector_top_k=22, metadata_filter=metadata_filter)
         if not context.strip():
             relaxed_filter = dict(metadata_filter or {})
             relaxed_filter.pop("type", None)
             context = await self._retrieve_context(
-                queries,
+                queries_comp,
                 namespace,
                 index_name,
                 host,
@@ -1359,7 +1692,42 @@ class SummaryPipeline:
         seen = set()
 
         # 2. COLLECT PIECONE CONTEXT (Narrative and secondary table fragments)
-        for i, query in enumerate(extraction_queries):
+        def _is_business_relevant_chunk(chunk_text: str) -> bool:
+            lowered = chunk_text.lower()
+            excluded_signals = [
+                "related party transaction",
+                "related party transactions",
+                "rpt",
+                "transactions with related parties",
+                "trade receivables",
+                "trade payables",
+                "advances received from customers",
+                "advances to vendors",
+                "loans/advances given",
+            ]
+            if any(sig in lowered for sig in excluded_signals):
+                return False
+            business_signals = [
+                "our business", "business overview", "products", "services", "customer",
+                "supplier", "capacity utilization", "installed capacity", "actual production",
+                "properties", "facilities", "plant", "machinery", "employee", "human resource",
+                "intellectual property", "trademark", "project", "order book", "raw material"
+            ]
+            financial_only_signals = [
+                "restated", "restated consolidated financial information", "statement of",
+                "balance sheet", "cash flow", "profit and loss", "notes to restated financial",
+                "intangible assets", "property, plant and equipment"
+            ]
+            has_business = any(sig in lowered for sig in business_signals)
+            has_financial_only = any(sig in lowered for sig in financial_only_signals)
+            # Allow financial note chunks only when they clearly carry product/revenue breakups used in Section III.
+            revenue_exception = ("details of revenue from operations" in lowered) or ("product wise" in lowered)
+            if has_financial_only and not has_business and not revenue_exception:
+                return False
+            return True
+
+        composed_extraction_queries = self._compose_queries(extraction_queries, "Agent 3", max_queries=3)
+        for i, query in enumerate(composed_extraction_queries):
             try:
                 ctx = await self._retrieve_context(
                     [query],
@@ -1374,12 +1742,12 @@ class SummaryPipeline:
                 if ctx:
                     for chunk in ctx.split("\n---\n"):
                         c = chunk.strip()
-                        if c and c not in seen:
+                        if c and c not in seen and _is_business_relevant_chunk(c):
                             all_context_parts.append(c)
                             seen.add(c)
-                logger.debug(f"A-3: Query {i+1}/{total_queries} retrieved", chars=len(ctx) if ctx else 0)
+                logger.debug(f"A-3: Query {i+1}/{len(composed_extraction_queries)} retrieved", chars=len(ctx) if ctx else 0)
             except Exception as qe:
-                logger.warning(f"A-3: Query {i+1}/{total_queries} failed", error=str(qe))
+                logger.warning(f"A-3: Query {i+1}/{len(composed_extraction_queries)} failed", error=str(qe))
 
         # 3. MANDATORY CATEGORY COVERAGE RETRY (SME-focused)
         # If core table families are missing, run targeted semantic retrieval passes.
@@ -1389,9 +1757,17 @@ class SummaryPipeline:
                 ["owned", "leased", "property", "properties", "facility", "facilities", "registered office", "manufacturing unit"],
                 "OUR BUSINESS: Extract all owned/leased properties, facilities, manufacturing units, warehouses, and office/location tables verbatim with full rows and columns."
             ),
+            "immovable_properties": (
+                ["immovable property", "immovable properties", "title deed", "lease deed", "licensed premises", "property address"],
+                "OUR BUSINESS: Extract all immovable property tables exactly (owned/leased/licensed/sub-leased), including full address, purpose, owner/lessor, tenure/validity."
+            ),
             "manufacturing_capacity": (
                 ["capacity utilization", "installed capacity", "actual production", "plant", "machinery"],
                 "OUR BUSINESS: Extract plant/machinery and capacity utilization tables exactly (Installed Capacity, Actual Production, Capacity Utilization)."
+            ),
+            "key_financial_indicators": (
+                ["key financial performance indicators", "kpi", "performance indicators", "operational indicators"],
+                "OUR BUSINESS: Extract key financial/operational indicator tables that are explicitly disclosed in Our Business chapter, including all notes and period columns."
             ),
             "customer_concentration": (
                 ["customer concentration", "top 5 customers", "top 10 customers", "major customers", "key customers"],
@@ -1444,7 +1820,7 @@ class SummaryPipeline:
                     if extra_ctx:
                         for chunk in extra_ctx.split("\n---\n"):
                             c = chunk.strip()
-                            if c and c not in seen:
+                            if c and c not in seen and _is_business_relevant_chunk(c):
                                 all_context_parts.append(c)
                                 seen.add(c)
                 except Exception as re_try_err:
@@ -1492,6 +1868,26 @@ class SummaryPipeline:
                 lines = section3_content.split('\n')
                 cleaned_lines = [l for l in lines if not l.strip().startswith("OUR BUSINESS:")]
                 section3_content = '\n'.join(cleaned_lines).strip()
+                # Normalize plain "SECTION III: OUR BUSINESS" headers to markdown heading.
+                section3_content = re.sub(
+                    r"(?im)^SECTION III:\s*OUR BUSINESS\s*$",
+                    "## SECTION III: OUR BUSINESS",
+                    section3_content,
+                )
+                # Remove duplicate "SECTION III" header blocks returned by the model.
+                parts = re.split(r"(?im)(?=^(?:##\s*)?SECTION III:)", section3_content)
+                if len(parts) > 2:
+                    # Keep any preamble + first SECTION III block only.
+                    preamble = parts[0].strip()
+                    first_block = parts[1].strip()
+                    section3_content = f"{preamble}\n\n{first_block}".strip() if preamble else first_block
+
+                # Safety dedupe: if model repeats "Table Inventory from Our Business", keep first block only.
+                inv_parts = re.split(r"(?im)(?=^##\s*Table Inventory from Our Business)", section3_content)
+                if len(inv_parts) > 2:
+                    section3_content = f"{inv_parts[0].strip()}\n\n{inv_parts[1].strip()}".strip()
+                section3_content = self._dedupe_a3_table_inventory(section3_content)
+                section3_content = self._normalize_a3_section_order(section3_content)
 
             return {"content": section3_content, "_usage": usage}
         except Exception as e:
@@ -1530,6 +1926,16 @@ class SummaryPipeline:
 
         # Wrap the content (matches n8n's cleanedSection3 padding)
         cleaned_section3 = section3_content.strip()
+        # If base summary already contains SECTION III, replace it instead of duplicating.
+        full_summary = re.sub(
+            r"(?is)\n*(?:##\s+)?SECTION III:.*?(?=\n(?:##\s+)?SECTION IV:)",
+            "\n",
+            full_summary,
+        )
+        section4_match = re.search(r"(?:##\s+)?SECTION IV:", full_summary, re.IGNORECASE)
+        if not section4_match:
+            logger.warning("Section III insertion: SECTION IV missing after SECTION III cleanup, appending")
+            return full_summary.strip() + f"\n\n---\n\n{cleaned_section3}\n\n---\n\n"
 
         # Ensure proper header: SECTION III: OUR BUSINESS (requested by user)
         # 1. First, remove any existing "OUR BUSINESS ANALYSIS" heading (from prompts or previous generation)
@@ -1730,6 +2136,11 @@ class SummaryPipeline:
                 total_usage["input"] += agent2_in; total_usage["output"] += agent2_out
             
             if isinstance(investor_json, dict):
+                # Align Agent-1 total share issue with Agent-2 cumulative equity shares when available.
+                # This prevents denominator drift and % totals above 100 due wrong base.
+                capital_total_shares = self._extract_total_shares_from_capital_history(capital_json)
+                if capital_total_shares > 0:
+                    investor_json["total_share_issue"] = capital_total_shares
                 u = investor_json.get("_usage", {"input": 0, "output": 0})
                 agent1_in = int(u.get("input", 0) or 0)
                 agent1_out = int(u.get("output", 0) or 0)

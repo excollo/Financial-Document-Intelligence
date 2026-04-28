@@ -121,11 +121,25 @@ Extract the following fields for **each row**:
 - cumulative_equity_shares: Total shares after allotment
 - cumulative_paid_up_capital: Total paid-up capital after allotment
 
+### Dynamic Column Rule (MANDATORY)
+- Different DRHP/RHP files use different share-capital history columns.
+- Along with standard fields above, you MUST capture any additional source columns exactly as provided.
+- Return dynamic columns in this structure:
+  - `raw_columns`: exact list of column headers in source order.
+  - `share_capital_history`: each row as an object containing:
+    - standardized keys (when available), and
+    - `additional_fields` object for every extra column not in standard schema.
+- NEVER drop a column only because it is not in the default template.
+- Keep all values as strings (including numbers, dates, NA/Nil/NIL, symbols).
+
 ### Extraction Rules
 - Verbatim Extraction only.
 - Preserve Original Values (NIL, Nil, NA).
 - No Calculations in JSON.
 - Numbers must be strings.
+- Preserve table orientation and column order.
+- If multiple share capital history tables exist, merge chronologically but keep all columns.
+- Do not classify bonus/rights/split/ESOP rows as preferential allotments.
 
 ### 🛑 CRITICAL ACCURACY & ANALYST GUIDELINES
 1. **ACCURACY-ONLY**: 100% numerical accuracy is required. Do not guess any value. 
@@ -181,7 +195,20 @@ Use: `## SECTION VI: CAPITAL STRUCTURE`
 
 Example response:
 {
-  "json_data": { "share_capital_history": [...] },
+  "json_data": {
+    "raw_columns": ["..."],
+    "share_capital_history": [
+      {
+        "sr_no": "...",
+        "date_of_allotment": "...",
+        "nature_of_allotment": "...",
+        "shares_allotted": "...",
+        "additional_fields": {
+          "Any New Source Column": "value"
+        }
+      }
+    ]
+  },
   "markdown_summary": "## SECTION VI: CAPITAL STRUCTURE\\n\\n[All mandatory tables and bullets from template...]"
 }
 """
@@ -1052,7 +1079,7 @@ BUSINESS_EXTRACTION_QUERIES = [
 
     "OUR BUSINESS OPERATIONS/KPI TABLES: Extract operational KPI tables (throughput, utilization, performance indicators, productivity metrics) verbatim.",
 
-    "OUR BUSINESS GROUP ENTITY TABLES: Extract tabular disclosures for subsidiaries, associates, group companies, JVs, and business units if present in Our Business context.",
+    "OUR BUSINESS IMMOVABLE PROPERTIES TABLES: Extract full immovable/owned/leased/licensed property tables (address, purpose, ownership type, lessor, validity/tenure) verbatim.",
 
     "OUR BUSINESS SAFETY-NET QUERY: Extract any remaining unclassified table found in Our Business pages by relying on nearest parent text before table and reproduce verbatim."
 
@@ -1083,6 +1110,7 @@ Capture all available OUR BUSINESS table families, including but not limited to:
 - Employees/HR strength and department-wise headcount.
 - Raw materials/procurement/mix.
 - Products and services catalog tables.
+- Capacity and capacity utilization must include full unit-wise details (all manufacturing units/locations and all available fiscal years), not only an aggregated summary row.
 
 ## EXTRACTION METHOD
 1. Build an internal "table inventory" from all retrieved chunks page-by-page.
@@ -1091,6 +1119,16 @@ Capture all available OUR BUSINESS table families, including but not limited to:
 4. Keep table orientation exactly as source (never transpose).
 5. Keep all rows/columns; do not summarize tabular values into prose.
 6. If a value is missing in source, keep it missing; do not infer.
+7. Keep full table notes/footnotes exactly when attached to a table (especially KPI/ratio/operational indicator notes).
+8. Before final output, run a strict de-dup pass:
+   - keep only one `SECTION III: OUR BUSINESS` block,
+   - keep only one instance of each table (same header + same row set),
+   - if same table appears with different inferred titles, keep one canonical title and remove duplicates.
+
+## SECTION-BOUNDARY GUARDRAILS
+- Section III must contain only Our Business chapter content and closely linked business annex tables.
+- Do NOT include pure financial-statement schedule tables from Section VII (e.g., PPE schedule, intangible assets schedule, restated financial schedules), unless the table is explicitly business-linked (e.g., product-wise revenue note used in business analysis).
+- If a table title appears financial-statement specific and not business-operational, exclude it from Section III.
 
 ## TABLE FORMATTING RULES
 - Output tables in Markdown.
@@ -1112,7 +1150,7 @@ Use this structure:
 ## Business Overview
 
 ## Products and Services
-(include relevant text and all associated tables)
+(text only; do NOT place tables here. All tables must appear only once under Table Inventory.)
 
 ## Table Inventory from Our Business (Verbatim)
 For each extracted table, use this exact wrapper:
@@ -1123,6 +1161,19 @@ For each extracted table, use this exact wrapper:
 Important:
 - Table titles must be inferred from source context, not forced from fixed hardcoded labels.
 - If two tables belong to the same theme (e.g., customer concentration), keep them as separate table blocks when source tables are different.
+- Never output the same table twice under different headings.
+- Never repeat `## Table Inventory from Our Business (Verbatim)` more than once.
+- Never repeat `SECTION III: OUR BUSINESS` block.
+- If a table has already been printed once, do not print it again in any other subsection.
+- For installed capacity/capacity utilization, always reproduce the complete source table set including each unit-wise table and any continuation table on following pages.
+- Exclude related-party transaction tables from Section III (these belong to legal/other sections unless explicitly presented as core business operational tables).
+
+## FINAL VALIDATION (MANDATORY BEFORE RETURN)
+1. Output contains exactly one `SECTION III: OUR BUSINESS` header.
+2. Output contains exactly one `## Table Inventory from Our Business (Verbatim)` section.
+3. No duplicate table content appears, even with different titles.
+4. Each extracted table appears once with one inferred title + one source context.
+5. Page-by-page extraction coverage is retained after deduplication.
 
 ## Our Strengths
 

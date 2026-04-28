@@ -12,6 +12,7 @@ from datetime import datetime
 import re
 from typing import Dict, Any, Optional
 import openai
+import httpx
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.services.summarization.prompts import RESEARCH_SYSTEM_PROMPT
@@ -29,6 +30,56 @@ class ResearchService:
         self.client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
         # Model name matches n8n request exactly
         self.model = "gpt-5-mini"
+        # Auto-disable tool mode when SDK parsing bug is observed.
+        self._responses_tools_enabled = True
+
+    async def _responses_create_http(
+        self,
+        instructions: str,
+        user_content: str,
+        use_tools: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Direct HTTP fallback for /v1/responses to bypass SDK typed parsing issues.
+        Returns raw JSON payload.
+        """
+        payload: Dict[str, Any] = {
+            "model": self.model,
+            "instructions": instructions,
+            "input": user_content,
+        }
+        if use_tools:
+            payload["tools"] = [{"type": "web_search_preview", "search_context_size": "medium"}]
+
+        headers = {
+            "Authorization": f"Bearer {settings.OPENAI_API_KEY}",
+            "Content-Type": "application/json",
+        }
+        async with httpx.AsyncClient(timeout=240.0) as client:
+            resp = await client.post(
+                "https://api.openai.com/v1/responses",
+                headers=headers,
+                json=payload,
+            )
+            resp.raise_for_status()
+            return resp.json()
+
+    @staticmethod
+    def _extract_text_usage_from_responses_payload(payload: Dict[str, Any]) -> tuple[str, int, int]:
+        raw_text = (payload or {}).get("output_text") or ""
+        if not raw_text:
+            chunks = []
+            for item in (payload or {}).get("output", []) or []:
+                for c in item.get("content", []) or []:
+                    if c.get("type") in ("output_text", "text"):
+                        txt = c.get("text")
+                        if txt:
+                            chunks.append(txt)
+            raw_text = "\n".join(chunks).strip()
+        usage = (payload or {}).get("usage", {}) or {}
+        input_tokens = int(usage.get("input_tokens", 0) or 0)
+        output_tokens = int(usage.get("output_tokens", 0) or 0)
+        return raw_text, input_tokens, output_tokens
 
     async def research_company(
         self,
@@ -62,15 +113,16 @@ class ResearchService:
         try:
             # -----------------------------------------------------------------
             # n8n-compatible call style: Responses API + web_search_preview tool.
+            # If SDK tool parsing fails once, disable tool mode for this process.
             # -----------------------------------------------------------------
-            response = await self.client.responses.create(
+            request_kwargs = dict(
                 model=self.model,
-                input=[
-                    {"role": "system", "content": research_sop},
-                    {"role": "user", "content": user_content},
-                ],
-                tools=[{"type": "web_search_preview", "search_context_size": "medium"}],
+                instructions=research_sop,
+                input=user_content,
             )
+            if self._responses_tools_enabled:
+                request_kwargs["tools"] = [{"type": "web_search_preview", "search_context_size": "medium"}]
+            response = await self.client.responses.create(**request_kwargs)
 
             raw_text = getattr(response, "output_text", "") or ""
             if not raw_text:
@@ -111,10 +163,41 @@ class ResearchService:
             return parsed
 
         except Exception as e:
-            logger.error(
-                "Research: OpenAI research failed",
-                error=str(e),
-            )
+            # Guardrail for known SDK typing error:
+            # "'typing.Union' object has no attribute '__discriminator__'"
+            # Retry once without tools before falling back to chat completion.
+            if "__discriminator__" in str(e) or "typing.Union" in str(e):
+                try:
+                    logger.warning(
+                        "Research: SDK Union parse issue detected; retrying via raw HTTP responses API",
+                    )
+                    payload = await self._responses_create_http(
+                        instructions=research_sop,
+                        user_content=user_content,
+                        use_tools=True,
+                    )
+                    raw_text, input_tokens, output_tokens = self._extract_text_usage_from_responses_payload(payload)
+                    parsed = self._parse_json_from_text(raw_text)
+                    parsed["_usage"] = {"input": input_tokens, "output": output_tokens}
+                    parsed_metadata = parsed.get("metadata") if isinstance(parsed.get("metadata"), dict) else {}
+                    parsed_metadata["company"] = parsed_metadata.get("company") or company_name
+                    if promoters and not parsed_metadata.get("promoters"):
+                        parsed_metadata["promoters"] = promoters
+                    if not parsed_metadata.get("investigation_date"):
+                        parsed_metadata["investigation_date"] = datetime.utcnow().strftime("%Y-%m-%d")
+                    if directory_name:
+                        parsed_metadata["directory_name"] = directory_name
+                    parsed["metadata"] = parsed_metadata
+                    return parsed
+                except Exception as retry_err:
+                    logger.error("Research: Raw HTTP retry failed", error=str(retry_err))
+                    # As last resort, disable tools in-process and continue with fallback methods.
+                    self._responses_tools_enabled = False
+            else:
+                logger.error(
+                    "Research: OpenAI research failed",
+                    error=str(e),
+                )
             return await self._research_fallback(
                 user_content=user_content,
                 original_error=str(e),

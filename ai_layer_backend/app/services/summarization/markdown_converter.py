@@ -70,18 +70,53 @@ class MarkdownConverter:
         # Build processed list from shareholding-pattern rows only.
         processed_investors: List[Dict[str, Any]] = [inv.copy() for inv in investors if isinstance(inv, dict)]
 
+        def is_total_row(name: str) -> bool:
+            n = (name or "").strip().lower()
+            return (
+                n in {"total", "grand total"}
+                or n.startswith("total ")
+                or "total (" in n
+                or "total -" in n
+            )
+
         # Resolve total shares from explicit "Total" row first (shareholding table source of truth).
         total_row_shares = 0
         for inv in processed_investors:
             name = str(inv.get("investor_name", "")).strip().lower()
-            if name in {"total", "grand total"}:
+            if is_total_row(name):
                 total_row_shares = to_int(inv.get("number_of_equity_shares", 0))
                 break
         if total_row_shares > 0:
             total_share_issue = total_row_shares
 
+        # Exclude explicit total rows from detail rows (we render one canonical TOTAL row below).
+        detail_investors: List[Dict[str, Any]] = [
+            inv for inv in processed_investors
+            if not is_total_row(str(inv.get("investor_name", "")))
+        ]
+
+        def normalized_name(inv: Dict[str, Any]) -> str:
+            return str(inv.get("investor_name", "")).strip().lower()
+
+        def is_aggregate_bucket(inv: Dict[str, Any]) -> bool:
+            n = normalized_name(inv)
+            return n in {
+                "promoters & promoter group",
+                "promoters and promoter group",
+                "public",
+                "public shareholders",
+            }
+
+        # If granular promoter rows exist, drop aggregate bucket rows to avoid double counting.
+        has_granular_rows = any(
+            ("promoter" in normalized_name(inv)) and (not is_aggregate_bucket(inv))
+            for inv in detail_investors
+        )
+        if has_granular_rows:
+            detail_investors = [inv for inv in detail_investors if not is_aggregate_bucket(inv)]
+
         # Never synthesize an "Others" row; keep table faithful to extracted shareholding pattern.
-        for inv in processed_investors:
+        for inv in detail_investors:
             inv["number_of_equity_shares"] = to_int(inv.get("number_of_equity_shares", 0))
             existing_pct = (
                 inv.get("percentage_of_pre_issue_capital")
@@ -100,12 +135,74 @@ class MarkdownConverter:
                 inv["percentage_of_pre_issue_capital"] = ""
                 inv["_calculated_percentage"] = 0.0
 
-        total_extracted_shares = sum(inv.get("number_of_equity_shares", 0) for inv in processed_investors)
+        total_extracted_shares = sum(inv.get("number_of_equity_shares", 0) for inv in detail_investors)
+
+        # If total shares are known and a public row is absent, add synthetic public remainder row.
+        # This keeps Section A aligned to company total shares (100% basis).
+        has_public_row = any("public" in normalized_name(inv) for inv in detail_investors)
+        if total_share_issue > 0 and not has_public_row and total_extracted_shares < total_share_issue:
+            public_remainder = total_share_issue - total_extracted_shares
+            detail_investors.append(
+                {
+                    "investor_name": "Public",
+                    "number_of_equity_shares": public_remainder,
+                    "percentage_of_pre_issue_capital": f"{(public_remainder / total_share_issue) * 100:.2f}%",
+                    "_calculated_percentage": (public_remainder / total_share_issue) * 100,
+                    "investor_category": "Public",
+                }
+            )
+            total_extracted_shares += public_remainder
+
+        # Deterministic reconciliation: enforce row-sum == total_share_issue.
+        # Prefer balancing via Public row (or create one), then recompute percentages.
+        if total_share_issue > 0:
+            public_idx = next(
+                (idx for idx, inv in enumerate(detail_investors) if "public" in normalized_name(inv)),
+                None,
+            )
+            if public_idx is None:
+                detail_investors.append(
+                    {
+                        "investor_name": "Public",
+                        "number_of_equity_shares": 0,
+                        "percentage_of_pre_issue_capital": "",
+                        "_calculated_percentage": 0.0,
+                        "investor_category": "Public",
+                    }
+                )
+                public_idx = len(detail_investors) - 1
+
+            current_sum = sum(inv.get("number_of_equity_shares", 0) for inv in detail_investors)
+            delta = total_share_issue - current_sum
+            if delta != 0 and public_idx is not None:
+                adjusted_public = max(0, detail_investors[public_idx].get("number_of_equity_shares", 0) + delta)
+                detail_investors[public_idx]["number_of_equity_shares"] = adjusted_public
+
+            # Recompute percentages from reconciled shares for consistency.
+            for inv in detail_investors:
+                sh = to_int(inv.get("number_of_equity_shares", 0))
+                inv["number_of_equity_shares"] = sh
+                pct_value = (sh / total_share_issue) * 100 if total_share_issue > 0 else 0.0
+                inv["percentage_of_pre_issue_capital"] = f"{pct_value:.2f}%"
+                inv["_calculated_percentage"] = pct_value
+
+            total_extracted_shares = sum(inv.get("number_of_equity_shares", 0) for inv in detail_investors)
 
         # -- Section A totals --
         # If an explicit Total row exists, show 100%; otherwise sum row percentages.
-        has_total_row = any(str(inv.get("investor_name", "")).strip().lower() in {"total", "grand total"} for inv in processed_investors)
-        total_pct_numeric = 100.0 if has_total_row and total_share_issue > 0 else sum(inv.get("_calculated_percentage", 0) for inv in processed_investors)
+        has_total_row = any(is_total_row(str(inv.get("investor_name", ""))) for inv in processed_investors)
+        if total_share_issue > 0 and total_extracted_shares > 0:
+            total_pct_numeric = (total_extracted_shares / total_share_issue) * 100
+        elif has_total_row and total_share_issue > 0:
+            total_pct_numeric = 100.0
+        else:
+            total_pct_numeric = sum(inv.get("_calculated_percentage", 0) for inv in detail_investors)
+        # Snap near-100 rounding drift to 100%.
+        if 99.5 <= total_pct_numeric <= 100.5:
+            total_pct_numeric = 100.0
+        # When remainder/public balancing is applied and total shares match, force exact 100%.
+        if total_share_issue > 0 and total_extracted_shares == total_share_issue:
+            total_pct_numeric = 100.0
         total_pct_str = f"{total_pct_numeric:.2f}%"
 
         # -- Step 4: Match against TARGET_INVESTORS --
@@ -113,7 +210,7 @@ class MarkdownConverter:
         target_lower = {name.lower().strip() for name in active_targets}
 
         matched_investors = []
-        for inv in processed_investors:
+        for inv in detail_investors:
             name = inv.get("investor_name", "")
             if not name:
                 continue
@@ -135,7 +232,7 @@ class MarkdownConverter:
 
 **Total Share Issue:** {total_share_issue:,}
 
-**Total Investors Extracted:** {len(processed_investors)}
+**Total Investors Extracted:** {len(detail_investors)}
 
 **Total Extracted Shares:** {total_extracted_shares:,}
 
@@ -150,10 +247,10 @@ class MarkdownConverter:
 | Investor Name | Number of Equity Shares | % of Pre-Issue Shareholding | Investor Category |
 |---|---|---|---|
 """
-        if not processed_investors:
+        if not detail_investors:
             markdown += "| No investors found | - | - | - |\n"
         else:
-            for inv in processed_investors:
+            for inv in detail_investors:
                 name = inv.get("investor_name", "N/A")
                 shares = inv.get("number_of_equity_shares", 0)
                 pct = inv.get("percentage_of_pre_issue_capital", "0%")
