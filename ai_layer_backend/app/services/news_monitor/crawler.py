@@ -6,7 +6,6 @@ from typing import List, Dict, Any, Optional
 import xml.etree.ElementTree as ET
 import re
 import time
-import random
 from pymongo import MongoClient
 from app.core.config import settings
 
@@ -38,11 +37,17 @@ class NewsMonitorCrawler:
         "https://www.ft.com/rss/companies"
     ]
     NEGATIVE_KEYWORDS = [
-        "fraud", "scam", "arrest", "raid", "ed", "cbi", "sfio", "sebi",
+        "fraud", "scam", "arrest", "arrested", "raid", "cbi", "sfio", "sebi",
         "show cause", "penalty", "default", "insolvency", "bankruptcy",
         "money laundering", "fema", "nclt", "forgery", "irregularities",
-        "probe", "investigation", "charge sheet", "court case", "lawsuit"
+        "probe", "investigation", "charge sheet", "chargesheet", "court case", "lawsuit",
+        "ed", "rbi", "f.i.r", "fir"
     ]
+    _ENTITY_CATEGORY_LIMITS = {"promoters": 3, "kmp": 3, "directors": 3, "group_companies": 2}
+    _ENTITY_STOPWORDS = {
+        "india", "limited", "ltd", "bank", "company", "group", "news",
+        "share", "stock", "market", "financial", "services"
+    }
     
     def __init__(self):
         self.client_db = MongoClient(settings.MONGODB_URI)
@@ -57,82 +62,122 @@ class NewsMonitorCrawler:
         self.articles_collection = self.db["newsarticles"]
         logger.info("Initialized NewsMonitorCrawler (GPT + Serper mode).")
 
+    @staticmethod
+    def _normalize_name(name: str) -> str:
+        return re.sub(r"\s+", " ", (name or "").strip()).lower()
+
+    @staticmethod
+    def _sanitize_term(term: str) -> str:
+        s = re.sub(r"\s+", " ", (term or "").strip())
+        return s[:120] if len(s) > 120 else s
+
+    @staticmethod
+    def _title_key(title: str) -> str:
+        t = re.sub(r"[^a-z0-9\s]", " ", (title or "").lower())
+        t = re.sub(r"\s+", " ", t).strip()
+        return " ".join(t.split()[:14])
+
+    def _term_in_text(self, text: str, term: str) -> bool:
+        t = self._sanitize_term(term)
+        if not t:
+            return False
+        # Short terms (ED/FIR/CBI etc.) must be whole-word, never substring.
+        if len(t) <= 4 or t.isalnum():
+            return re.search(rf"\b{re.escape(t)}\b", text, re.IGNORECASE) is not None
+        return t.lower() in text.lower()
+
+    def _is_generic_entity(self, term: str) -> bool:
+        clean = self._normalize_name(re.sub(r"[^a-zA-Z0-9\s]", " ", term))
+        if not clean:
+            return True
+        bits = clean.split()
+        if len(bits) == 1 and bits[0] in self._ENTITY_STOPWORDS:
+            return True
+        if len(clean) < 3:
+            return True
+        return False
+
+    def _clean_entities(self, company_name: str, entities: Dict[str, List[str]]) -> Dict[str, List[str]]:
+        out: Dict[str, List[str]] = {k: [] for k in self._ENTITY_CATEGORY_LIMITS}
+        seen = {self._normalize_name(company_name)}
+        for key, lim in self._ENTITY_CATEGORY_LIMITS.items():
+            for raw in entities.get(key, []) or []:
+                s = self._sanitize_term(raw)
+                n = self._normalize_name(s)
+                if not s or n in seen or self._is_generic_entity(s):
+                    continue
+                seen.add(n)
+                out[key].append(s)
+                if len(out[key]) >= lim:
+                    break
+        return out
+
     def search_with_serper(self, query: str, entities: Optional[Dict[str, List[str]]] = None) -> List[Dict[str, Any]]:
-        """Search last 7 days news using robust query variants per company."""
+        """Serper News API: one strict query per company; return only company-linked snippets."""
         if not settings.SERPER_API_KEY:
             logger.warning("SERPER_API_KEY not found. Skipping Serper search.")
             return []
-            
-        url = "https://google.serper.dev/search"
-        
-        # Build one robust query with company + related entities.
-        search_terms = [query]
-        if entities:
-            search_terms.extend(entities.get("promoters", [])[:2])
-            search_terms.extend(entities.get("kmp", [])[:2])
-            search_terms.extend(entities.get("directors", [])[:2])
-            search_terms.extend(entities.get("group_companies", [])[:2])
+        url = "https://google.serper.dev/news"
+        company = self._sanitize_term(query)
+        clean_entities = self._clean_entities(company, entities or {})
+        related_terms = [company]
+        related_terms.extend(clean_entities.get("promoters", []))
+        related_terms.extend(clean_entities.get("kmp", []))
+        related_terms.extend(clean_entities.get("directors", []))
+        related_terms.extend(clean_entities.get("group_companies", []))
+        related_terms = [t for t in related_terms if t]
 
-        # Focused negative search terms + 7 day window
-        base_query = " OR ".join([f'"{term}"' for term in search_terms if term])
-        negative_terms = " OR ".join([f'"{kw}"' for kw in self.NEGATIVE_KEYWORDS])
-        query_variants = [
-            f"({base_query}) ({negative_terms})",
-            f'"{query}" (fraud OR scam OR CBI OR ED OR SEBI OR arrest OR investigation OR raid)'
-        ]
+        if not related_terms:
+            return []
+
+        related_or = " OR ".join(f'"{t}"' for t in related_terms[:10])
+        negative_terms = (
+            "(fraud OR scam OR CBI OR ED OR SEBI OR RBI OR SFIO OR arrest OR investigation OR "
+            "raid OR default OR insolvency OR NCLT OR penalty OR chargesheet OR money laundering)"
+        )
+        # Must include primary company mention to reduce noisy unrelated entity hits.
+        full_query = f'"{company}" ({related_or}) {negative_terms}'
         headers = {
             'X-API-KEY': settings.SERPER_API_KEY,
             'Content-Type': 'application/json'
         }
-        
+
         try:
             with httpx.Client(timeout=30.0) as client:
                 results = []
                 seen_urls = set()
-                for full_query in query_variants:
-                    payload = json.dumps({
-                        "q": full_query,
-                        "tbm": "nws",
-                        "num": 20,
-                        "tbs": "qdr:w"  # Last 7 days
+                payload = {
+                    "q": full_query[:1700],
+                    "num": 10,
+                    "gl": "in",
+                    "hl": "en",
+                    "tbs": "qdr:w",
+                }
+                response = client.post(url, headers=headers, json=payload)
+                if response.status_code == 400:
+                    payload.pop("tbs", None)
+                    response = client.post(url, headers=headers, json=payload)
+                response.raise_for_status()
+                data = response.json()
+
+                for news in data.get("news", []):
+                    txt = f"{news.get('title', '')} {news.get('snippet', '')}"
+                    # Strict post-filter: mention monitored company OR cleaned related entity.
+                    if not any(self._term_in_text(txt, t) for t in related_terms):
+                        continue
+                    url_value = (news.get("link", "") or "").strip().lower()
+                    if not url_value or url_value in seen_urls:
+                        continue
+                    seen_urls.add(url_value)
+                    results.append({
+                        "title": news.get("title", ""),
+                        "url": news.get("link", ""),
+                        "description": news.get("snippet", ""),
+                        "source": news.get("source", ""),
+                        "publishedDate": news.get("date", ""),
+                        "sourceType": "serper",
+                        "queriedAt": datetime.now(timezone.utc).isoformat()
                     })
-                    response = client.post(url, headers=headers, data=payload)
-                    response.raise_for_status()
-                    data = response.json()
-
-                    # Primary: news results
-                    for news in data.get("news", []):
-                        url_value = (news.get("link", "") or "").strip().lower()
-                        if url_value and url_value in seen_urls:
-                            continue
-                        if url_value:
-                            seen_urls.add(url_value)
-                        results.append({
-                            "title": news.get("title", ""),
-                            "url": news.get("link", ""),
-                            "description": news.get("snippet", ""),
-                            "source": news.get("source", ""),
-                            "publishedDate": news.get("date", ""),
-                            "sourceType": "serper",
-                            "queriedAt": datetime.now(timezone.utc).isoformat()
-                        })
-
-                    # Fallback: if news section is empty, use top organic snippets
-                    if not data.get("news"):
-                        for item in data.get("organic", [])[:8]:
-                            url_value = (item.get("link", "") or "").strip().lower()
-                            if not url_value or url_value in seen_urls:
-                                continue
-                            seen_urls.add(url_value)
-                            results.append({
-                                "title": item.get("title", ""),
-                                "url": item.get("link", ""),
-                                "description": item.get("snippet", ""),
-                                "source": "serper-organic",
-                                "publishedDate": "",
-                                "sourceType": "serper",
-                                "queriedAt": datetime.now(timezone.utc).isoformat()
-                            })
                 return results
         except Exception as e:
             logger.error(f"Serper Search Error query='{query}': {e}")
@@ -140,7 +185,7 @@ class NewsMonitorCrawler:
 
 
     def analyze_findings_with_gpt(self, articles: List[Dict[str, Any]], company_list: List[str]) -> List[Dict[str, Any]]:
-        """Use GPT-4o-mini to filter for negative/adverse articles with high speed/low quota usage."""
+        """Use GPT to keep only adverse rows explicitly linked to monitored company/entities."""
         if not articles or not settings.OPENAI_API_KEY:
             return []
             
@@ -150,25 +195,25 @@ class NewsMonitorCrawler:
         for i in range(0, len(articles), batch_size):
             batch = articles[i:i+batch_size]
             
+            slim_articles = json.dumps(
+                [{"title": a.get("title", ""), "description": a.get("description", ""), "url": a.get("url", ""), "source": a.get("source", "")} for a in batch],
+                ensure_ascii=False,
+            )
             prompt = f"""
-            Identify strictly NEGATIVE or ADVERSE news findings for these companies: {", ".join(company_list)}
-            
-            Negative news categories: Regulatory (SEBI/RBI), Legal (Court/Firms), Financial (Defaults/Fraud), Governance (Insiders).
-            IGNORE expansion, general news, or stock price updates.
-            
-            Articles to analyze:
-            {json.dumps([{ "title": a['title'], "description": a['description'], "url": a['url'], "source": a['source'] } for a in batch])}
-            
-            RESPONSE: Return a JSON object with a key "findings" containing a list of objects ONLY for negative articles.
-            Format for each item in "findings":
-            {{
-                "url": "original_url",
-                "sentiment": "negative",
-                "riskLevel": "CRITICAL|HIGH|MEDIUM",
-                "findings": "Brief adverse summary explaining why it is flagged",
-                "category": "regulatory|legal|financial|governance"
-            }}
-            If no negative news, findings should be [].
+            You are a financial-risk validator.
+            Keep ONLY rows that are BOTH:
+            1) clearly adverse/negative, and
+            2) clearly linked to one of these monitored companies: {", ".join(company_list)}.
+
+            Reject generic market/regulatory news if the monitored company/entity is not explicitly in headline/snippet.
+            Use CRITICAL only for severe, direct allegations/actions (fraud, arrests, ED/CBI raid, chargesheet, major enforcement).
+            Use HIGH/MEDIUM for less severe developments.
+
+            Articles:
+            {slim_articles}
+
+            Return strict JSON:
+            {{"findings":[{{"url":"original_url","sentiment":"negative","riskLevel":"CRITICAL|HIGH|MEDIUM","findings":"one-line reason","category":"regulatory|legal|financial|governance"}}]}}
             """
             
             try:
@@ -190,9 +235,12 @@ class NewsMonitorCrawler:
                     
                     data = json.loads(result_data)
                     findings = data.get("findings", [])
-                    
-                    url_map = {a["url"]: a for a in batch}
+                    if not isinstance(findings, list):
+                        findings = []
+                    url_map = {a.get("url", ""): a for a in batch if a.get("url")}
                     for f in findings:
+                        if not isinstance(f, dict):
+                            continue
                         if f.get("url") in url_map:
                             # Verify company is actually mentioned in this finding if possible
                             item = url_map[f["url"]].copy()
@@ -210,27 +258,32 @@ class NewsMonitorCrawler:
 
         related_terms = [company]
         if entities:
-            related_terms.extend(entities.get("promoters", []))
-            related_terms.extend(entities.get("kmp", []))
-            related_terms.extend(entities.get("directors", []))
-            related_terms.extend(entities.get("group_companies", []))
+            clean_entities = self._clean_entities(company, entities)
+            related_terms.extend(clean_entities.get("promoters", []))
+            related_terms.extend(clean_entities.get("kmp", []))
+            related_terms.extend(clean_entities.get("directors", []))
+            related_terms.extend(clean_entities.get("group_companies", []))
 
         def has_related_entity(text: str) -> bool:
-            lowered = text.lower()
-            return any((term or "").strip().lower() in lowered for term in related_terms if term)
+            return any(self._term_in_text(text, term) for term in related_terms if term)
+
+        keyword_patterns = {
+            kw: re.compile(rf"\b{re.escape(kw)}\b", re.IGNORECASE) for kw in self.NEGATIVE_KEYWORDS
+        }
 
         filtered = []
         for article in articles:
-            text = f"{article.get('title', '')} {article.get('description', '')}".lower()
-            matched_keywords = [kw for kw in self.NEGATIVE_KEYWORDS if kw.lower() in text]
+            text = f"{article.get('title', '')} {article.get('description', '')}"
+            matched_keywords = [kw for kw, pat in keyword_patterns.items() if pat.search(text)]
             if matched_keywords and has_related_entity(text):
                 risk = "HIGH"
-                if any(k in text for k in ["arrest", "charge sheet", "ed", "cbi", "sfio", "money laundering", "fraud"]):
+                text_l = text.lower()
+                if any(k in text_l for k in ["arrest", "chargesheet", "charge sheet", "cbi", "sfio", "money laundering", "fraud", "ed "]):
                     risk = "CRITICAL"
                 category = "legal"
-                if any(k in text for k in ["sebi", "show cause", "penalty", "rbi"]):
+                if any(k in text_l for k in ["sebi", "show cause", "penalty", "rbi"]):
                     category = "regulatory"
-                if any(k in text for k in ["default", "insolvency", "bankruptcy"]):
+                if any(k in text_l for k in ["default", "insolvency", "bankruptcy"]):
                     category = "financial"
                 item = article.copy()
                 item.update({
@@ -391,25 +444,19 @@ class NewsMonitorCrawler:
         filtered = []
         seen_urls = set()
 
-        def _matches_term(text: str, term: str) -> bool:
-            if not term:
-                return False
-            if term.isalnum():
-                return re.search(rf'\b{re.escape(term)}\b', text, re.IGNORECASE) is not None
-            return term.lower() in text
-
         for article in articles:
             text_to_search = f"{article.get('title', '')} {article.get('description', '')}"
             url_key = (article.get("url") or "").strip().lower()
 
             for company, entities in company_entities.items():
+                clean_entities = self._clean_entities(company, entities)
                 related_terms = [company]
-                related_terms.extend(entities.get("promoters", []))
-                related_terms.extend(entities.get("kmp", []))
-                related_terms.extend(entities.get("directors", []))
-                related_terms.extend(entities.get("group_companies", []))
+                related_terms.extend(clean_entities.get("promoters", []))
+                related_terms.extend(clean_entities.get("kmp", []))
+                related_terms.extend(clean_entities.get("directors", []))
+                related_terms.extend(clean_entities.get("group_companies", []))
 
-                if any(_matches_term(text_to_search, term) for term in related_terms):
+                if any(self._term_in_text(text_to_search, term) for term in related_terms):
                     article_copy = article.copy()
                     article_copy["company"] = company
                     if not url_key or url_key not in seen_urls:
@@ -420,6 +467,142 @@ class NewsMonitorCrawler:
 
         logger.info(f"RSS Filter: {len(articles)} total -> {len(filtered)} matching companies")
         return filtered
+
+    def final_validate_combined_findings(self, findings: List[Dict[str, Any]], monitored_companies: List[str]) -> List[Dict[str, Any]]:
+        """Final agent pass on RSS+Serper outputs to remove wrong-company/noise rows."""
+        if not findings:
+            return []
+        if not settings.OPENAI_API_KEY:
+            return findings
+
+        by_url: Dict[str, Dict[str, Any]] = {}
+        for f in findings:
+            u = (f.get("url") or "").strip()
+            if u and u not in by_url:
+                by_url[u] = f
+        slim = [
+            {
+                "url": x.get("url", ""),
+                "company": x.get("company", ""),
+                "title": x.get("title", ""),
+                "description": x.get("description", ""),
+                "source": x.get("source", ""),
+                "sourceType": x.get("sourceType", ""),
+            }
+            for x in by_url.values()
+            if x.get("url")
+        ]
+        if not slim:
+            return findings
+
+        prompt = f"""
+        Validate adverse findings for monitored companies: {", ".join(monitored_companies)}.
+        Keep only entries that are BOTH negative/adverse and clearly linked to one monitored company.
+        Drop ambiguous or unrelated entries.
+        Output strict JSON:
+        {{"findings":[{{"url":"exact-url","company":"one monitored company","riskLevel":"CRITICAL|HIGH|MEDIUM","category":"regulatory|legal|financial|governance","findings":"one-line reason"}}]}}
+        Items:
+        {json.dumps(slim, ensure_ascii=False)}
+        """
+        try:
+            with httpx.Client(timeout=90.0) as client:
+                resp = client.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {settings.OPENAI_API_KEY}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": settings.GPT_MODEL,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "response_format": {"type": "json_object"},
+                    },
+                )
+                resp.raise_for_status()
+                data = json.loads(resp.json()["choices"][0]["message"]["content"])
+            rows = data.get("findings", [])
+            if not isinstance(rows, list):
+                return findings
+            out: List[Dict[str, Any]] = []
+            for r in rows:
+                if not isinstance(r, dict):
+                    continue
+                u = (r.get("url") or "").strip()
+                c = r.get("company", "")
+                if not u or u not in by_url:
+                    continue
+                if c not in monitored_companies:
+                    continue
+                item = dict(by_url[u])
+                item["company"] = c
+                if r.get("riskLevel"):
+                    item["riskLevel"] = r["riskLevel"]
+                if r.get("category"):
+                    item["category"] = r["category"]
+                if r.get("findings"):
+                    item["findings"] = r["findings"]
+                out.append(item)
+            return out
+        except Exception as e:
+            logger.error("Final validation pass failed: %s", e)
+            return findings
+
+    def merge_to_company_cards(self, findings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """One final row per company with deduped source citations."""
+        if not findings:
+            return []
+        buckets: Dict[str, List[Dict[str, Any]]] = {}
+        for f in findings:
+            c = self._sanitize_term(f.get("company") or "Unknown")
+            if not c:
+                continue
+            buckets.setdefault(c, []).append(f)
+
+        risk_rank = {"LOW": 1, "MEDIUM": 2, "HIGH": 3, "CRITICAL": 4}
+        cards: List[Dict[str, Any]] = []
+        for company, group in buckets.items():
+            # Prefer newest/most-informative row as base
+            group.sort(key=lambda x: str(x.get("publishedDate", "")), reverse=True)
+            base = dict(group[0])
+            base["company"] = company
+            base["sentiment"] = "negative"
+            seen = set()
+            cites = []
+            for g in group:
+                u = (g.get("url") or "").strip()
+                if u and u not in seen:
+                    seen.add(u)
+                    cites.append({
+                        "url": u,
+                        "title": g.get("title", "") or "",
+                        "source": str(g.get("source", "")),
+                    })
+                for c in g.get("citations", []) or []:
+                    if isinstance(c, dict):
+                        cu = (c.get("url") or "").strip()
+                        if cu and cu not in seen:
+                            seen.add(cu)
+                            cites.append({
+                                "url": cu,
+                                "title": c.get("title", "") or "",
+                                "source": str(c.get("source", "")),
+                            })
+            base["citations"] = cites
+            if cites:
+                base["url"] = cites[0]["url"]
+
+            # Keep strongest risk and compact findings text.
+            strongest = base.get("riskLevel", "HIGH")
+            for g in group:
+                r = g.get("riskLevel", "HIGH")
+                if risk_rank.get(r, 1) > risk_rank.get(strongest, 1):
+                    strongest = r
+            base["riskLevel"] = strongest
+            merged_findings = [str(g.get("findings", "")).strip() for g in group if g.get("findings")]
+            if merged_findings:
+                base["findings"] = " | ".join(dict.fromkeys(merged_findings))[:3000]
+            cards.append(base)
+        return cards
 
 
     def merge_articles(self, articles: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -638,14 +821,16 @@ class NewsMonitorCrawler:
             return {"success": False, "error": f"Domain {domain_id} not found."}
             
         raw_companies = domain.get("monitored_companies", [])
-        monitored_companies = []
+        monitored_companies: List[str] = []
         for item in raw_companies:
             # Replace various separators with a uniform one (comma)
-            text = item.replace("\r\n", "\n").replace("\r", "\n")
+            text = str(item).replace("\r\n", "\n").replace("\r", "\n")
             # Split by newline or comma
             import re
             parts = re.split(r'[\n,]', text)
-            monitored_companies.extend([p.strip() for p in parts if p.strip()])
+            monitored_companies.extend([self._sanitize_term(p) for p in parts if self._sanitize_term(p)])
+        # Deduplicate while preserving order
+        monitored_companies = list(dict.fromkeys(monitored_companies))
                 
         workspace_id = domain.get("workspaceId") or "ws_1758689602670_z3pxonjqn"
         
@@ -718,9 +903,10 @@ class NewsMonitorCrawler:
             all_news.extend(search_findings)
             logger.info(f"Step 2 Complete: Found {len(search_findings)} web search findings.")
 
-        # Final Step: Merge and Save
+        # Final Step: Agent validates combined outputs (RSS + Serper), then collapse to one company card.
         if all_news:
-            merged_news = self.merge_articles(all_news)
+            validated = self.final_validate_combined_findings(all_news, monitored_companies)
+            merged_news = self.merge_to_company_cards(validated)
             for art in merged_news:
                 art["domainId"] = domain_id
                 art["crawledAt"] = datetime.now(timezone.utc)
