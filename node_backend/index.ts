@@ -41,32 +41,68 @@ import { staleJobReaperService } from "./services/staleJobReaperService";
 
 dotenv.config();
 
+const REQUIRED_RUNTIME_ENV_VARS = [
+  "MONGODB_URI",
+  "JWT_SECRET",
+  "JWT_REFRESH_SECRET",
+  "INTERNAL_SECRET",
+  "PYTHON_API_URL",
+];
+
 // ============================================================================
 // AZURE KEY VAULT AUTO-LOADER
 // ============================================================================
+function shouldLoadKeyVaultSecrets(): boolean {
+  if (process.env.USE_KEYVAULT === "true") {
+    return true;
+  }
+
+  if (process.env.NODE_ENV !== "production") {
+    return false;
+  }
+
+  const missingCriticalEnvVars = REQUIRED_RUNTIME_ENV_VARS.filter(
+    (name) => !String(process.env[name] || "").trim()
+  );
+
+  if (missingCriticalEnvVars.length === 0) {
+    console.log(
+      "🔐 Skipping Key Vault sync because required runtime env vars are already set"
+    );
+    return false;
+  }
+
+  console.warn(
+    `🔐 Attempting Key Vault sync because required env vars are missing: ${missingCriticalEnvVars.join(", ")}`
+  );
+  return true;
+}
+
 async function loadKeyVaultSecrets() {
   const vaultUri = "https://fdi-keyvault.vault.azure.net/";
-  if (process.env.NODE_ENV === 'production' || process.env.USE_KEYVAULT === 'true') {
-    try {
-      const { DefaultAzureCredential } = await import("@azure/identity");
-      const { SecretClient } = await import("@azure/keyvault-secrets");
-      
-      console.log(`🔐 Connecting to Key Vault: ${vaultUri}`);
-      const credential = new DefaultAzureCredential();
-      const client = new SecretClient(vaultUri, credential);
+  if (!shouldLoadKeyVaultSecrets()) {
+    return;
+  }
 
-      let count = 0;
-      for await (const secretProperties of client.listPropertiesOfSecrets()) {
-        if (secretProperties.enabled) {
-          const secret = await client.getSecret(secretProperties.name);
-          process.env[secret.name] = secret.value;
-          count++;
-        }
+  try {
+    const { DefaultAzureCredential } = await import("@azure/identity");
+    const { SecretClient } = await import("@azure/keyvault-secrets");
+
+    console.log(`🔐 Connecting to Key Vault: ${vaultUri}`);
+    const credential = new DefaultAzureCredential();
+    const client = new SecretClient(vaultUri, credential);
+
+    let count = 0;
+    for await (const secretProperties of client.listPropertiesOfSecrets()) {
+      if (secretProperties.enabled) {
+        const secret = await client.getSecret(secretProperties.name);
+        process.env[secret.name] = secret.value;
+        count++;
       }
-      console.log(`✅ Loaded ${count} secrets from Key Vault`);
-    } catch (error: any) {
-      console.error("❌ Failed to load secrets from Key Vault:", error.message);
     }
+    console.log(`✅ Loaded ${count} secrets from Key Vault`);
+  } catch (error: any) {
+    console.error("❌ Failed to load secrets from Key Vault:", error.message);
   }
 }
 
@@ -94,6 +130,7 @@ const io = new SocketIOServer(server, {
 
       const allowedOrigins = [
         "https://financial-document-intelligence.vercel.app",
+        "https://financial-document-intelligence-2s7.vercel.app",
         "http://localhost:8080",
         "http://localhost:3000",
       ];

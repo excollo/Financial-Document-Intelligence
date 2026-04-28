@@ -76,11 +76,13 @@ export class HealthService {
     };
 
     private static isHealthAlertsEnabled(): boolean {
-        const env = (process.env.NODE_ENV || "development").toLowerCase();
-        if (env === "production") {
-            return true;
+        const explicitSetting = process.env.HEALTH_ALERTS_ENABLED;
+        if (typeof explicitSetting === "string" && explicitSetting.trim() !== "") {
+            return explicitSetting.toLowerCase() === "true";
         }
-        return process.env.HEALTH_ALERTS_ENABLED === "true";
+
+        const env = (process.env.NODE_ENV || "development").toLowerCase();
+        return env === "production";
     }
 
     static async checkMongoDB(): Promise<ServiceStatus> {
