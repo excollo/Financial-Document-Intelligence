@@ -408,6 +408,12 @@ app.get("/health", (req, res) => {
   res.status(200).json({ status: "ok" });
 });
 
+// App Service startup probes often hit "/" by default.
+// Keep this route fast and dependency-free so warmup succeeds.
+app.get("/", (_req, res) => {
+  res.status(200).json({ status: "ok", service: "node-backend" });
+});
+
 // Global error handlers to prevent server crashes
 process.on('uncaughtException', (error) => {
   console.error('Uncaught Exception:', error);
