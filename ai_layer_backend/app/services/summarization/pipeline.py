@@ -1780,11 +1780,24 @@ class SummaryPipeline:
                         or ""
                     )
                 promoters_context = section4_5_md[:6000] if section4_5_md else ""
-                research_res = await research_service.research_company(
-                    company_name,
-                    promoters=promoters_context,
-                    directory_name=directory_name,
-                )
+                try:
+                    research_res = await research_service.research_company(
+                        company_name,
+                        promoters=promoters_context,
+                        directory_name=directory_name,
+                    )
+                except TypeError as e:
+                    # Backward compatibility for older worker code where
+                    # research_company() does not yet accept directory_name.
+                    if "unexpected keyword argument 'directory_name'" not in str(e):
+                        raise
+                    logger.warning(
+                        "research_company does not accept directory_name, retrying without it"
+                    )
+                    research_res = await research_service.research_company(
+                        company_name,
+                        promoters=promoters_context,
+                    )
                 if research_res and "error" not in research_res:
                     adverse_md = self.md_converter.convert_research_json_to_markdown(research_res)
                     # Use MarkdownConverter utility or manual insertion to place before Section XII

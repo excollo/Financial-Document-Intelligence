@@ -267,12 +267,19 @@ def generate_summary(
         
         # Then update the status to trigger UI refresh
         pipeline_status = result.get("status", "error")
-        job_status = "completed" if pipeline_status == "success" else "failed"
+        pipeline_succeeded = pipeline_status == "success"
+        job_status = "completed" if pipeline_succeeded else "failed"
+        pipeline_error = None if pipeline_succeeded else {
+            "message": result.get("message", "Summary generation failed"),
+            "stack": None,
+            "timestamp": str(time.time()),
+        }
         
         backend_notifier.update_summary_status(
             job_id=job_id,
             status=job_status,
             namespace=namespace,
+            error=pipeline_error,
             output_urls={
                 "namespace": namespace,
                 "jobId": str(job_id),
@@ -285,7 +292,15 @@ def generate_summary(
         )
         
         execution_time = time.time() - start_time
-        metrics.emit("stage_duration_ms", int(execution_time * 1000), {"job_id": job_id, "stage_name": "summary", "status": "success"})
+        metrics.emit(
+            "stage_duration_ms",
+            int(execution_time * 1000),
+            {
+                "job_id": job_id,
+                "stage_name": "summary",
+                "status": "success" if pipeline_succeeded else "failed",
+            },
+        )
         metrics.emit("job_runtime_ms", int(execution_time * 1000), {"job_id": job_id, "task": "generate_summary"})
         
         # Extract usage metrics
@@ -294,21 +309,29 @@ def generate_summary(
         output_tokens = usage.get("output", 0)
         total_tokens = input_tokens + output_tokens
         
-        log_job_complete(
-            bound_logger, 
-            job_id, 
-            execution_time, 
-            total_tokens=total_tokens,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens
-        )
+        if pipeline_succeeded:
+            log_job_complete(
+                bound_logger,
+                job_id,
+                execution_time,
+                total_tokens=total_tokens,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+            )
+        else:
+            bound_logger.error(
+                "Job failed",
+                job_id=job_id,
+                execution_time=execution_time,
+                message=result.get("message", "Summary generation failed"),
+            )
         
         return {
             "job_id": job_id,
-            "status": "success",
+            "status": "success" if pipeline_succeeded else "failed",
             "namespace": namespace,
             "duration": execution_time,
-            "result": result
+            "result": result,
         }
     
     except Exception as e:
