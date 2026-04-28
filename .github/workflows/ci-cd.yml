@@ -122,14 +122,42 @@ jobs:
         run: |
           cd node_backend
           docker build --platform linux/amd64 -t ${{ env.ACR_NAME }}.azurecr.io/node-backend:${{ github.ref_name }} --target node-backend .
-          docker push ${{ env.ACR_NAME }}.azurecr.io/node-backend:${{ github.ref_name }}
+          IMAGE=${{ env.ACR_NAME }}.azurecr.io/node-backend:${{ github.ref_name }}
+          for attempt in 1 2 3; do
+            echo "Pushing ${IMAGE} (attempt ${attempt}/3)"
+            if docker push "${IMAGE}"; then
+              echo "Node backend image push succeeded"
+              break
+            fi
+            if [ "${attempt}" -eq 3 ]; then
+              echo "Node backend image push failed after 3 attempts"
+              exit 1
+            fi
+            echo "Push failed, refreshing ACR login and retrying..."
+            az acr login --name ${{ env.ACR_NAME }}
+            sleep 20
+          done
 
       # 📦 Build & Push AI Backend
       - name: Build AI Backend
         run: |
           cd ai_layer_backend
           docker build --platform linux/amd64 -t ${{ env.ACR_NAME }}.azurecr.io/ai-backend:${{ github.ref_name }} --target ai-backend .
-          docker push ${{ env.ACR_NAME }}.azurecr.io/ai-backend:${{ github.ref_name }}
+          IMAGE=${{ env.ACR_NAME }}.azurecr.io/ai-backend:${{ github.ref_name }}
+          for attempt in 1 2 3; do
+            echo "Pushing ${IMAGE} (attempt ${attempt}/3)"
+            if docker push "${IMAGE}"; then
+              echo "AI backend image push succeeded"
+              break
+            fi
+            if [ "${attempt}" -eq 3 ]; then
+              echo "AI backend image push failed after 3 attempts"
+              exit 1
+            fi
+            echo "Push failed, refreshing ACR login and retrying..."
+            az acr login --name ${{ env.ACR_NAME }}
+            sleep 20
+          done
 
   # -------------------------------------------------------------
   # 🚀 Deploy to Azure App Service
