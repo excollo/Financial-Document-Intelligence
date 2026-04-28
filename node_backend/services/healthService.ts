@@ -153,47 +153,75 @@ export class HealthService {
 
     static async checkAIPlatform(): Promise<ServiceStatus> {
         const start = Date.now();
-        const pythonUrl = process.env.PYTHON_API_URL || "http://localhost:8000";
+        const pythonUrl = process.env.PYTHON_API_URL || "";
         const INTERNAL_SECRET = process.env.INTERNAL_SECRET || "";
         const normalizedBase = pythonUrl.replace(/\/+$/, "").replace(/\/api$/i, "");
-        const localAltBase = normalizedBase.includes("localhost:8000")
-            ? normalizedBase.replace("localhost:8000", "localhost:8001")
-            : normalizedBase.includes("127.0.0.1:8000")
-                ? normalizedBase.replace("127.0.0.1:8000", "127.0.0.1:8001")
-                : null;
-        const candidateUrls = [
+        if (!normalizedBase) {
+            return {
+                status: "not_configured",
+                message: "PYTHON_API_URL is not configured",
+                error_code: "AI_PLATFORM_URL_MISSING",
+            };
+        }
+        const basicHealthUrls = Array.from(new Set([
+            `${normalizedBase}/health`,
+            `${pythonUrl.replace(/\/+$/, "")}/health`,
+            `${pythonUrl.replace(/\/+$/, "")}/api/health`,
+        ]));
+        const detailedHealthUrls = Array.from(new Set([
             `${normalizedBase}/health/detailed`,
             `${pythonUrl.replace(/\/+$/, "")}/health/detailed`,
             `${pythonUrl.replace(/\/+$/, "")}/api/health/detailed`,
-            ...(localAltBase ? [`${localAltBase}/health/detailed`] : []),
-            "http://localhost:8000/health/detailed",
-            "http://localhost:8001/health/detailed",
-            "http://127.0.0.1:8000/health/detailed",
-            "http://127.0.0.1:8001/health/detailed",
-        ];
-        const dedupedCandidateUrls = Array.from(new Set(candidateUrls));
+        ]));
 
         let lastError: any = null;
-        const attemptErrors: string[] = [];
+        const basicAttemptErrors: string[] = [];
+        const detailedAttemptErrors: string[] = [];
         try {
-            for (const url of dedupedCandidateUrls) {
+            // Production liveness should use the lightweight /health endpoint.
+            for (const url of basicHealthUrls) {
                 try {
                     const response = await axios.get(url, {
                         headers: {
                             "X-Internal-Secret": INTERNAL_SECRET
                         },
-                        timeout: 30000
+                        timeout: 8000
                     });
+                    const basicData = response.data;
+                    let detailedData: any = null;
+
+                    // Detailed diagnostics are best-effort only; don't fail health if they are slow.
+                    for (const detailedUrl of detailedHealthUrls) {
+                        try {
+                            const detailedResponse = await axios.get(detailedUrl, {
+                                headers: {
+                                    "X-Internal-Secret": INTERNAL_SECRET
+                                },
+                                timeout: 12000
+                            });
+                            detailedData = detailedResponse.data;
+                            break;
+                        } catch (detailError: any) {
+                            detailedAttemptErrors.push(`${detailedUrl} -> ${detailError?.message || "Unknown error"}`);
+                        }
+                    }
 
                     return {
                         status: "operational",
-                        message: "Successfully connected to AI Python Platform",
+                        message: detailedData
+                            ? "Successfully connected to AI Python Platform"
+                            : "AI Python Platform is reachable (detailed diagnostics unavailable or slow)",
                         latency: Date.now() - start,
-                        details: response.data,
+                        details: detailedData || {
+                            overall_status: "operational",
+                            basic_health: basicData,
+                            diagnostics_warning: "Detailed health endpoint timed out or was unavailable",
+                            attempts: detailedAttemptErrors,
+                        },
                     };
                 } catch (error: any) {
                     lastError = error;
-                    attemptErrors.push(`${url} -> ${error?.message || "Unknown error"}`);
+                    basicAttemptErrors.push(`${url} -> ${error?.message || "Unknown error"}`);
                 }
             }
 
@@ -201,7 +229,7 @@ export class HealthService {
                 status: "error",
                 message: `Failed to connect to AI Python Platform: ${lastError?.message || "Unknown error"}`,
                 error_code: "AI_PLATFORM_UNREACHABLE",
-                details: { attempts: attemptErrors },
+                details: { attempts: basicAttemptErrors },
             };
         } catch (error: any) {
             return {
