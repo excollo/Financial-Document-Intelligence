@@ -72,13 +72,9 @@ export const ViewReportModal: React.FC<ViewReportModalProps> = ({ reportId, open
       if (!reportId || !open) return;
       setLoading(true);
       try {
-        const all = await reportService.getAll();
-        const target = (all || []).find((r: any) => r.id === reportId);
-        if (target) {
-          setContent(target.content);
-        } else {
-          setContent("");
-        }
+        // `getAll()` is metadata-only (no `content`), so we must fetch by id for the full report.
+        const report = await reportService.getById(reportId);
+        setContent(report?.content || "");
       } catch {
         toast.error("Failed to load report content");
         setContent("");

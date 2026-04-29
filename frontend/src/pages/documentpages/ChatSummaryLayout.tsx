@@ -22,6 +22,7 @@ import { toast } from "sonner";
 import { Navbar } from "@/components/sharedcomponents/Navbar";
 import { DocumentPopover } from "@/components/chatcomponents/ChatPanel";
 import { RhpUploadModal } from "@/components/documentcomponents/RhpUploadModal";
+import { io as socketIOClient } from "socket.io-client";
 
 export default function ChatSummaryLayout() {
   const { namespace } = useParams();
@@ -114,42 +115,6 @@ export default function ChatSummaryLayout() {
 
             if (isActuallyProcessing) {
               setIsDocumentProcessing(true);
-
-              // Poll for status updates in the background
-              let pollAttempts = 0;
-              const maxPollAttempts = 120; // 10 minutes
-              const pollInterval = 5000; // 5 seconds
-
-              const pollForCompletion = async () => {
-                if (pollAttempts >= maxPollAttempts) {
-                  setIsDocumentProcessing(false);
-                  return;
-                }
-
-                try {
-                  const updatedDoc = await documentService.getById(namespace, linkToken || undefined);
-                  // Document is complete when backend marks status terminal.
-                  if (updatedDoc && updatedDoc.status !== "processing") {
-                    // Document processing completed
-                    setCurrentDocument(updatedDoc);
-                    setIsDocumentProcessing(false);
-                    if (updatedDoc.status === "completed" || updatedDoc.status === "ready") {
-                      toast.success("Document processing completed!");
-                    }
-                  } else {
-                    // Still processing, continue polling
-                    pollAttempts++;
-                    setTimeout(pollForCompletion, pollInterval);
-                  }
-                } catch (error) {
-                  // Stop polling on error
-                  console.error("Error polling document status:", error);
-                  setIsDocumentProcessing(false);
-                }
-              };
-
-              // Start polling after a delay
-              setTimeout(pollForCompletion, pollInterval);
             } else {
               // Not processing (either status is complete/ready, or summaries exist)
               setIsDocumentProcessing(false);
@@ -179,6 +144,37 @@ export default function ChatSummaryLayout() {
       isMounted = false;
     };
   }, [namespace, sessionData]);
+
+  useEffect(() => {
+    if (!currentDocument?.id) return;
+    const token = localStorage.getItem("accessToken");
+    const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+    const socketUrl = apiUrl.endsWith("/api") ? apiUrl.slice(0, -4) : apiUrl;
+    const socket = socketIOClient(socketUrl, {
+      transports: ["websocket"],
+      auth: token ? { token: `Bearer ${token}` } : undefined,
+    });
+
+    const handleUploadStatus = async (data: { jobId?: string; status?: string }) => {
+      if (String(data?.jobId || "") !== String(currentDocument.id)) return;
+      const status = String(data?.status || "").toLowerCase();
+      if (status !== "completed" && status !== "ready" && status !== "success") return;
+      try {
+        const refreshedDoc = await documentService.getById(currentDocument.id, linkToken || undefined);
+        setCurrentDocument(refreshedDoc);
+      } catch (error) {
+        console.error("Error refreshing document after socket completion:", error);
+      }
+      setIsDocumentProcessing(false);
+      toast.success("Document processing completed!");
+    };
+
+    socket.on("upload_status", handleUploadStatus);
+    return () => {
+      socket.off("upload_status", handleUploadStatus);
+      socket.disconnect();
+    };
+  }, [currentDocument?.id, linkToken]);
 
   const handleSelectDocument = (doc) => {
     if (doc) {

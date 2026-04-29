@@ -224,9 +224,6 @@ export const StartConversation: React.FC = () => {
   const socketRef = useRef<Socket | null>(null);
   const isSocketConnectedRef = useRef(false);
   const pendingUploadIdsRef = useRef<Set<string>>(new Set());
-  const uploadPollAttemptsRef = useRef<Map<string, number>>(new Map());
-  const uploadPollDelayRef = useRef<Map<string, number>>(new Map());
-  const uploadPollTimerRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   // ============================================================================
   // HOOKS AND EFFECTS
@@ -241,19 +238,8 @@ export const StartConversation: React.FC = () => {
     "A file is currently uploading. Please wait."
   );
 
-  const clearUploadPollTimer = (documentId: string) => {
-    const timer = uploadPollTimerRef.current.get(documentId);
-    if (timer) {
-      clearTimeout(timer);
-      uploadPollTimerRef.current.delete(documentId);
-    }
-  };
-
   const clearUploadTracking = (documentId: string) => {
     pendingUploadIdsRef.current.delete(documentId);
-    uploadPollAttemptsRef.current.delete(documentId);
-    uploadPollDelayRef.current.delete(documentId);
-    clearUploadPollTimer(documentId);
   };
 
   const finalizeUploadStatusFromDoc = async (doc: any, fallbackName?: string) => {
@@ -296,49 +282,6 @@ export const StartConversation: React.FC = () => {
 
     setIsUploading(false);
     clearUploadTracking(documentId);
-  };
-
-  const scheduleUploadFallbackPolling = (documentId: string, initialDelayMs = 20000) => {
-    if (!pendingUploadIdsRef.current.has(documentId)) return;
-    clearUploadPollTimer(documentId);
-    if (!uploadPollAttemptsRef.current.has(documentId)) {
-      uploadPollAttemptsRef.current.set(documentId, 0);
-    }
-    if (!uploadPollDelayRef.current.has(documentId)) {
-      uploadPollDelayRef.current.set(documentId, 5000);
-    }
-
-    const timer = setTimeout(async () => {
-      if (!pendingUploadIdsRef.current.has(documentId)) return;
-
-      try {
-        const doc = await documentService.getById(documentId);
-        const status = String(doc?.status || "").toLowerCase();
-        if (status === "completed" || status === "ready" || status === "success" || status === "failed" || status === "error") {
-          await finalizeUploadStatusFromDoc(doc);
-          return;
-        }
-      } catch (error) {
-        console.error("Fallback status poll failed:", error);
-      }
-
-      const attempts = (uploadPollAttemptsRef.current.get(documentId) || 0) + 1;
-      uploadPollAttemptsRef.current.set(documentId, attempts);
-      if (attempts >= 20) {
-        toast.dismiss(`upload-processing-${documentId}`);
-        toast.warning("Document is still processing. You can refresh later to check latest status.");
-        clearUploadTracking(documentId);
-        setIsUploading(false);
-        return;
-      }
-
-      const currentDelay = uploadPollDelayRef.current.get(documentId) || 5000;
-      const nextDelay = Math.min(currentDelay * 2, 30000);
-      uploadPollDelayRef.current.set(documentId, nextDelay);
-      scheduleUploadFallbackPolling(documentId, currentDelay);
-    }, initialDelayMs);
-
-    uploadPollTimerRef.current.set(documentId, timer);
   };
 
   /**
@@ -548,16 +491,10 @@ export const StartConversation: React.FC = () => {
 
     socket.on("disconnect", () => {
       isSocketConnectedRef.current = false;
-      for (const documentId of pendingUploadIdsRef.current) {
-        scheduleUploadFallbackPolling(documentId, 1000);
-      }
     });
 
     socket.on("connect_error", () => {
       isSocketConnectedRef.current = false;
-      for (const documentId of pendingUploadIdsRef.current) {
-        scheduleUploadFallbackPolling(documentId, 1000);
-      }
     });
 
     socket.on("upload_status", handleUploadStatus);
@@ -571,9 +508,6 @@ export const StartConversation: React.FC = () => {
       socket.disconnect();
       socketRef.current = null;
       isSocketConnectedRef.current = false;
-      for (const documentId of Array.from(uploadPollTimerRef.current.keys())) {
-        clearUploadPollTimer(documentId);
-      }
     };
   }, [currentFolder?.id]);
 
@@ -1836,13 +1770,9 @@ export const StartConversation: React.FC = () => {
         { id: `upload-processing-${uploadedDocument.id}`, duration: Infinity }
       );
 
-      // Socket-first tracking: poll only as fallback if no terminal socket event arrives.
+      // Socket-based tracking: finalize from upload_status terminal events.
       const documentId = String(uploadedDocument.id);
       pendingUploadIdsRef.current.add(documentId);
-      uploadPollAttemptsRef.current.set(documentId, 0);
-      uploadPollDelayRef.current.set(documentId, 5000);
-      const fallbackStartDelay = isSocketConnectedRef.current ? 20000 : 1000;
-      scheduleUploadFallbackPolling(documentId, fallbackStartDelay);
     } catch (error) {
       console.error("Upload error:", error);
       toast.error(

@@ -34,7 +34,6 @@ const buildDocxFileName = (
 
   return `${normalized || fallback}.docx`;
 };
-const SUMMARY_FOCUS_CHECK_COOLDOWN_MS = 15000;
 
 
 
@@ -145,70 +144,16 @@ export function SummaryPanel({
   const shownErrorToastsRef = useRef<Set<string>>(new Set());
   // Add a ref for the summary content
   const summaryRef = useRef<HTMLDivElement | null>(null);
-  const summaryPollTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const summaryPollAttemptsRef = useRef(0);
-  const lastSummaryFocusCheckAtRef = useRef(0);
 
   useEffect(() => {
     onProcessingChange(isSummarizing);
   }, [isSummarizing, onProcessingChange]);
-
-  const clearSummaryFallbackPolling = () => {
-    if (summaryPollTimerRef.current) {
-      clearTimeout(summaryPollTimerRef.current);
-      summaryPollTimerRef.current = null;
-    }
-    summaryPollAttemptsRef.current = 0;
-  };
 
   const loadSummariesForCurrentDocument = async () => {
     if (!currentDocument?.id) return [];
     const summaries = await summaryService.getByDocumentId(currentDocument.id, linkToken);
     setAllSummaries(summaries);
     return summaries;
-  };
-
-  const scheduleSummaryFallbackPolling = (initialDelayMs = 15000) => {
-    if (!currentDocument?.id || !isSummarizing) return;
-    if (summaryPollTimerRef.current) return;
-
-    const maxAttempts = 10;
-    const runPoll = async () => {
-      summaryPollTimerRef.current = null;
-      if (!currentDocument?.id || !isSummarizing) return;
-      try {
-        const summaries = await loadSummariesForCurrentDocument();
-        const key = `summary_processing_${currentDocument.id}`;
-        const jobStartedAt = Number(localStorage.getItem(key));
-        const hasFreshSummary =
-          Boolean(jobStartedAt) &&
-          summaries.some(
-            (item) => new Date(item.updatedAt || 0).getTime() > jobStartedAt
-          );
-        if (hasFreshSummary) {
-          clearSummaryFallbackPolling();
-          setIsSummarizing(false);
-          localStorage.removeItem(key);
-          return;
-        }
-      } catch (pollError) {
-        console.error("Summary fallback poll failed:", pollError);
-      }
-
-      summaryPollAttemptsRef.current += 1;
-      if (summaryPollAttemptsRef.current >= maxAttempts) {
-        clearSummaryFallbackPolling();
-        return;
-      }
-
-      const nextDelay = Math.min(
-        15000 * Math.pow(2, summaryPollAttemptsRef.current),
-        60000
-      );
-      summaryPollTimerRef.current = setTimeout(runPoll, nextDelay);
-    };
-
-    summaryPollTimerRef.current = setTimeout(runPoll, initialDelayMs);
   };
 
   useEffect(() => {
@@ -289,48 +234,6 @@ export function SummaryPanel({
   }, [selectedSummaryId, allSummaries, onSummarySelect]);
 
   useEffect(() => {
-    // On mount and on window focus, check if summary is ready
-    const checkSummaryReady = async () => {
-      if (!currentDocument?.id) return;
-      const now = Date.now();
-      if (now - lastSummaryFocusCheckAtRef.current < SUMMARY_FOCUS_CHECK_COOLDOWN_MS) return;
-      lastSummaryFocusCheckAtRef.current = now;
-      const key = `summary_processing_${currentDocument.id}`;
-      const jobStartedAt = Number(localStorage.getItem(key));
-
-      if (jobStartedAt) {
-        // Fetch summaries
-        const summaries = await summaryService.getByDocumentId(
-          currentDocument.id,
-          linkToken
-        );
-        if (summaries && summaries.length > 0) {
-          // Check if any summary was created after the job started
-          const newSummary = summaries.find(
-            (summary) => new Date(summary.updatedAt).getTime() > jobStartedAt
-          );
-
-          if (newSummary) {
-            setAllSummaries(summaries);
-            setIsSummarizing(false);
-            localStorage.removeItem(key);
-            // Set ready flag for global notification
-            localStorage.setItem(`summary_ready_${currentDocument.id}`, "1");
-            toast.success("Summary is ready!");
-            // Auto-select the new summary
-            onSummarySelect(newSummary.id);
-          }
-        }
-      }
-    };
-    checkSummaryReady();
-    // Listen for window focus
-    const onFocus = () => checkSummaryReady();
-    window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
-  }, [currentDocument?.id, onSummarySelect, linkToken]);
-
-  useEffect(() => {
     // On mount, check if summary processing is ongoing for this document
     if (!currentDocument?.id) return;
     const key = `summary_processing_${currentDocument.id}`;
@@ -389,12 +292,10 @@ export function SummaryPanel({
 
     socket.on("connect_error", (error) => {
       console.error("Socket connection error:", error);
-      if (isSummarizing) scheduleSummaryFallbackPolling(2000);
     });
 
     socket.on("disconnect", (reason) => {
       console.log("Socket disconnected:", reason);
-      if (isSummarizing) scheduleSummaryFallbackPolling(2000);
     });
 
     socket.on("summary_status", (data) => {
@@ -437,7 +338,6 @@ export function SummaryPanel({
       }
 
       if (cleanStatus === "success" || cleanStatus === "completed") {
-        clearSummaryFallbackPolling();
         // Refetch summaries for the current document
         if (currentDocument?.id) {
           loadSummariesForCurrentDocument()
@@ -458,7 +358,6 @@ export function SummaryPanel({
           localStorage.removeItem(`summary_processing_${currentDocument.id}`);
       } else if (cleanStatus === "failed" || cleanStatus === "error" || hasError) {
         // Handle error status or any status with an error field
-        clearSummaryFallbackPolling();
         setIsSummarizing(false);
         setLastSummaryId(null);
         if (currentDocument?.id)
@@ -502,10 +401,8 @@ export function SummaryPanel({
             localStorage.setItem(key, Date.now().toString());
           }
         }
-        scheduleSummaryFallbackPolling(20000);
       } else {
         // For any other status, stop processing
-        clearSummaryFallbackPolling();
         setIsSummarizing(false);
         if (currentDocument?.id)
           localStorage.removeItem(`summary_processing_${currentDocument.id}`);
@@ -516,10 +413,9 @@ export function SummaryPanel({
       console.log("Cleaning up socket connection");
       socket.off("summary_status");
       socket.disconnect();
-      clearSummaryFallbackPolling();
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
-  }, [currentDocument?.id, onSummarySelect, isSummarizing, linkToken]);
+  }, [currentDocument?.id, onSummarySelect, linkToken]);
 
   // Start the timeout when a new summary is requested
   const handleNewSummary = async () => {
@@ -552,7 +448,6 @@ export function SummaryPanel({
       // Start 10-minute timeout
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       timeoutRef.current = setTimeout(() => {
-        clearSummaryFallbackPolling();
         setIsSummarizing(false);
         toast.error(
           "Summary generation timed out after 30 minutes. Please try again."
@@ -571,7 +466,6 @@ export function SummaryPanel({
         currentDocument.rhpNamespace // Pass rhpNamespace for RHP documents
       );
       if (triggerResult?.error) {
-        clearSummaryFallbackPolling();
         setIsSummarizing(false);
         localStorage.removeItem(`summary_processing_${currentDocument.id}`);
         const overload =
@@ -584,9 +478,7 @@ export function SummaryPanel({
         );
         return;
       }
-      scheduleSummaryFallbackPolling(20000);
     } catch (error) {
-      clearSummaryFallbackPolling();
       toast.error("Failed to create new summary");
       setIsSummarizing(false);
       localStorage.removeItem(`summary_processing_${currentDocument.id}`);
@@ -702,17 +594,6 @@ export function SummaryPanel({
       }
     }
   };
-
-  useEffect(() => {
-    if (isSummarizing) {
-      scheduleSummaryFallbackPolling(15000);
-    } else {
-      clearSummaryFallbackPolling();
-    }
-    return () => {
-      clearSummaryFallbackPolling();
-    };
-  }, [isSummarizing, currentDocument?.id]);
 
   if (!isDocumentProcessed) {
     return null;

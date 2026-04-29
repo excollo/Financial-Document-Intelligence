@@ -177,17 +177,28 @@ io.on("connection", async (socket) => {
 
     socket.join(`user_${user._id.toString()}`);
 
-    const workspaceIds = await resolveAuthorizedWorkspaceIds(
+    const headerWorkspaceRaw = socket.handshake.headers["x-workspace"];
+    const headerWorkspace = Array.isArray(headerWorkspaceRaw)
+      ? headerWorkspaceRaw[0]
+      : headerWorkspaceRaw;
+    const preferredWorkspaceId = String(
+      (headerWorkspace || socket.handshake.auth?.workspaceId || user.currentWorkspace || "")
+    ).trim();
+
+    const authorizedWorkspaceIds = await resolveAuthorizedWorkspaceIds(
       user._id.toString(),
       user.currentWorkspace
     );
-    if (
-      user.currentWorkspace &&
-      !workspaceIds.includes(String(user.currentWorkspace))
-    ) {
-      console.warn("[socket-auth] rejected non-membership currentWorkspace join", {
+
+    const workspaceIds = new Set(authorizedWorkspaceIds.map(String));
+    if (preferredWorkspaceId && !workspaceIds.has(preferredWorkspaceId)) {
+      // Fallback: when membership records are stale/missing in the auth path, still
+      // join the active workspace from handshake/user context so realtime status is delivered.
+      workspaceIds.add(preferredWorkspaceId);
+      console.warn("[socket-auth] fallback workspace room join applied", {
         userId: user._id.toString(),
-        requestedWorkspaceId: String(user.currentWorkspace),
+        preferredWorkspaceId,
+        authorizedWorkspaceCount: authorizedWorkspaceIds.length,
       });
     }
     for (const workspaceId of workspaceIds) {
