@@ -1,0 +1,302 @@
+{"TimeStamp": "2026-04-28T12:53:47.40856", "Log": "Connecting to the container 'fdi-celery-worker-dev'..."}
+{"TimeStamp": "2026-04-28T12:53:47.43492", "Log": "Successfully Connected to container: 'fdi-celery-worker-dev' [Revision: 'fdi-celery-worker-dev--0000011', Replica: 'fdi-celery-worker-dev--0000011-6bc59cf5b6-tzk9r']"}
+{"TimeStamp": "2026-04-28T12:49:19.6236328+00:00", "Log": "F     'Content-Length': '0'"}
+{"TimeStamp": "2026-04-28T12:49:20.29504+00:00", "Log": "F [2026-04-28 12:49:20,294: INFO/MainProcess] Task process_document[1777380554872-Hannah Joseph RHP-14.01.2026.pdf] received"}
+{"TimeStamp": "2026-04-28T12:49:20.2953621+00:00", "Log": "F [2026-04-28 12:49:20,295: INFO/MainProcess] {\"event\": \"\\ud83d\\ude80 Task started: process_document | ID: 1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"logger\": \"app.workers.celery_app\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:49:20.295119Z\"}"}
+{"TimeStamp": "2026-04-28T12:49:20.3755665+00:00", "Log": "F [2026-04-28 12:49:20,375: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"trace_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"event\": \"Celery: Starting document ingestion task\", \"logger\": \"app.workers.document_pipeline\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:49:20.375101Z\"}"}
+{"TimeStamp": "2026-04-28T12:49:20.3760721+00:00", "Log": "F [2026-04-28 12:49:20,375: INFO/MainProcess] {\"metric\": \"worker_rss_mb\", \"value\": 251.48, \"tags\": {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"task\": \"process_document\"}, \"ts\": 1777380560.3754125, \"event\": \"metric\", \"logger\": \"app.services.metrics\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:49:20.375437Z\"}"}
+{"TimeStamp": "2026-04-28T12:49:20.4124979+00:00", "Log": "F [2026-04-28 12:49:20,412: INFO/MainProcess] You appear to be connected to a CosmosDB cluster. For more information regarding feature compatibility and support please visit https://www.mongodb.com/supportability/cosmosdb"}
+{"TimeStamp": "2026-04-28T12:49:20.4567967+00:00", "Log": "F [2026-04-28 12:49:20,456: INFO/MainProcess] You appear to be connected to a CosmosDB cluster. For more information regarding feature compatibility and support please visit https://www.mongodb.com/supportability/cosmosdb"}
+{"TimeStamp": "2026-04-28T12:49:20.5159483+00:00", "Log": "F [2026-04-28 12:49:20,515: INFO/MainProcess] {\"database\": \"finanacialDocIntelligence\", \"environment\": \"dev\", \"event\": \"MongoDB connected\", \"logger\": \"app.db.mongo\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:49:20.515431Z\"}"}
+{"TimeStamp": "2026-04-28T12:49:20.5163583+00:00", "Log": "F [2026-04-28 12:49:20,516: INFO/MainProcess] {\"event\": \"MongoDB: Event loop changed, resetting connection\", \"logger\": \"app.db.mongo\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:49:20.516178Z\"}"}
+{"TimeStamp": "2026-04-28T12:49:20.5180091+00:00", "Log": "F [2026-04-28 12:49:20,517: INFO/MainProcess] You appear to be connected to a CosmosDB cluster. For more information regarding feature compatibility and support please visit https://www.mongodb.com/supportability/cosmosdb"}
+{"TimeStamp": "2026-04-28T12:49:20.5229589+00:00", "Log": "F [2026-04-28 12:49:20,522: INFO/MainProcess] You appear to be connected to a CosmosDB cluster. For more information regarding feature compatibility and support please visit https://www.mongodb.com/supportability/cosmosdb"}
+{"TimeStamp": "2026-04-28T12:49:20.5436497+00:00", "Log": "F [2026-04-28 12:49:20,543: INFO/MainProcess] {\"database\": \"finanacialDocIntelligence\", \"environment\": \"dev\", \"event\": \"MongoDB connected\", \"logger\": \"app.db.mongo\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:49:20.543366Z\"}"}
+{"TimeStamp": "2026-04-28T12:49:20.5468297+00:00", "Log": "F [2026-04-28 12:49:20,546: INFO/MainProcess] {\"event\": \"MongoDB: Event loop changed, resetting connection\", \"logger\": \"app.db.mongo\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:49:20.546592Z\"}"}
+{"TimeStamp": "2026-04-28T12:49:20.5482779+00:00", "Log": "F [2026-04-28 12:49:20,548: INFO/MainProcess] You appear to be connected to a CosmosDB cluster. For more information regarding feature compatibility and support please visit https://www.mongodb.com/supportability/cosmosdb"}
+{"TimeStamp": "2026-04-28T12:49:20.554508+00:00", "Log": "F [2026-04-28 12:49:20,554: INFO/MainProcess] You appear to be connected to a CosmosDB cluster. For more information regarding feature compatibility and support please visit https://www.mongodb.com/supportability/cosmosdb"}
+{"TimeStamp": "2026-04-28T12:49:20.5750589+00:00", "Log": "F [2026-04-28 12:49:20,574: INFO/MainProcess] {\"database\": \"finanacialDocIntelligence\", \"environment\": \"dev\", \"event\": \"MongoDB connected\", \"logger\": \"app.db.mongo\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:49:20.574720Z\"}"}
+{"TimeStamp": "2026-04-28T12:49:20.5851943+00:00", "Log": "F [2026-04-28 12:49:20,584: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"filename\": \"Hannah Joseph RHP-14.01.2026.pdf\", \"doc_type\": \"RHP\", \"event\": \"Starting section-wise ingestion pipeline\", \"logger\": \"app.services.ingestion_pipeline\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:49:20.584881Z\"}"}
+{"TimeStamp": "2026-04-28T12:49:20.7576196+00:00", "Log": "F [2026-04-28 12:49:20,757: INFO/MainProcess] {\"seconds\": 0.17, \"size_mb\": 5.21, \"method\": \"presigned_url\", \"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"event\": \"[TIMING] Step 1: Document downloaded\", \"logger\": \"app.services.ingestion_pipeline\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:49:20.757320Z\"}"}
+{"TimeStamp": "2026-04-28T12:49:22.4015472+00:00", "Log": "F [2026-04-28 12:49:22,401: INFO/MainProcess] {\"seconds\": 1.64, \"entries\": 41, \"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"event\": \"[TIMING] Step 2: TOC extracted\", \"logger\": \"app.services.ingestion_pipeline\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:49:22.401225Z\"}"}
+{"TimeStamp": "2026-04-28T12:49:22.4017463+00:00", "Log": "F [2026-04-28 12:49:22,401: INFO/MainProcess] You appear to be connected to a CosmosDB cluster. For more information regarding feature compatibility and support please visit https://www.mongodb.com/supportability/cosmosdb"}
+{"TimeStamp": "2026-04-28T12:49:22.4068433+00:00", "Log": "F [2026-04-28 12:49:22,406: INFO/MainProcess] You appear to be connected to a CosmosDB cluster. For more information regarding feature compatibility and support please visit https://www.mongodb.com/supportability/cosmosdb"}
+{"TimeStamp": "2026-04-28T12:49:22.4258443+00:00", "Log": "F [2026-04-28 12:49:22,425: INFO/MainProcess] {\"database\": \"finanacialDocIntelligence\", \"environment\": \"dev\", \"event\": \"MongoDB sync connection established\", \"logger\": \"app.db.mongo\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:49:22.425246Z\"}"}
+{"TimeStamp": "2026-04-28T12:49:22.4325217+00:00", "Log": "F [2026-04-28 12:49:22,432: INFO/MainProcess] {\"filename\": \"Hannah Joseph RHP-14.01.2026.pdf\", \"toc_size\": 41, \"event\": \"Stored TOC metadata (1st check)\", \"logger\": \"app.services.ingestion_pipeline\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:49:22.432153Z\"}"}
+{"TimeStamp": "2026-04-28T12:49:22.4326404+00:00", "Log": "F [2026-04-28 12:49:22,432: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"timeout_seconds\": 1800, \"event\": \"Starting Step 3 extraction\", \"logger\": \"app.services.ingestion_pipeline\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:49:22.432384Z\"}"}
+{"TimeStamp": "2026-04-28T12:49:22.5982346+00:00", "Log": "F [2026-04-28 12:49:22,598: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"total_pages\": 326, \"scan_pages\": 200, \"event\": \"TOC-like scan started\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:49:22.597953Z\"}"}
+{"TimeStamp": "2026-04-28T12:49:23.5909225+00:00", "Log": "F [2026-04-28 12:49:23,590: INFO/MainProcess] Request URL: 'https://centralindia-0.in.applicationinsights.azure.com//v2.1/track'"}
+{"TimeStamp": "2026-04-28T12:49:23.5909701+00:00", "Log": "F Request method: 'POST'"}
+{"TimeStamp": "2026-04-28T12:49:23.5909841+00:00", "Log": "F Request headers:"}
+{"TimeStamp": "2026-04-28T12:49:23.5909857+00:00", "Log": "F     'Content-Type': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:49:23.5909871+00:00", "Log": "F     'Content-Length': '2173'"}
+{"TimeStamp": "2026-04-28T12:49:23.5909883+00:00", "Log": "F     'Accept': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:49:23.5909896+00:00", "Log": "F     'x-ms-client-request-id': 'aebd6688-4300-11f1-9901-16ee47812b25'"}
+{"TimeStamp": "2026-04-28T12:49:23.5909909+00:00", "Log": "F     'User-Agent': 'azsdk-python-monitor-opentelemetry-exporter/1.0.0b1 Python/3.11.13 (Linux-5.15.186.1-1.cm2-x86_64-with-glibc2.31)'"}
+{"TimeStamp": "2026-04-28T12:49:23.5909922+00:00", "Log": "F A body is sent with the request"}
+{"TimeStamp": "2026-04-28T12:49:23.8187902+00:00", "Log": "F [2026-04-28 12:49:23,818: INFO/MainProcess] Response status: 200"}
+{"TimeStamp": "2026-04-28T12:49:23.818833+00:00", "Log": "F Response headers:"}
+{"TimeStamp": "2026-04-28T12:49:23.8188526+00:00", "Log": "F     'Transfer-Encoding': 'chunked'"}
+{"TimeStamp": "2026-04-28T12:49:23.818856+00:00", "Log": "F     'Content-Type': 'application/json; charset=utf-8'"}
+{"TimeStamp": "2026-04-28T12:49:23.8188583+00:00", "Log": "F     'Server': 'Microsoft-HTTPAPI/2.0'"}
+{"TimeStamp": "2026-04-28T12:49:23.8188655+00:00", "Log": "F     'Strict-Transport-Security': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:49:23.8188677+00:00", "Log": "F     'X-Content-Type-Options': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:49:23.8188698+00:00", "Log": "F     'Date': 'Tue, 28 Apr 2026 12:49:23 GMT'"}
+{"TimeStamp": "2026-04-28T12:49:23.8191154+00:00", "Log": "F [2026-04-28 12:49:23,818: INFO/MainProcess] Transmission succeeded: Item received: 2. Items accepted: 2"}
+{"TimeStamp": "2026-04-28T12:49:29.2508259+00:00", "Log": "F [2026-04-28 12:49:29,250: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"scanned_pages\": 25, \"total_pages\": 200, \"toc_like_pages\": 4, \"event\": \"TOC-like scan progress\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:49:29.250482Z\"}"}
+{"TimeStamp": "2026-04-28T12:49:35.4557545+00:00", "Log": "F [2026-04-28 12:49:35,455: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"scanned_pages\": 50, \"total_pages\": 200, \"toc_like_pages\": 4, \"event\": \"TOC-like scan progress\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:49:35.455424Z\"}"}
+{"TimeStamp": "2026-04-28T12:49:41.5301871+00:00", "Log": "F [2026-04-28 12:49:41,529: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"scanned_pages\": 75, \"total_pages\": 200, \"toc_like_pages\": 6, \"event\": \"TOC-like scan progress\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:49:41.529783Z\"}"}
+{"TimeStamp": "2026-04-28T12:49:46.582761+00:00", "Log": "F [2026-04-28 12:49:46,582: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"scanned_pages\": 100, \"total_pages\": 200, \"toc_like_pages\": 7, \"event\": \"TOC-like scan progress\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:49:46.582437Z\"}"}
+{"TimeStamp": "2026-04-28T12:49:50.6396426+00:00", "Log": "F [2026-04-28 12:49:50,639: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"scanned_pages\": 125, \"total_pages\": 200, \"toc_like_pages\": 9, \"event\": \"TOC-like scan progress\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:49:50.639335Z\"}"}
+{"TimeStamp": "2026-04-28T12:49:54.0413054+00:00", "Log": "F [2026-04-28 12:49:54,041: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"scanned_pages\": 150, \"total_pages\": 200, \"toc_like_pages\": 9, \"event\": \"TOC-like scan progress\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:49:54.040972Z\"}"}
+{"TimeStamp": "2026-04-28T12:49:59.0847122+00:00", "Log": "F [2026-04-28 12:49:59,084: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"scanned_pages\": 175, \"total_pages\": 200, \"toc_like_pages\": 9, \"event\": \"TOC-like scan progress\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:49:59.084376Z\"}"}
+{"TimeStamp": "2026-04-28T12:50:05.555595+00:00", "Log": "F [2026-04-28 12:50:05,555: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"scanned_pages\": 200, \"total_pages\": 200, \"toc_like_pages\": 9, \"event\": \"TOC-like scan progress\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:50:05.555309Z\"}"}
+{"TimeStamp": "2026-04-28T12:50:05.5558215+00:00", "Log": "F [2026-04-28 12:50:05,555: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"scanned_pages\": 200, \"skipped_pages\": 126, \"event\": \"TOC-like scan capped for performance\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:50:05.555502Z\"}"}
+{"TimeStamp": "2026-04-28T12:50:05.5603541+00:00", "Log": "F [2026-04-28 12:50:05,560: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"pages\": 326, \"priority_pages\": 41, \"event\": \"Starting Parallel Global Table Scan\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:50:05.560110Z\"}"}
+{"TimeStamp": "2026-04-28T12:50:05.5604359+00:00", "Log": "F [2026-04-28 12:50:05,560: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"mode\": \"auto\", \"platform\": \"linux\", \"max_workers\": 1, \"event\": \"Using ThreadPoolExecutor for table extraction\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:50:05.560305Z\"}"}
+{"TimeStamp": "2026-04-28T12:50:05.5606159+00:00", "Log": "F [2026-04-28 12:50:05,560: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"total_pages\": 326, \"excluded_toc_like_pages\": 9, \"candidate_pages\": 317, \"event\": \"Table scan page selection\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:50:05.560461Z\"}"}
+{"TimeStamp": "2026-04-28T12:50:05.5607307+00:00", "Log": "F [2026-04-28 12:50:05,560: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"batches\": 14, \"max_workers\": 1, \"mode\": \"thread\", \"event\": \"Prepared table extraction batches\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:50:05.560617Z\"}"}
+{"TimeStamp": "2026-04-28T12:50:05.5608313+00:00", "Log": "F [2026-04-28 12:50:05,560: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"event\": \"Queuing PRIORITY Camelot Batch: 18-54\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:50:05.560693Z\"}"}
+{"TimeStamp": "2026-04-28T12:50:05.5620731+00:00", "Log": "F [2026-04-28 12:50:05,561: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"event\": \"Queuing PRIORITY Camelot Batch: 57-96\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:50:05.561759Z\"}"}
+{"TimeStamp": "2026-04-28T12:50:05.5622438+00:00", "Log": "F [2026-04-28 12:50:05,562: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"event\": \"Queuing PRIORITY Camelot Batch: 113-152\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:50:05.562070Z\"}"}
+{"TimeStamp": "2026-04-28T12:50:05.5623258+00:00", "Log": "F [2026-04-28 12:50:05,562: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"event\": \"Queuing PRIORITY Camelot Batch: 153-192\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:50:05.562225Z\"}"}
+{"TimeStamp": "2026-04-28T12:50:05.562478+00:00", "Log": "F [2026-04-28 12:50:05,562: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"event\": \"Queuing PRIORITY Camelot Batch: 193-232\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:50:05.562354Z\"}"}
+{"TimeStamp": "2026-04-28T12:50:05.5627053+00:00", "Log": "F [2026-04-28 12:50:05,562: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"event\": \"Queuing Regular Camelot Batch: 2-2\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:50:05.562542Z\"}"}
+{"TimeStamp": "2026-04-28T12:50:05.5627775+00:00", "Log": "F [2026-04-28 12:50:05,562: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"event\": \"Queuing Regular Camelot Batch: 4-14\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:50:05.562697Z\"}"}
+{"TimeStamp": "2026-04-28T12:50:05.5629388+00:00", "Log": "F [2026-04-28 12:50:05,562: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"event\": \"Queuing Regular Camelot Batch: 16-16\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:50:05.562799Z\"}"}
+{"TimeStamp": "2026-04-28T12:50:05.5630977+00:00", "Log": "F [2026-04-28 12:50:05,562: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"event\": \"Queuing Regular Camelot Batch: 97-97\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:50:05.562904Z\"}"}
+{"TimeStamp": "2026-04-28T12:50:05.5649837+00:00", "Log": "F [2026-04-28 12:50:05,563: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"event\": \"Queuing Regular Camelot Batch: 99-107\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:50:05.563008Z\"}"}
+{"TimeStamp": "2026-04-28T12:50:05.5650439+00:00", "Log": "F [2026-04-28 12:50:05,563: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"event\": \"Queuing Regular Camelot Batch: 109-111\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:50:05.563102Z\"}"}
+{"TimeStamp": "2026-04-28T12:50:05.565049+00:00", "Log": "F [2026-04-28 12:50:05,563: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"event\": \"Queuing Regular Camelot Batch: 233-272\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:50:05.563201Z\"}"}
+{"TimeStamp": "2026-04-28T12:50:05.5650515+00:00", "Log": "F [2026-04-28 12:50:05,563: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"event\": \"Queuing Regular Camelot Batch: 273-312\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:50:05.563311Z\"}"}
+{"TimeStamp": "2026-04-28T12:50:05.565053+00:00", "Log": "F [2026-04-28 12:50:05,563: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"event\": \"Queuing Regular Camelot Batch: 313-326\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:50:05.563420Z\"}"}
+{"TimeStamp": "2026-04-28T12:50:19.5570373+00:00", "Log": "F [2026-04-28 12:50:19,556: INFO/MainProcess] Request URL: 'https://centralindia-0.in.applicationinsights.azure.com//v2.1/track'"}
+{"TimeStamp": "2026-04-28T12:50:19.5570754+00:00", "Log": "F Request method: 'POST'"}
+{"TimeStamp": "2026-04-28T12:50:19.5570912+00:00", "Log": "F Request headers:"}
+{"TimeStamp": "2026-04-28T12:50:19.5570942+00:00", "Log": "F     'Content-Type': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:50:19.5570967+00:00", "Log": "F     'Content-Length': '8151'"}
+{"TimeStamp": "2026-04-28T12:50:19.5570987+00:00", "Log": "F     'Accept': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:50:19.5571008+00:00", "Log": "F     'x-ms-client-request-id': 'd0192902-4300-11f1-828d-16ee47812b25'"}
+{"TimeStamp": "2026-04-28T12:50:19.557103+00:00", "Log": "F     'User-Agent': 'azsdk-python-monitor-opentelemetry-exporter/1.0.0b1 Python/3.11.13 (Linux-5.15.186.1-1.cm2-x86_64-with-glibc2.31)'"}
+{"TimeStamp": "2026-04-28T12:50:19.5571053+00:00", "Log": "F A body is sent with the request"}
+{"TimeStamp": "2026-04-28T12:50:19.6986186+00:00", "Log": "F [2026-04-28 12:50:19,698: INFO/MainProcess] Response status: 200"}
+{"TimeStamp": "2026-04-28T12:50:19.6986613+00:00", "Log": "F Response headers:"}
+{"TimeStamp": "2026-04-28T12:50:19.6986846+00:00", "Log": "F     'Transfer-Encoding': 'chunked'"}
+{"TimeStamp": "2026-04-28T12:50:19.698688+00:00", "Log": "F     'Content-Type': 'application/json; charset=utf-8'"}
+{"TimeStamp": "2026-04-28T12:50:19.6986902+00:00", "Log": "F     'Server': 'Microsoft-HTTPAPI/2.0'"}
+{"TimeStamp": "2026-04-28T12:50:19.6986924+00:00", "Log": "F     'Strict-Transport-Security': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:50:19.6986945+00:00", "Log": "F     'X-Content-Type-Options': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:50:19.6986968+00:00", "Log": "F     'Date': 'Tue, 28 Apr 2026 12:50:18 GMT'"}
+{"TimeStamp": "2026-04-28T12:50:19.7040715+00:00", "Log": "F [2026-04-28 12:50:19,703: INFO/MainProcess] Transmission succeeded: Item received: 11. Items accepted: 11"}
+{"TimeStamp": "2026-04-28T12:50:20.5980773+00:00", "Log": "F [2026-04-28 12:50:20,597: INFO/MainProcess] {\"event\": \"MongoDB: Event loop changed, resetting connection\", \"logger\": \"app.db.mongo\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:50:20.597796Z\"}"}
+{"TimeStamp": "2026-04-28T12:50:20.6095781+00:00", "Log": "F [2026-04-28 12:50:20,609: INFO/MainProcess] You appear to be connected to a CosmosDB cluster. For more information regarding feature compatibility and support please visit https://www.mongodb.com/supportability/cosmosdb"}
+{"TimeStamp": "2026-04-28T12:50:20.69034+00:00", "Log": "F [2026-04-28 12:50:20,690: INFO/MainProcess] You appear to be connected to a CosmosDB cluster. For more information regarding feature compatibility and support please visit https://www.mongodb.com/supportability/cosmosdb"}
+{"TimeStamp": "2026-04-28T12:50:21.1997512+00:00", "Log": "F [2026-04-28 12:50:21,199: INFO/MainProcess] {\"database\": \"finanacialDocIntelligence\", \"environment\": \"dev\", \"event\": \"MongoDB connected\", \"logger\": \"app.db.mongo\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:50:21.199351Z\"}"}
+{"TimeStamp": "2026-04-28T12:50:22.9784672+00:00", "Log": "F [2026-04-28 12:50:22,978: INFO/MainProcess] Request URL: 'https://centralindia.livediagnostics.monitor.azure.com/QuickPulseService.svc/ping?api-version=REDACTED&ikey=REDACTED'"}
+{"TimeStamp": "2026-04-28T12:50:22.9785063+00:00", "Log": "F Request method: 'POST'"}
+{"TimeStamp": "2026-04-28T12:50:22.9785236+00:00", "Log": "F Request headers:"}
+{"TimeStamp": "2026-04-28T12:50:22.9785316+00:00", "Log": "F     'Content-Type': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:50:22.9785341+00:00", "Log": "F     'Content-Length': '348'"}
+{"TimeStamp": "2026-04-28T12:50:22.9785363+00:00", "Log": "F     'x-ms-qps-transmission-time': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:50:22.9785385+00:00", "Log": "F     'x-ms-qps-machine-name': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:50:22.9785574+00:00", "Log": "F     'x-ms-qps-instance-name': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:50:22.97856+00:00", "Log": "F     'x-ms-qps-stream-id': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:50:22.9785623+00:00", "Log": "F     'x-ms-qps-role-name': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:50:22.9785645+00:00", "Log": "F     'x-ms-qps-invariant-version': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:50:22.9785667+00:00", "Log": "F     'x-ms-qps-configuration-etag': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:50:22.9785687+00:00", "Log": "F     'Accept': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:50:22.9785708+00:00", "Log": "F A body is sent with the request"}
+{"TimeStamp": "2026-04-28T12:50:23.0625964+00:00", "Log": "F [2026-04-28 12:50:23,062: INFO/MainProcess] Response status: 200"}
+{"TimeStamp": "2026-04-28T12:50:23.0626397+00:00", "Log": "F Response headers:"}
+{"TimeStamp": "2026-04-28T12:50:23.0626528+00:00", "Log": "F     'Server': 'Microsoft-IIS/10.0'"}
+{"TimeStamp": "2026-04-28T12:50:23.0626546+00:00", "Log": "F     'x-ms-qps-subscribed': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:50:23.0626559+00:00", "Log": "F     'Request-Context': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:50:23.0626571+00:00", "Log": "F     'Access-Control-Expose-Headers': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:50:23.0626584+00:00", "Log": "F     'X-Powered-By': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:50:23.0626596+00:00", "Log": "F     'Strict-Transport-Security': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:50:23.0626607+00:00", "Log": "F     'X-Content-Type-Options': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:50:23.0626619+00:00", "Log": "F     'Date': 'Tue, 28 Apr 2026 12:50:22 GMT'"}
+{"TimeStamp": "2026-04-28T12:50:23.062663+00:00", "Log": "F     'Content-Length': '0'"}
+{"TimeStamp": "2026-04-28T12:50:32.2081968+00:00", "Log": "F [2026-04-28 12:50:32,207: INFO/MainProcess] {\"event\": \"Streamed 48 tables for batch starting 18\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:50:32.207857Z\"}"}
+{"TimeStamp": "2026-04-28T12:50:32.213796+00:00", "Log": "F [2026-04-28 12:50:32,213: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"completed_batches\": 1, \"total_batches\": 14, \"batch_start\": 18, \"batch_end\": 54, \"extracted_tables\": 48, \"event\": \"Batch extraction progress\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:50:32.213167Z\"}"}
+{"TimeStamp": "2026-04-28T12:50:55.8050669+00:00", "Log": "F [2026-04-28 12:50:55,804: INFO/MainProcess] {\"event\": \"Streamed 74 tables for batch starting 57\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:50:55.804752Z\"}"}
+{"TimeStamp": "2026-04-28T12:50:55.8052093+00:00", "Log": "F [2026-04-28 12:50:55,804: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"completed_batches\": 2, \"total_batches\": 14, \"batch_start\": 57, \"batch_end\": 96, \"extracted_tables\": 74, \"event\": \"Batch extraction progress\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:50:55.804941Z\"}"}
+{"TimeStamp": "2026-04-28T12:50:55.9789241+00:00", "Log": "F [2026-04-28 12:50:55,978: INFO/MainProcess] {\"stage\": \"extraction.batch_complete\", \"batch_idx\": 2, \"size_hint_mb\": 120.0, \"collected\": 20424, \"event\": \"Manual GC executed\", \"logger\": \"app.core.memory\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:50:55.978543Z\"}"}
+{"TimeStamp": "2026-04-28T12:51:07.9121398+00:00", "Log": "F [2026-04-28 12:51:07,911: INFO/MainProcess] {\"event\": \"Streamed 53 tables for batch starting 113\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:51:07.911807Z\"}"}
+{"TimeStamp": "2026-04-28T12:51:07.9122867+00:00", "Log": "F [2026-04-28 12:51:07,912: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"completed_batches\": 3, \"total_batches\": 14, \"batch_start\": 113, \"batch_end\": 152, \"extracted_tables\": 53, \"event\": \"Batch extraction progress\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:51:07.912011Z\"}"}
+{"TimeStamp": "2026-04-28T12:51:19.7808329+00:00", "Log": "F [2026-04-28 12:51:19,780: INFO/MainProcess] Request URL: 'https://centralindia-0.in.applicationinsights.azure.com//v2.1/track'"}
+{"TimeStamp": "2026-04-28T12:51:19.7808682+00:00", "Log": "F Request method: 'POST'"}
+{"TimeStamp": "2026-04-28T12:51:19.7808818+00:00", "Log": "F Request headers:"}
+{"TimeStamp": "2026-04-28T12:51:19.7808837+00:00", "Log": "F     'Content-Type': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:51:19.7808852+00:00", "Log": "F     'Content-Length': '6378'"}
+{"TimeStamp": "2026-04-28T12:51:19.7808865+00:00", "Log": "F     'Accept': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:51:19.7808877+00:00", "Log": "F     'x-ms-client-request-id': 'f3fe951e-4300-11f1-828d-16ee47812b25'"}
+{"TimeStamp": "2026-04-28T12:51:19.780889+00:00", "Log": "F     'User-Agent': 'azsdk-python-monitor-opentelemetry-exporter/1.0.0b1 Python/3.11.13 (Linux-5.15.186.1-1.cm2-x86_64-with-glibc2.31)'"}
+{"TimeStamp": "2026-04-28T12:51:19.7808903+00:00", "Log": "F A body is sent with the request"}
+{"TimeStamp": "2026-04-28T12:51:19.9259683+00:00", "Log": "F [2026-04-28 12:51:19,925: INFO/MainProcess] Response status: 200"}
+{"TimeStamp": "2026-04-28T12:51:19.9260035+00:00", "Log": "F Response headers:"}
+{"TimeStamp": "2026-04-28T12:51:19.9260183+00:00", "Log": "F     'Transfer-Encoding': 'chunked'"}
+{"TimeStamp": "2026-04-28T12:51:19.9260201+00:00", "Log": "F     'Content-Type': 'application/json; charset=utf-8'"}
+{"TimeStamp": "2026-04-28T12:51:19.9260213+00:00", "Log": "F     'Server': 'Microsoft-HTTPAPI/2.0'"}
+{"TimeStamp": "2026-04-28T12:51:19.9260225+00:00", "Log": "F     'Strict-Transport-Security': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:51:19.9260237+00:00", "Log": "F     'X-Content-Type-Options': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:51:19.9260252+00:00", "Log": "F     'Date': 'Tue, 28 Apr 2026 12:51:19 GMT'"}
+{"TimeStamp": "2026-04-28T12:51:19.9262559+00:00", "Log": "F [2026-04-28 12:51:19,926: INFO/MainProcess] Transmission succeeded: Item received: 9. Items accepted: 9"}
+{"TimeStamp": "2026-04-28T12:51:21.2601272+00:00", "Log": "F [2026-04-28 12:51:21,259: INFO/MainProcess] {\"event\": \"MongoDB: Event loop changed, resetting connection\", \"logger\": \"app.db.mongo\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:51:21.259821Z\"}"}
+{"TimeStamp": "2026-04-28T12:51:21.2888844+00:00", "Log": "F [2026-04-28 12:51:21,288: INFO/MainProcess] You appear to be connected to a CosmosDB cluster. For more information regarding feature compatibility and support please visit https://www.mongodb.com/supportability/cosmosdb"}
+{"TimeStamp": "2026-04-28T12:51:21.4697787+00:00", "Log": "F [2026-04-28 12:51:21,469: INFO/MainProcess] You appear to be connected to a CosmosDB cluster. For more information regarding feature compatibility and support please visit https://www.mongodb.com/supportability/cosmosdb"}
+{"TimeStamp": "2026-04-28T12:51:22.0831183+00:00", "Log": "F [2026-04-28 12:51:22,082: INFO/MainProcess] {\"database\": \"finanacialDocIntelligence\", \"environment\": \"dev\", \"event\": \"MongoDB connected\", \"logger\": \"app.db.mongo\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:51:22.082822Z\"}"}
+{"TimeStamp": "2026-04-28T12:51:24.6613916+00:00", "Log": "F [2026-04-28 12:51:24,661: INFO/MainProcess] Request URL: 'https://centralindia.livediagnostics.monitor.azure.com/QuickPulseService.svc/ping?api-version=REDACTED&ikey=REDACTED'"}
+{"TimeStamp": "2026-04-28T12:51:24.6614319+00:00", "Log": "F Request method: 'POST'"}
+{"TimeStamp": "2026-04-28T12:51:24.6614493+00:00", "Log": "F Request headers:"}
+{"TimeStamp": "2026-04-28T12:51:24.6614522+00:00", "Log": "F     'Content-Type': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:51:24.6614543+00:00", "Log": "F     'Content-Length': '348'"}
+{"TimeStamp": "2026-04-28T12:51:24.6614564+00:00", "Log": "F     'x-ms-qps-transmission-time': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:51:24.6614584+00:00", "Log": "F     'x-ms-qps-machine-name': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:51:24.6614655+00:00", "Log": "F     'x-ms-qps-instance-name': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:51:24.6614676+00:00", "Log": "F     'x-ms-qps-stream-id': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:51:24.6614695+00:00", "Log": "F     'x-ms-qps-role-name': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:51:24.6614715+00:00", "Log": "F     'x-ms-qps-invariant-version': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:51:24.6614735+00:00", "Log": "F     'x-ms-qps-configuration-etag': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:51:24.6614755+00:00", "Log": "F     'Accept': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:51:24.6614775+00:00", "Log": "F A body is sent with the request"}
+{"TimeStamp": "2026-04-28T12:51:24.6734375+00:00", "Log": "F [2026-04-28 12:51:24,673: INFO/MainProcess] Response status: 200"}
+{"TimeStamp": "2026-04-28T12:51:24.6734814+00:00", "Log": "F Response headers:"}
+{"TimeStamp": "2026-04-28T12:51:24.6734983+00:00", "Log": "F     'Server': 'Microsoft-IIS/10.0'"}
+{"TimeStamp": "2026-04-28T12:51:24.6735014+00:00", "Log": "F     'x-ms-qps-subscribed': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:51:24.6735037+00:00", "Log": "F     'Request-Context': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:51:24.6735059+00:00", "Log": "F     'Access-Control-Expose-Headers': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:51:24.6735081+00:00", "Log": "F     'X-Powered-By': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:51:24.6735104+00:00", "Log": "F     'Strict-Transport-Security': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:51:24.6735126+00:00", "Log": "F     'X-Content-Type-Options': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:51:24.6735148+00:00", "Log": "F     'Date': 'Tue, 28 Apr 2026 12:51:24 GMT'"}
+{"TimeStamp": "2026-04-28T12:51:24.6735216+00:00", "Log": "F     'Content-Length': '0'"}
+{"TimeStamp": "2026-04-28T12:51:28.2909609+00:00", "Log": "F [2026-04-28 12:51:28,290: INFO/MainProcess] {\"event\": \"Streamed 66 tables for batch starting 153\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:51:28.290613Z\"}"}
+{"TimeStamp": "2026-04-28T12:51:28.2911988+00:00", "Log": "F [2026-04-28 12:51:28,291: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"completed_batches\": 4, \"total_batches\": 14, \"batch_start\": 153, \"batch_end\": 192, \"extracted_tables\": 66, \"event\": \"Batch extraction progress\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:51:28.290842Z\"}"}
+{"TimeStamp": "2026-04-28T12:51:28.5695591+00:00", "Log": "F [2026-04-28 12:51:28,569: INFO/MainProcess] {\"stage\": \"extraction.batch_complete\", \"batch_idx\": 4, \"size_hint_mb\": 120.0, \"collected\": 19438, \"event\": \"Manual GC executed\", \"logger\": \"app.core.memory\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:51:28.569236Z\"}"}
+{"TimeStamp": "2026-04-28T12:51:52.287602+00:00", "Log": "F [2026-04-28 12:51:52,287: INFO/MainProcess] {\"event\": \"Streamed 69 tables for batch starting 193\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:51:52.287265Z\"}"}
+{"TimeStamp": "2026-04-28T12:51:52.2877775+00:00", "Log": "F [2026-04-28 12:51:52,287: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"completed_batches\": 5, \"total_batches\": 14, \"batch_start\": 193, \"batch_end\": 232, \"extracted_tables\": 69, \"event\": \"Batch extraction progress\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:51:52.287478Z\"}"}
+{"TimeStamp": "2026-04-28T12:51:53.6837051+00:00", "Log": "F [2026-04-28 12:51:53,683: INFO/MainProcess] {\"event\": \"Streamed 1 tables for batch starting 2\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:51:53.683354Z\"}"}
+{"TimeStamp": "2026-04-28T12:51:53.6837476+00:00", "Log": "F [2026-04-28 12:51:53,683: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"completed_batches\": 6, \"total_batches\": 14, \"batch_start\": 2, \"batch_end\": 2, \"extracted_tables\": 1, \"event\": \"Batch extraction progress\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:51:53.683534Z\"}"}
+{"TimeStamp": "2026-04-28T12:51:53.8782039+00:00", "Log": "F [2026-04-28 12:51:53,877: INFO/MainProcess] {\"stage\": \"extraction.batch_complete\", \"batch_idx\": 6, \"size_hint_mb\": 120.0, \"collected\": 23725, \"event\": \"Manual GC executed\", \"logger\": \"app.core.memory\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:51:53.877769Z\"}"}
+{"TimeStamp": "2026-04-28T12:51:55.7206848+00:00", "Log": "F [2026-04-28 12:51:55,720: INFO/MainProcess] {\"event\": \"Streamed 2 tables for batch starting 97\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:51:55.720353Z\"}"}
+{"TimeStamp": "2026-04-28T12:51:55.7207272+00:00", "Log": "F [2026-04-28 12:51:55,720: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"completed_batches\": 7, \"total_batches\": 14, \"batch_start\": 97, \"batch_end\": 97, \"extracted_tables\": 2, \"event\": \"Batch extraction progress\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:51:55.720531Z\"}"}
+{"TimeStamp": "2026-04-28T12:51:57.7279379+00:00", "Log": "F [2026-04-28 12:51:57,727: INFO/MainProcess] {\"event\": \"Streamed 1 tables for batch starting 16\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:51:57.727450Z\"}"}
+{"TimeStamp": "2026-04-28T12:51:57.7279849+00:00", "Log": "F [2026-04-28 12:51:57,727: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"completed_batches\": 8, \"total_batches\": 14, \"batch_start\": 16, \"batch_end\": 16, \"extracted_tables\": 1, \"event\": \"Batch extraction progress\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:51:57.727644Z\"}"}
+{"TimeStamp": "2026-04-28T12:51:57.9810561+00:00", "Log": "F [2026-04-28 12:51:57,980: INFO/MainProcess] {\"stage\": \"extraction.batch_complete\", \"batch_idx\": 8, \"size_hint_mb\": 120.0, \"collected\": 95932, \"event\": \"Manual GC executed\", \"logger\": \"app.core.memory\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:51:57.980753Z\"}"}
+{"TimeStamp": "2026-04-28T12:52:04.989603+00:00", "Log": "F [2026-04-28 12:52:04,989: INFO/MainProcess] {\"event\": \"Streamed 13 tables for batch starting 4\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:52:04.989266Z\"}"}
+{"TimeStamp": "2026-04-28T12:52:04.9897923+00:00", "Log": "F [2026-04-28 12:52:04,989: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"completed_batches\": 9, \"total_batches\": 14, \"batch_start\": 4, \"batch_end\": 14, \"extracted_tables\": 13, \"event\": \"Batch extraction progress\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:52:04.989467Z\"}"}
+{"TimeStamp": "2026-04-28T12:52:11.1853236+00:00", "Log": "F [2026-04-28 12:52:11,185: INFO/MainProcess] {\"event\": \"Streamed 22 tables for batch starting 99\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:52:11.184995Z\"}"}
+{"TimeStamp": "2026-04-28T12:52:11.1854373+00:00", "Log": "F [2026-04-28 12:52:11,185: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"completed_batches\": 10, \"total_batches\": 14, \"batch_start\": 99, \"batch_end\": 107, \"extracted_tables\": 22, \"event\": \"Batch extraction progress\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:52:11.185188Z\"}"}
+{"TimeStamp": "2026-04-28T12:52:11.3965836+00:00", "Log": "F [2026-04-28 12:52:11,396: INFO/MainProcess] {\"stage\": \"extraction.batch_complete\", \"batch_idx\": 10, \"size_hint_mb\": 120.0, \"collected\": 58758, \"event\": \"Manual GC executed\", \"logger\": \"app.core.memory\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:52:11.396143Z\"}"}
+{"TimeStamp": "2026-04-28T12:52:13.8154974+00:00", "Log": "F [2026-04-28 12:52:13,815: INFO/MainProcess] {\"event\": \"Streamed 3 tables for batch starting 109\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:52:13.815048Z\"}"}
+{"TimeStamp": "2026-04-28T12:52:13.8155368+00:00", "Log": "F [2026-04-28 12:52:13,815: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"completed_batches\": 11, \"total_batches\": 14, \"batch_start\": 109, \"batch_end\": 111, \"extracted_tables\": 3, \"event\": \"Batch extraction progress\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:52:13.815217Z\"}"}
+{"TimeStamp": "2026-04-28T12:52:19.9899976+00:00", "Log": "F [2026-04-28 12:52:19,989: INFO/MainProcess] Request URL: 'https://centralindia-0.in.applicationinsights.azure.com//v2.1/track'"}
+{"TimeStamp": "2026-04-28T12:52:19.9901157+00:00", "Log": "F Request method: 'POST'"}
+{"TimeStamp": "2026-04-28T12:52:19.9901379+00:00", "Log": "F Request headers:"}
+{"TimeStamp": "2026-04-28T12:52:19.9901409+00:00", "Log": "F     'Content-Type': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:52:19.9901433+00:00", "Log": "F     'Content-Length': '6378'"}
+{"TimeStamp": "2026-04-28T12:52:19.9901456+00:00", "Log": "F     'Accept': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:52:19.9901525+00:00", "Log": "F     'x-ms-client-request-id': '17e1c2a8-4301-11f1-828d-16ee47812b25'"}
+{"TimeStamp": "2026-04-28T12:52:19.9901547+00:00", "Log": "F     'User-Agent': 'azsdk-python-monitor-opentelemetry-exporter/1.0.0b1 Python/3.11.13 (Linux-5.15.186.1-1.cm2-x86_64-with-glibc2.31)'"}
+{"TimeStamp": "2026-04-28T12:52:19.9901568+00:00", "Log": "F A body is sent with the request"}
+{"TimeStamp": "2026-04-28T12:52:20.2317715+00:00", "Log": "F [2026-04-28 12:52:20,231: INFO/MainProcess] Response status: 200"}
+{"TimeStamp": "2026-04-28T12:52:20.2318365+00:00", "Log": "F Response headers:"}
+{"TimeStamp": "2026-04-28T12:52:20.2318493+00:00", "Log": "F     'Transfer-Encoding': 'chunked'"}
+{"TimeStamp": "2026-04-28T12:52:20.231851+00:00", "Log": "F     'Content-Type': 'application/json; charset=utf-8'"}
+{"TimeStamp": "2026-04-28T12:52:20.2318524+00:00", "Log": "F     'Server': 'Microsoft-HTTPAPI/2.0'"}
+{"TimeStamp": "2026-04-28T12:52:20.2318537+00:00", "Log": "F     'Strict-Transport-Security': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:52:20.2318549+00:00", "Log": "F     'X-Content-Type-Options': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:52:20.2318562+00:00", "Log": "F     'Date': 'Tue, 28 Apr 2026 12:52:19 GMT'"}
+{"TimeStamp": "2026-04-28T12:52:20.2320248+00:00", "Log": "F [2026-04-28 12:52:20,231: INFO/MainProcess] Transmission succeeded: Item received: 9. Items accepted: 9"}
+{"TimeStamp": "2026-04-28T12:52:22.3373128+00:00", "Log": "F [2026-04-28 12:52:22,337: INFO/MainProcess] {\"event\": \"MongoDB: Event loop changed, resetting connection\", \"logger\": \"app.db.mongo\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:52:22.336980Z\"}"}
+{"TimeStamp": "2026-04-28T12:52:22.3619303+00:00", "Log": "F [2026-04-28 12:52:22,361: INFO/MainProcess] You appear to be connected to a CosmosDB cluster. For more information regarding feature compatibility and support please visit https://www.mongodb.com/supportability/cosmosdb"}
+{"TimeStamp": "2026-04-28T12:52:22.3902101+00:00", "Log": "F [2026-04-28 12:52:22,389: INFO/MainProcess] You appear to be connected to a CosmosDB cluster. For more information regarding feature compatibility and support please visit https://www.mongodb.com/supportability/cosmosdb"}
+{"TimeStamp": "2026-04-28T12:52:22.5968655+00:00", "Log": "F [2026-04-28 12:52:22,596: INFO/MainProcess] {\"database\": \"finanacialDocIntelligence\", \"environment\": \"dev\", \"event\": \"MongoDB connected\", \"logger\": \"app.db.mongo\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:52:22.596588Z\"}"}
+{"TimeStamp": "2026-04-28T12:52:26.8537644+00:00", "Log": "F [2026-04-28 12:52:26,853: INFO/MainProcess] Request URL: 'https://centralindia.livediagnostics.monitor.azure.com/QuickPulseService.svc/ping?api-version=REDACTED&ikey=REDACTED'"}
+{"TimeStamp": "2026-04-28T12:52:26.8538206+00:00", "Log": "F Request method: 'POST'"}
+{"TimeStamp": "2026-04-28T12:52:26.8538408+00:00", "Log": "F Request headers:"}
+{"TimeStamp": "2026-04-28T12:52:26.8538441+00:00", "Log": "F     'Content-Type': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:52:26.8538463+00:00", "Log": "F     'Content-Length': '348'"}
+{"TimeStamp": "2026-04-28T12:52:26.8538484+00:00", "Log": "F     'x-ms-qps-transmission-time': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:52:26.8538508+00:00", "Log": "F     'x-ms-qps-machine-name': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:52:26.8538528+00:00", "Log": "F     'x-ms-qps-instance-name': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:52:26.8538548+00:00", "Log": "F     'x-ms-qps-stream-id': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:52:26.853862+00:00", "Log": "F     'x-ms-qps-role-name': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:52:26.8538641+00:00", "Log": "F     'x-ms-qps-invariant-version': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:52:26.8538661+00:00", "Log": "F     'x-ms-qps-configuration-etag': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:52:26.8538681+00:00", "Log": "F     'Accept': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:52:26.8538702+00:00", "Log": "F A body is sent with the request"}
+{"TimeStamp": "2026-04-28T12:52:26.8565165+00:00", "Log": "F [2026-04-28 12:52:26,856: INFO/MainProcess] Response status: 200"}
+{"TimeStamp": "2026-04-28T12:52:26.8565432+00:00", "Log": "F Response headers:"}
+{"TimeStamp": "2026-04-28T12:52:26.856554+00:00", "Log": "F     'Server': 'Microsoft-IIS/10.0'"}
+{"TimeStamp": "2026-04-28T12:52:26.856556+00:00", "Log": "F     'x-ms-qps-subscribed': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:52:26.8565573+00:00", "Log": "F     'Request-Context': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:52:26.8565621+00:00", "Log": "F     'Access-Control-Expose-Headers': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:52:26.8565635+00:00", "Log": "F     'X-Powered-By': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:52:26.8565648+00:00", "Log": "F     'Strict-Transport-Security': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:52:26.8565659+00:00", "Log": "F     'X-Content-Type-Options': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:52:26.8565671+00:00", "Log": "F     'Date': 'Tue, 28 Apr 2026 12:52:26 GMT'"}
+{"TimeStamp": "2026-04-28T12:52:26.8565682+00:00", "Log": "F     'Content-Length': '0'"}
+{"TimeStamp": "2026-04-28T12:52:28.0068598+00:00", "Log": "F [2026-04-28 12:52:28,006: INFO/MainProcess] {\"event\": \"Streamed 55 tables for batch starting 233\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:52:28.006563Z\"}"}
+{"TimeStamp": "2026-04-28T12:52:28.0069686+00:00", "Log": "F [2026-04-28 12:52:28,006: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"completed_batches\": 12, \"total_batches\": 14, \"batch_start\": 233, \"batch_end\": 272, \"extracted_tables\": 55, \"event\": \"Batch extraction progress\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:52:28.006749Z\"}"}
+{"TimeStamp": "2026-04-28T12:52:28.4155789+00:00", "Log": "F [2026-04-28 12:52:28,415: INFO/MainProcess] {\"stage\": \"extraction.batch_complete\", \"batch_idx\": 12, \"size_hint_mb\": 120.0, \"collected\": 363134, \"event\": \"Manual GC executed\", \"logger\": \"app.core.memory\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:52:28.415115Z\"}"}
+{"TimeStamp": "2026-04-28T12:52:38.3998232+00:00", "Log": "F [2026-04-28 12:52:38,399: INFO/MainProcess] {\"event\": \"Streamed 73 tables for batch starting 273\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:52:38.399505Z\"}"}
+{"TimeStamp": "2026-04-28T12:52:38.3999821+00:00", "Log": "F [2026-04-28 12:52:38,399: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"completed_batches\": 13, \"total_batches\": 14, \"batch_start\": 273, \"batch_end\": 312, \"extracted_tables\": 73, \"event\": \"Batch extraction progress\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:52:38.399687Z\"}"}
+{"TimeStamp": "2026-04-28T12:52:40.5880776+00:00", "Log": "F [2026-04-28 12:52:40,587: INFO/MainProcess] {\"event\": \"Streamed 20 tables for batch starting 313\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:52:40.587666Z\"}"}
+{"TimeStamp": "2026-04-28T12:52:40.5882175+00:00", "Log": "F [2026-04-28 12:52:40,587: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"completed_batches\": 14, \"total_batches\": 14, \"batch_start\": 313, \"batch_end\": 326, \"extracted_tables\": 20, \"event\": \"Batch extraction progress\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:52:40.587934Z\"}"}
+{"TimeStamp": "2026-04-28T12:52:40.7410967+00:00", "Log": "F [2026-04-28 12:52:40,740: INFO/MainProcess] {\"stage\": \"extraction.batch_complete\", \"batch_idx\": 14, \"size_hint_mb\": 120.0, \"collected\": 45182, \"event\": \"Manual GC executed\", \"logger\": \"app.core.memory\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:52:40.740675Z\"}"}
+{"TimeStamp": "2026-04-28T12:52:40.8657224+00:00", "Log": "F [2026-04-28 12:52:40,865: INFO/MainProcess] {\"stage\": \"extraction.post_stitch\", \"batch_idx\": null, \"size_hint_mb\": 120.0, \"collected\": 0, \"event\": \"Manual GC executed\", \"logger\": \"app.core.memory\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:52:40.865250Z\"}"}
+{"TimeStamp": "2026-04-28T12:53:03.3382919+00:00", "Log": "F [2026-04-28 12:53:03,338: INFO/MainProcess] {\"stage\": \"extraction.text_section_progress\", \"batch_idx\": 10, \"size_hint_mb\": 120.0, \"collected\": 28, \"event\": \"Manual GC executed\", \"logger\": \"app.core.memory\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:53:03.337988Z\"}"}
+{"TimeStamp": "2026-04-28T12:53:03.3384126+00:00", "Log": "F [2026-04-28 12:53:03,338: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"processed_entries\": 10, \"total_entries\": 41, \"built_sections\": 10, \"event\": \"Text extraction progress\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:53:03.338180Z\"}"}
+{"TimeStamp": "2026-04-28T12:53:18.856645+00:00", "Log": "F [2026-04-28 12:53:18,856: INFO/MainProcess] {\"stage\": \"extraction.text_section_progress\", \"batch_idx\": 20, \"size_hint_mb\": 120.0, \"collected\": 203, \"event\": \"Manual GC executed\", \"logger\": \"app.core.memory\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:53:18.856193Z\"}"}
+{"TimeStamp": "2026-04-28T12:53:18.8567482+00:00", "Log": "F [2026-04-28 12:53:18,856: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"processed_entries\": 20, \"total_entries\": 41, \"built_sections\": 20, \"event\": \"Text extraction progress\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:53:18.856538Z\"}"}
+{"TimeStamp": "2026-04-28T12:53:20.2868202+00:00", "Log": "F [2026-04-28 12:53:20,286: INFO/MainProcess] Request URL: 'https://centralindia-0.in.applicationinsights.azure.com//v2.1/track'"}
+{"TimeStamp": "2026-04-28T12:53:20.286857+00:00", "Log": "F Request method: 'POST'"}
+{"TimeStamp": "2026-04-28T12:53:20.2868717+00:00", "Log": "F Request headers:"}
+{"TimeStamp": "2026-04-28T12:53:20.2868735+00:00", "Log": "F     'Content-Type': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:53:20.2868749+00:00", "Log": "F     'Content-Length': '6373'"}
+{"TimeStamp": "2026-04-28T12:53:20.2868766+00:00", "Log": "F     'Accept': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:53:20.2868779+00:00", "Log": "F     'x-ms-client-request-id': '3bd25394-4301-11f1-828d-16ee47812b25'"}
+{"TimeStamp": "2026-04-28T12:53:20.2868793+00:00", "Log": "F     'User-Agent': 'azsdk-python-monitor-opentelemetry-exporter/1.0.0b1 Python/3.11.13 (Linux-5.15.186.1-1.cm2-x86_64-with-glibc2.31)'"}
+{"TimeStamp": "2026-04-28T12:53:20.2868806+00:00", "Log": "F A body is sent with the request"}
+{"TimeStamp": "2026-04-28T12:53:20.3936665+00:00", "Log": "F [2026-04-28 12:53:20,393: INFO/MainProcess] Response status: 200"}
+{"TimeStamp": "2026-04-28T12:53:20.3937349+00:00", "Log": "F Response headers:"}
+{"TimeStamp": "2026-04-28T12:53:20.3937479+00:00", "Log": "F     'Transfer-Encoding': 'chunked'"}
+{"TimeStamp": "2026-04-28T12:53:20.3937495+00:00", "Log": "F     'Content-Type': 'application/json; charset=utf-8'"}
+{"TimeStamp": "2026-04-28T12:53:20.3937509+00:00", "Log": "F     'Server': 'Microsoft-HTTPAPI/2.0'"}
+{"TimeStamp": "2026-04-28T12:53:20.3937522+00:00", "Log": "F     'Strict-Transport-Security': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:53:20.3937534+00:00", "Log": "F     'X-Content-Type-Options': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:53:20.3937546+00:00", "Log": "F     'Date': 'Tue, 28 Apr 2026 12:53:19 GMT'"}
+{"TimeStamp": "2026-04-28T12:53:20.3939488+00:00", "Log": "F [2026-04-28 12:53:20,393: INFO/MainProcess] Transmission succeeded: Item received: 9. Items accepted: 9"}
+{"TimeStamp": "2026-04-28T12:53:22.6439601+00:00", "Log": "F [2026-04-28 12:53:22,643: INFO/MainProcess] {\"event\": \"MongoDB: Event loop changed, resetting connection\", \"logger\": \"app.db.mongo\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:53:22.643615Z\"}"}
+{"TimeStamp": "2026-04-28T12:53:22.6654032+00:00", "Log": "F [2026-04-28 12:53:22,665: INFO/MainProcess] You appear to be connected to a CosmosDB cluster. For more information regarding feature compatibility and support please visit https://www.mongodb.com/supportability/cosmosdb"}
+{"TimeStamp": "2026-04-28T12:53:22.7233891+00:00", "Log": "F [2026-04-28 12:53:22,723: INFO/MainProcess] You appear to be connected to a CosmosDB cluster. For more information regarding feature compatibility and support please visit https://www.mongodb.com/supportability/cosmosdb"}
+{"TimeStamp": "2026-04-28T12:53:22.9093402+00:00", "Log": "F [2026-04-28 12:53:22,909: INFO/MainProcess] {\"database\": \"finanacialDocIntelligence\", \"environment\": \"dev\", \"event\": \"MongoDB connected\", \"logger\": \"app.db.mongo\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:53:22.909042Z\"}"}
+{"TimeStamp": "2026-04-28T12:53:28.7003975+00:00", "Log": "F [2026-04-28 12:53:28,700: INFO/MainProcess] Request URL: 'https://centralindia.livediagnostics.monitor.azure.com/QuickPulseService.svc/ping?api-version=REDACTED&ikey=REDACTED'"}
+{"TimeStamp": "2026-04-28T12:53:28.7004375+00:00", "Log": "F Request method: 'POST'"}
+{"TimeStamp": "2026-04-28T12:53:28.7004545+00:00", "Log": "F Request headers:"}
+{"TimeStamp": "2026-04-28T12:53:28.7004578+00:00", "Log": "F     'Content-Type': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:53:28.7004601+00:00", "Log": "F     'Content-Length': '348'"}
+{"TimeStamp": "2026-04-28T12:53:28.7004623+00:00", "Log": "F     'x-ms-qps-transmission-time': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:53:28.7004636+00:00", "Log": "F     'x-ms-qps-machine-name': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:53:28.7004648+00:00", "Log": "F     'x-ms-qps-instance-name': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:53:28.7004661+00:00", "Log": "F     'x-ms-qps-stream-id': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:53:28.7004672+00:00", "Log": "F     'x-ms-qps-role-name': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:53:28.7004731+00:00", "Log": "F     'x-ms-qps-invariant-version': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:53:28.7004743+00:00", "Log": "F     'x-ms-qps-configuration-etag': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:53:28.7004755+00:00", "Log": "F     'Accept': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:53:28.7004766+00:00", "Log": "F A body is sent with the request"}
+{"TimeStamp": "2026-04-28T12:53:28.7180531+00:00", "Log": "F [2026-04-28 12:53:28,717: INFO/MainProcess] Response status: 200"}
+{"TimeStamp": "2026-04-28T12:53:28.7181559+00:00", "Log": "F Response headers:"}
+{"TimeStamp": "2026-04-28T12:53:28.7181738+00:00", "Log": "F     'Server': 'Microsoft-IIS/10.0'"}
+{"TimeStamp": "2026-04-28T12:53:28.7181767+00:00", "Log": "F     'x-ms-qps-subscribed': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:53:28.7181788+00:00", "Log": "F     'Request-Context': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:53:28.7181809+00:00", "Log": "F     'Access-Control-Expose-Headers': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:53:28.7181831+00:00", "Log": "F     'X-Powered-By': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:53:28.718185+00:00", "Log": "F     'Strict-Transport-Security': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:53:28.7181919+00:00", "Log": "F     'X-Content-Type-Options': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:53:28.7181941+00:00", "Log": "F     'Date': 'Tue, 28 Apr 2026 12:53:28 GMT'"}
+{"TimeStamp": "2026-04-28T12:53:28.718196+00:00", "Log": "F     'Content-Length': '0'"}
+{"TimeStamp": "2026-04-28T12:53:32.6380531+00:00", "Log": "F [2026-04-28 12:53:32,637: INFO/MainProcess] {\"stage\": \"extraction.text_section_progress\", \"batch_idx\": 30, \"size_hint_mb\": 120.0, \"collected\": 119, \"event\": \"Manual GC executed\", \"logger\": \"app.core.memory\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:53:32.637670Z\"}"}
+{"TimeStamp": "2026-04-28T12:53:32.6380949+00:00", "Log": "F [2026-04-28 12:53:32,637: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"processed_entries\": 30, \"total_entries\": 41, \"built_sections\": 30, \"event\": \"Text extraction progress\", \"logger\": \"app.services.extraction\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:53:32.637908Z\"}"}

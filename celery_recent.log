@@ -1,0 +1,302 @@
+{"TimeStamp": "2026-04-28T12:27:16.55062", "Log": "Connecting to the container 'fdi-celery-worker-dev'..."}
+{"TimeStamp": "2026-04-28T12:27:16.59535", "Log": "Successfully Connected to container: 'fdi-celery-worker-dev' [Revision: 'fdi-celery-worker-dev--0000010', Replica: 'fdi-celery-worker-dev--0000010-5f8fb48f7-lbcv6']"}
+{"TimeStamp": "2026-04-28T12:20:43.4531574+00:00", "Log": "F Request method: 'POST'"}
+{"TimeStamp": "2026-04-28T12:20:43.453172+00:00", "Log": "F Request headers:"}
+{"TimeStamp": "2026-04-28T12:20:43.4531742+00:00", "Log": "F     'Content-Type': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:20:43.4531756+00:00", "Log": "F     'Content-Length': '6333'"}
+{"TimeStamp": "2026-04-28T12:20:43.4531768+00:00", "Log": "F     'Accept': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:20:43.4531781+00:00", "Log": "F     'x-ms-client-request-id': 'ad7534f8-42fc-11f1-9863-3adb9c740c34'"}
+{"TimeStamp": "2026-04-28T12:20:43.4531793+00:00", "Log": "F     'User-Agent': 'azsdk-python-monitor-opentelemetry-exporter/1.0.0b1 Python/3.11.13 (Linux-5.15.186.1-1.cm2-x86_64-with-glibc2.31)'"}
+{"TimeStamp": "2026-04-28T12:20:43.4531806+00:00", "Log": "F A body is sent with the request"}
+{"TimeStamp": "2026-04-28T12:20:43.5701951+00:00", "Log": "F [2026-04-28 12:20:43,569: INFO/MainProcess] Response status: 200"}
+{"TimeStamp": "2026-04-28T12:20:43.5702323+00:00", "Log": "F Response headers:"}
+{"TimeStamp": "2026-04-28T12:20:43.5702515+00:00", "Log": "F     'Transfer-Encoding': 'chunked'"}
+{"TimeStamp": "2026-04-28T12:20:43.5702536+00:00", "Log": "F     'Content-Type': 'application/json; charset=utf-8'"}
+{"TimeStamp": "2026-04-28T12:20:43.5702549+00:00", "Log": "F     'Server': 'Microsoft-HTTPAPI/2.0'"}
+{"TimeStamp": "2026-04-28T12:20:43.5702561+00:00", "Log": "F     'Strict-Transport-Security': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:20:43.5702573+00:00", "Log": "F     'X-Content-Type-Options': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:20:43.5702585+00:00", "Log": "F     'Date': 'Tue, 28 Apr 2026 12:20:42 GMT'"}
+{"TimeStamp": "2026-04-28T12:20:43.5704603+00:00", "Log": "F [2026-04-28 12:20:43,570: INFO/MainProcess] Transmission succeeded: Item received: 9. Items accepted: 9"}
+{"TimeStamp": "2026-04-28T12:20:56.8860172+00:00", "Log": "F [2026-04-28 12:20:56,885: INFO/MainProcess] Request URL: 'https://centralindia.livediagnostics.monitor.azure.com/QuickPulseService.svc/ping?api-version=REDACTED&ikey=REDACTED'"}
+{"TimeStamp": "2026-04-28T12:20:56.8860599+00:00", "Log": "F Request method: 'POST'"}
+{"TimeStamp": "2026-04-28T12:20:56.8860739+00:00", "Log": "F Request headers:"}
+{"TimeStamp": "2026-04-28T12:20:56.8860769+00:00", "Log": "F     'Content-Type': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:20:56.886079+00:00", "Log": "F     'Content-Length': '346'"}
+{"TimeStamp": "2026-04-28T12:20:56.8860813+00:00", "Log": "F     'x-ms-qps-transmission-time': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:20:56.8860839+00:00", "Log": "F     'x-ms-qps-machine-name': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:20:56.886086+00:00", "Log": "F     'x-ms-qps-instance-name': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:20:56.8860882+00:00", "Log": "F     'x-ms-qps-stream-id': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:20:56.8860901+00:00", "Log": "F     'x-ms-qps-role-name': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:20:56.8860921+00:00", "Log": "F     'x-ms-qps-invariant-version': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:20:56.8860941+00:00", "Log": "F     'x-ms-qps-configuration-etag': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:20:56.8860961+00:00", "Log": "F     'Accept': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:20:56.8860995+00:00", "Log": "F A body is sent with the request"}
+{"TimeStamp": "2026-04-28T12:20:56.88901+00:00", "Log": "F [2026-04-28 12:20:56,888: INFO/MainProcess] Response status: 200"}
+{"TimeStamp": "2026-04-28T12:20:56.8890438+00:00", "Log": "F Response headers:"}
+{"TimeStamp": "2026-04-28T12:20:56.8890575+00:00", "Log": "F     'Server': 'Microsoft-IIS/10.0'"}
+{"TimeStamp": "2026-04-28T12:20:56.8890594+00:00", "Log": "F     'x-ms-qps-subscribed': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:20:56.8890607+00:00", "Log": "F     'Request-Context': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:20:56.8890619+00:00", "Log": "F     'Access-Control-Expose-Headers': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:20:56.8890631+00:00", "Log": "F     'X-Powered-By': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:20:56.8890643+00:00", "Log": "F     'Strict-Transport-Security': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:20:56.8890654+00:00", "Log": "F     'X-Content-Type-Options': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:20:56.8890667+00:00", "Log": "F     'Date': 'Tue, 28 Apr 2026 12:20:56 GMT'"}
+{"TimeStamp": "2026-04-28T12:20:56.889068+00:00", "Log": "F     'Content-Length': '0'"}
+{"TimeStamp": "2026-04-28T12:21:43.5743256+00:00", "Log": "F [2026-04-28 12:21:43,573: INFO/MainProcess] Request URL: 'https://centralindia-0.in.applicationinsights.azure.com//v2.1/track'"}
+{"TimeStamp": "2026-04-28T12:21:43.5743674+00:00", "Log": "F Request method: 'POST'"}
+{"TimeStamp": "2026-04-28T12:21:43.574382+00:00", "Log": "F Request headers:"}
+{"TimeStamp": "2026-04-28T12:21:43.5743838+00:00", "Log": "F     'Content-Type': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:21:43.5743852+00:00", "Log": "F     'Content-Length': '6333'"}
+{"TimeStamp": "2026-04-28T12:21:43.5743865+00:00", "Log": "F     'Accept': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:21:43.5743877+00:00", "Log": "F     'x-ms-client-request-id': 'd14af1ba-42fc-11f1-9863-3adb9c740c34'"}
+{"TimeStamp": "2026-04-28T12:21:43.5743889+00:00", "Log": "F     'User-Agent': 'azsdk-python-monitor-opentelemetry-exporter/1.0.0b1 Python/3.11.13 (Linux-5.15.186.1-1.cm2-x86_64-with-glibc2.31)'"}
+{"TimeStamp": "2026-04-28T12:21:43.5743902+00:00", "Log": "F A body is sent with the request"}
+{"TimeStamp": "2026-04-28T12:21:43.6799809+00:00", "Log": "F [2026-04-28 12:21:43,679: INFO/MainProcess] Response status: 200"}
+{"TimeStamp": "2026-04-28T12:21:43.6800224+00:00", "Log": "F Response headers:"}
+{"TimeStamp": "2026-04-28T12:21:43.680043+00:00", "Log": "F     'Transfer-Encoding': 'chunked'"}
+{"TimeStamp": "2026-04-28T12:21:43.6800453+00:00", "Log": "F     'Content-Type': 'application/json; charset=utf-8'"}
+{"TimeStamp": "2026-04-28T12:21:43.680047+00:00", "Log": "F     'Server': 'Microsoft-HTTPAPI/2.0'"}
+{"TimeStamp": "2026-04-28T12:21:43.6800482+00:00", "Log": "F     'Strict-Transport-Security': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:21:43.6800494+00:00", "Log": "F     'X-Content-Type-Options': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:21:43.6800506+00:00", "Log": "F     'Date': 'Tue, 28 Apr 2026 12:21:43 GMT'"}
+{"TimeStamp": "2026-04-28T12:21:43.6802458+00:00", "Log": "F [2026-04-28 12:21:43,680: INFO/MainProcess] Transmission succeeded: Item received: 9. Items accepted: 9"}
+{"TimeStamp": "2026-04-28T12:21:56.8959001+00:00", "Log": "F [2026-04-28 12:21:56,895: INFO/MainProcess] Request URL: 'https://centralindia.livediagnostics.monitor.azure.com/QuickPulseService.svc/ping?api-version=REDACTED&ikey=REDACTED'"}
+{"TimeStamp": "2026-04-28T12:21:56.8959406+00:00", "Log": "F Request method: 'POST'"}
+{"TimeStamp": "2026-04-28T12:21:56.8959578+00:00", "Log": "F Request headers:"}
+{"TimeStamp": "2026-04-28T12:21:56.8959656+00:00", "Log": "F     'Content-Type': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:21:56.8959681+00:00", "Log": "F     'Content-Length': '346'"}
+{"TimeStamp": "2026-04-28T12:21:56.8959702+00:00", "Log": "F     'x-ms-qps-transmission-time': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:21:56.8959723+00:00", "Log": "F     'x-ms-qps-machine-name': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:21:56.8959743+00:00", "Log": "F     'x-ms-qps-instance-name': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:21:56.8959764+00:00", "Log": "F     'x-ms-qps-stream-id': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:21:56.8959784+00:00", "Log": "F     'x-ms-qps-role-name': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:21:56.8959806+00:00", "Log": "F     'x-ms-qps-invariant-version': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:21:56.8959828+00:00", "Log": "F     'x-ms-qps-configuration-etag': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:21:56.8959848+00:00", "Log": "F     'Accept': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:21:56.8959868+00:00", "Log": "F A body is sent with the request"}
+{"TimeStamp": "2026-04-28T12:21:56.8985591+00:00", "Log": "F [2026-04-28 12:21:56,898: INFO/MainProcess] Response status: 200"}
+{"TimeStamp": "2026-04-28T12:21:56.8985967+00:00", "Log": "F Response headers:"}
+{"TimeStamp": "2026-04-28T12:21:56.8986428+00:00", "Log": "F     'Server': 'Microsoft-IIS/10.0'"}
+{"TimeStamp": "2026-04-28T12:21:56.8986451+00:00", "Log": "F     'x-ms-qps-subscribed': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:21:56.8986464+00:00", "Log": "F     'Request-Context': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:21:56.8986477+00:00", "Log": "F     'Access-Control-Expose-Headers': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:21:56.898649+00:00", "Log": "F     'X-Powered-By': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:21:56.8986504+00:00", "Log": "F     'Strict-Transport-Security': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:21:56.8986516+00:00", "Log": "F     'X-Content-Type-Options': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:21:56.8986529+00:00", "Log": "F     'Date': 'Tue, 28 Apr 2026 12:21:56 GMT'"}
+{"TimeStamp": "2026-04-28T12:21:56.8986541+00:00", "Log": "F     'Content-Length': '0'"}
+{"TimeStamp": "2026-04-28T12:22:43.6839044+00:00", "Log": "F [2026-04-28 12:22:43,682: INFO/MainProcess] Request URL: 'https://centralindia-0.in.applicationinsights.azure.com//v2.1/track'"}
+{"TimeStamp": "2026-04-28T12:22:43.6839493+00:00", "Log": "F Request method: 'POST'"}
+{"TimeStamp": "2026-04-28T12:22:43.6839663+00:00", "Log": "F Request headers:"}
+{"TimeStamp": "2026-04-28T12:22:43.6839694+00:00", "Log": "F     'Content-Type': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:22:43.6839715+00:00", "Log": "F     'Content-Length': '6332'"}
+{"TimeStamp": "2026-04-28T12:22:43.6839737+00:00", "Log": "F     'Accept': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:22:43.6839757+00:00", "Log": "F     'x-ms-client-request-id': 'f51ed71e-42fc-11f1-9863-3adb9c740c34'"}
+{"TimeStamp": "2026-04-28T12:22:43.6839778+00:00", "Log": "F     'User-Agent': 'azsdk-python-monitor-opentelemetry-exporter/1.0.0b1 Python/3.11.13 (Linux-5.15.186.1-1.cm2-x86_64-with-glibc2.31)'"}
+{"TimeStamp": "2026-04-28T12:22:43.6839807+00:00", "Log": "F A body is sent with the request"}
+{"TimeStamp": "2026-04-28T12:22:43.775757+00:00", "Log": "F [2026-04-28 12:22:43,775: INFO/MainProcess] Response status: 200"}
+{"TimeStamp": "2026-04-28T12:22:43.7758079+00:00", "Log": "F Response headers:"}
+{"TimeStamp": "2026-04-28T12:22:43.7758357+00:00", "Log": "F     'Transfer-Encoding': 'chunked'"}
+{"TimeStamp": "2026-04-28T12:22:43.7758387+00:00", "Log": "F     'Content-Type': 'application/json; charset=utf-8'"}
+{"TimeStamp": "2026-04-28T12:22:43.7758409+00:00", "Log": "F     'Server': 'Microsoft-HTTPAPI/2.0'"}
+{"TimeStamp": "2026-04-28T12:22:43.775843+00:00", "Log": "F     'Strict-Transport-Security': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:22:43.7758451+00:00", "Log": "F     'X-Content-Type-Options': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:22:43.7758473+00:00", "Log": "F     'Date': 'Tue, 28 Apr 2026 12:22:43 GMT'"}
+{"TimeStamp": "2026-04-28T12:22:43.7759991+00:00", "Log": "F [2026-04-28 12:22:43,775: INFO/MainProcess] Transmission succeeded: Item received: 9. Items accepted: 9"}
+{"TimeStamp": "2026-04-28T12:22:56.9062462+00:00", "Log": "F [2026-04-28 12:22:56,905: INFO/MainProcess] Request URL: 'https://centralindia.livediagnostics.monitor.azure.com/QuickPulseService.svc/ping?api-version=REDACTED&ikey=REDACTED'"}
+{"TimeStamp": "2026-04-28T12:22:56.906282+00:00", "Log": "F Request method: 'POST'"}
+{"TimeStamp": "2026-04-28T12:22:56.9062969+00:00", "Log": "F Request headers:"}
+{"TimeStamp": "2026-04-28T12:22:56.9062988+00:00", "Log": "F     'Content-Type': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:22:56.9063002+00:00", "Log": "F     'Content-Length': '346'"}
+{"TimeStamp": "2026-04-28T12:22:56.9063014+00:00", "Log": "F     'x-ms-qps-transmission-time': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:22:56.9063026+00:00", "Log": "F     'x-ms-qps-machine-name': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:22:56.9063037+00:00", "Log": "F     'x-ms-qps-instance-name': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:22:56.9063048+00:00", "Log": "F     'x-ms-qps-stream-id': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:22:56.9063059+00:00", "Log": "F     'x-ms-qps-role-name': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:22:56.9063069+00:00", "Log": "F     'x-ms-qps-invariant-version': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:22:56.9063121+00:00", "Log": "F     'x-ms-qps-configuration-etag': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:22:56.9063133+00:00", "Log": "F     'Accept': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:22:56.9063144+00:00", "Log": "F A body is sent with the request"}
+{"TimeStamp": "2026-04-28T12:22:56.9093499+00:00", "Log": "F [2026-04-28 12:22:56,908: INFO/MainProcess] Response status: 200"}
+{"TimeStamp": "2026-04-28T12:22:56.909384+00:00", "Log": "F Response headers:"}
+{"TimeStamp": "2026-04-28T12:22:56.9093974+00:00", "Log": "F     'Server': 'Microsoft-IIS/10.0'"}
+{"TimeStamp": "2026-04-28T12:22:56.9093991+00:00", "Log": "F     'x-ms-qps-subscribed': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:22:56.9094003+00:00", "Log": "F     'Request-Context': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:22:56.9094016+00:00", "Log": "F     'Access-Control-Expose-Headers': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:22:56.9094029+00:00", "Log": "F     'X-Powered-By': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:22:56.9094041+00:00", "Log": "F     'Strict-Transport-Security': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:22:56.9094053+00:00", "Log": "F     'X-Content-Type-Options': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:22:56.9094066+00:00", "Log": "F     'Date': 'Tue, 28 Apr 2026 12:22:55 GMT'"}
+{"TimeStamp": "2026-04-28T12:22:56.9094123+00:00", "Log": "F     'Content-Length': '0'"}
+{"TimeStamp": "2026-04-28T12:23:43.7792667+00:00", "Log": "F [2026-04-28 12:23:43,778: INFO/MainProcess] Request URL: 'https://centralindia-0.in.applicationinsights.azure.com//v2.1/track'"}
+{"TimeStamp": "2026-04-28T12:23:43.7793138+00:00", "Log": "F Request method: 'POST'"}
+{"TimeStamp": "2026-04-28T12:23:43.7793261+00:00", "Log": "F Request headers:"}
+{"TimeStamp": "2026-04-28T12:23:43.7793279+00:00", "Log": "F     'Content-Type': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:23:43.7793293+00:00", "Log": "F     'Content-Length': '6332'"}
+{"TimeStamp": "2026-04-28T12:23:43.7793305+00:00", "Log": "F     'Accept': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:23:43.7793316+00:00", "Log": "F     'x-ms-client-request-id': '18f0c742-42fd-11f1-9863-3adb9c740c34'"}
+{"TimeStamp": "2026-04-28T12:23:43.7793328+00:00", "Log": "F     'User-Agent': 'azsdk-python-monitor-opentelemetry-exporter/1.0.0b1 Python/3.11.13 (Linux-5.15.186.1-1.cm2-x86_64-with-glibc2.31)'"}
+{"TimeStamp": "2026-04-28T12:23:43.7793341+00:00", "Log": "F A body is sent with the request"}
+{"TimeStamp": "2026-04-28T12:23:43.8720302+00:00", "Log": "F [2026-04-28 12:23:43,871: INFO/MainProcess] Response status: 200"}
+{"TimeStamp": "2026-04-28T12:23:43.8720727+00:00", "Log": "F Response headers:"}
+{"TimeStamp": "2026-04-28T12:23:43.8720943+00:00", "Log": "F     'Transfer-Encoding': 'chunked'"}
+{"TimeStamp": "2026-04-28T12:23:43.8720974+00:00", "Log": "F     'Content-Type': 'application/json; charset=utf-8'"}
+{"TimeStamp": "2026-04-28T12:23:43.8720991+00:00", "Log": "F     'Server': 'Microsoft-HTTPAPI/2.0'"}
+{"TimeStamp": "2026-04-28T12:23:43.8721003+00:00", "Log": "F     'Strict-Transport-Security': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:23:43.8721016+00:00", "Log": "F     'X-Content-Type-Options': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:23:43.8721028+00:00", "Log": "F     'Date': 'Tue, 28 Apr 2026 12:23:43 GMT'"}
+{"TimeStamp": "2026-04-28T12:23:43.8722571+00:00", "Log": "F [2026-04-28 12:23:43,872: INFO/MainProcess] Transmission succeeded: Item received: 9. Items accepted: 9"}
+{"TimeStamp": "2026-04-28T12:23:56.9171898+00:00", "Log": "F [2026-04-28 12:23:56,916: INFO/MainProcess] Request URL: 'https://centralindia.livediagnostics.monitor.azure.com/QuickPulseService.svc/ping?api-version=REDACTED&ikey=REDACTED'"}
+{"TimeStamp": "2026-04-28T12:23:56.917247+00:00", "Log": "F Request method: 'POST'"}
+{"TimeStamp": "2026-04-28T12:23:56.9172656+00:00", "Log": "F Request headers:"}
+{"TimeStamp": "2026-04-28T12:23:56.9172686+00:00", "Log": "F     'Content-Type': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:23:56.9172709+00:00", "Log": "F     'Content-Length': '346'"}
+{"TimeStamp": "2026-04-28T12:23:56.917273+00:00", "Log": "F     'x-ms-qps-transmission-time': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:23:56.9172752+00:00", "Log": "F     'x-ms-qps-machine-name': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:23:56.9172772+00:00", "Log": "F     'x-ms-qps-instance-name': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:23:56.9172793+00:00", "Log": "F     'x-ms-qps-stream-id': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:23:56.9172814+00:00", "Log": "F     'x-ms-qps-role-name': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:23:56.9172834+00:00", "Log": "F     'x-ms-qps-invariant-version': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:23:56.9172855+00:00", "Log": "F     'x-ms-qps-configuration-etag': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:23:56.9172877+00:00", "Log": "F     'Accept': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:23:56.9172958+00:00", "Log": "F A body is sent with the request"}
+{"TimeStamp": "2026-04-28T12:23:56.9200143+00:00", "Log": "F [2026-04-28 12:23:56,919: INFO/MainProcess] Response status: 200"}
+{"TimeStamp": "2026-04-28T12:23:56.9200479+00:00", "Log": "F Response headers:"}
+{"TimeStamp": "2026-04-28T12:23:56.920103+00:00", "Log": "F     'Server': 'Microsoft-IIS/10.0'"}
+{"TimeStamp": "2026-04-28T12:23:56.9201055+00:00", "Log": "F     'x-ms-qps-subscribed': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:23:56.9201069+00:00", "Log": "F     'Request-Context': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:23:56.9201082+00:00", "Log": "F     'Access-Control-Expose-Headers': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:23:56.9201094+00:00", "Log": "F     'X-Powered-By': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:23:56.9201106+00:00", "Log": "F     'Strict-Transport-Security': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:23:56.9201117+00:00", "Log": "F     'X-Content-Type-Options': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:23:56.9201129+00:00", "Log": "F     'Date': 'Tue, 28 Apr 2026 12:23:56 GMT'"}
+{"TimeStamp": "2026-04-28T12:23:56.9201141+00:00", "Log": "F     'Content-Length': '0'"}
+{"TimeStamp": "2026-04-28T12:24:43.8750609+00:00", "Log": "F [2026-04-28 12:24:43,874: INFO/MainProcess] Request URL: 'https://centralindia-0.in.applicationinsights.azure.com//v2.1/track'"}
+{"TimeStamp": "2026-04-28T12:24:43.8751108+00:00", "Log": "F Request method: 'POST'"}
+{"TimeStamp": "2026-04-28T12:24:43.8751251+00:00", "Log": "F Request headers:"}
+{"TimeStamp": "2026-04-28T12:24:43.875128+00:00", "Log": "F     'Content-Type': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:24:43.8751302+00:00", "Log": "F     'Content-Length': '6332'"}
+{"TimeStamp": "2026-04-28T12:24:43.8751323+00:00", "Log": "F     'Accept': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:24:43.8751343+00:00", "Log": "F     'x-ms-client-request-id': '3cc2ad34-42fd-11f1-9863-3adb9c740c34'"}
+{"TimeStamp": "2026-04-28T12:24:43.8751364+00:00", "Log": "F     'User-Agent': 'azsdk-python-monitor-opentelemetry-exporter/1.0.0b1 Python/3.11.13 (Linux-5.15.186.1-1.cm2-x86_64-with-glibc2.31)'"}
+{"TimeStamp": "2026-04-28T12:24:43.8751386+00:00", "Log": "F A body is sent with the request"}
+{"TimeStamp": "2026-04-28T12:24:43.9671993+00:00", "Log": "F [2026-04-28 12:24:43,966: INFO/MainProcess] Response status: 200"}
+{"TimeStamp": "2026-04-28T12:24:43.9672408+00:00", "Log": "F Response headers:"}
+{"TimeStamp": "2026-04-28T12:24:43.9672649+00:00", "Log": "F     'Transfer-Encoding': 'chunked'"}
+{"TimeStamp": "2026-04-28T12:24:43.967267+00:00", "Log": "F     'Content-Type': 'application/json; charset=utf-8'"}
+{"TimeStamp": "2026-04-28T12:24:43.9672685+00:00", "Log": "F     'Server': 'Microsoft-HTTPAPI/2.0'"}
+{"TimeStamp": "2026-04-28T12:24:43.9672698+00:00", "Log": "F     'Strict-Transport-Security': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:24:43.9672709+00:00", "Log": "F     'X-Content-Type-Options': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:24:43.9672721+00:00", "Log": "F     'Date': 'Tue, 28 Apr 2026 12:24:43 GMT'"}
+{"TimeStamp": "2026-04-28T12:24:43.967493+00:00", "Log": "F [2026-04-28 12:24:43,967: INFO/MainProcess] Transmission succeeded: Item received: 9. Items accepted: 9"}
+{"TimeStamp": "2026-04-28T12:24:56.9272357+00:00", "Log": "F [2026-04-28 12:24:56,926: INFO/MainProcess] Request URL: 'https://centralindia.livediagnostics.monitor.azure.com/QuickPulseService.svc/ping?api-version=REDACTED&ikey=REDACTED'"}
+{"TimeStamp": "2026-04-28T12:24:56.9272798+00:00", "Log": "F Request method: 'POST'"}
+{"TimeStamp": "2026-04-28T12:24:56.9273018+00:00", "Log": "F Request headers:"}
+{"TimeStamp": "2026-04-28T12:24:56.9273046+00:00", "Log": "F     'Content-Type': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:24:56.9273069+00:00", "Log": "F     'Content-Length': '346'"}
+{"TimeStamp": "2026-04-28T12:24:56.9273089+00:00", "Log": "F     'x-ms-qps-transmission-time': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:24:56.9273109+00:00", "Log": "F     'x-ms-qps-machine-name': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:24:56.927313+00:00", "Log": "F     'x-ms-qps-instance-name': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:24:56.9273149+00:00", "Log": "F     'x-ms-qps-stream-id': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:24:56.9273171+00:00", "Log": "F     'x-ms-qps-role-name': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:24:56.9273191+00:00", "Log": "F     'x-ms-qps-invariant-version': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:24:56.9273209+00:00", "Log": "F     'x-ms-qps-configuration-etag': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:24:56.9273228+00:00", "Log": "F     'Accept': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:24:56.9273247+00:00", "Log": "F A body is sent with the request"}
+{"TimeStamp": "2026-04-28T12:24:56.9297064+00:00", "Log": "F [2026-04-28 12:24:56,929: INFO/MainProcess] Response status: 200"}
+{"TimeStamp": "2026-04-28T12:24:56.9297399+00:00", "Log": "F Response headers:"}
+{"TimeStamp": "2026-04-28T12:24:56.9297531+00:00", "Log": "F     'Server': 'Microsoft-IIS/10.0'"}
+{"TimeStamp": "2026-04-28T12:24:56.9297556+00:00", "Log": "F     'x-ms-qps-subscribed': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:24:56.9297569+00:00", "Log": "F     'Request-Context': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:24:56.9297581+00:00", "Log": "F     'Access-Control-Expose-Headers': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:24:56.9297626+00:00", "Log": "F     'X-Powered-By': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:24:56.9297639+00:00", "Log": "F     'Strict-Transport-Security': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:24:56.9297651+00:00", "Log": "F     'X-Content-Type-Options': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:24:56.9297663+00:00", "Log": "F     'Date': 'Tue, 28 Apr 2026 12:24:56 GMT'"}
+{"TimeStamp": "2026-04-28T12:24:56.929782+00:00", "Log": "F     'Content-Length': '0'"}
+{"TimeStamp": "2026-04-28T12:25:43.97041+00:00", "Log": "F [2026-04-28 12:25:43,970: INFO/MainProcess] Request URL: 'https://centralindia-0.in.applicationinsights.azure.com//v2.1/track'"}
+{"TimeStamp": "2026-04-28T12:25:43.9704663+00:00", "Log": "F Request method: 'POST'"}
+{"TimeStamp": "2026-04-28T12:25:43.9704811+00:00", "Log": "F Request headers:"}
+{"TimeStamp": "2026-04-28T12:25:43.9704834+00:00", "Log": "F     'Content-Type': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:25:43.9704847+00:00", "Log": "F     'Content-Length': '6333'"}
+{"TimeStamp": "2026-04-28T12:25:43.970486+00:00", "Log": "F     'Accept': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:25:43.9704874+00:00", "Log": "F     'x-ms-client-request-id': '60948110-42fd-11f1-9863-3adb9c740c34'"}
+{"TimeStamp": "2026-04-28T12:25:43.9704946+00:00", "Log": "F     'User-Agent': 'azsdk-python-monitor-opentelemetry-exporter/1.0.0b1 Python/3.11.13 (Linux-5.15.186.1-1.cm2-x86_64-with-glibc2.31)'"}
+{"TimeStamp": "2026-04-28T12:25:43.9704961+00:00", "Log": "F A body is sent with the request"}
+{"TimeStamp": "2026-04-28T12:25:44.0784523+00:00", "Log": "F [2026-04-28 12:25:44,078: INFO/MainProcess] Response status: 200"}
+{"TimeStamp": "2026-04-28T12:25:44.0785116+00:00", "Log": "F Response headers:"}
+{"TimeStamp": "2026-04-28T12:25:44.0785279+00:00", "Log": "F     'Transfer-Encoding': 'chunked'"}
+{"TimeStamp": "2026-04-28T12:25:44.0785307+00:00", "Log": "F     'Content-Type': 'application/json; charset=utf-8'"}
+{"TimeStamp": "2026-04-28T12:25:44.078533+00:00", "Log": "F     'Server': 'Microsoft-HTTPAPI/2.0'"}
+{"TimeStamp": "2026-04-28T12:25:44.0785355+00:00", "Log": "F     'Strict-Transport-Security': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:25:44.0785377+00:00", "Log": "F     'X-Content-Type-Options': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:25:44.0785398+00:00", "Log": "F     'Date': 'Tue, 28 Apr 2026 12:25:43 GMT'"}
+{"TimeStamp": "2026-04-28T12:25:44.0787846+00:00", "Log": "F [2026-04-28 12:25:44,078: INFO/MainProcess] Transmission succeeded: Item received: 9. Items accepted: 9"}
+{"TimeStamp": "2026-04-28T12:25:56.9361021+00:00", "Log": "F [2026-04-28 12:25:56,935: INFO/MainProcess] Request URL: 'https://centralindia.livediagnostics.monitor.azure.com/QuickPulseService.svc/ping?api-version=REDACTED&ikey=REDACTED'"}
+{"TimeStamp": "2026-04-28T12:25:56.9361449+00:00", "Log": "F Request method: 'POST'"}
+{"TimeStamp": "2026-04-28T12:25:56.9361604+00:00", "Log": "F Request headers:"}
+{"TimeStamp": "2026-04-28T12:25:56.9361626+00:00", "Log": "F     'Content-Type': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:25:56.936164+00:00", "Log": "F     'Content-Length': '346'"}
+{"TimeStamp": "2026-04-28T12:25:56.9361654+00:00", "Log": "F     'x-ms-qps-transmission-time': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:25:56.9361668+00:00", "Log": "F     'x-ms-qps-machine-name': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:25:56.9361681+00:00", "Log": "F     'x-ms-qps-instance-name': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:25:56.9361692+00:00", "Log": "F     'x-ms-qps-stream-id': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:25:56.9361703+00:00", "Log": "F     'x-ms-qps-role-name': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:25:56.9361715+00:00", "Log": "F     'x-ms-qps-invariant-version': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:25:56.9361726+00:00", "Log": "F     'x-ms-qps-configuration-etag': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:25:56.9361738+00:00", "Log": "F     'Accept': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:25:56.9361781+00:00", "Log": "F A body is sent with the request"}
+{"TimeStamp": "2026-04-28T12:25:56.9386762+00:00", "Log": "F [2026-04-28 12:25:56,938: INFO/MainProcess] Response status: 200"}
+{"TimeStamp": "2026-04-28T12:25:56.9387103+00:00", "Log": "F Response headers:"}
+{"TimeStamp": "2026-04-28T12:25:56.9387233+00:00", "Log": "F     'Server': 'Microsoft-IIS/10.0'"}
+{"TimeStamp": "2026-04-28T12:25:56.9387252+00:00", "Log": "F     'x-ms-qps-subscribed': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:25:56.9387265+00:00", "Log": "F     'Request-Context': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:25:56.9387277+00:00", "Log": "F     'Access-Control-Expose-Headers': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:25:56.9387291+00:00", "Log": "F     'X-Powered-By': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:25:56.9387303+00:00", "Log": "F     'Strict-Transport-Security': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:25:56.9387315+00:00", "Log": "F     'X-Content-Type-Options': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:25:56.9387326+00:00", "Log": "F     'Date': 'Tue, 28 Apr 2026 12:25:56 GMT'"}
+{"TimeStamp": "2026-04-28T12:25:56.9387338+00:00", "Log": "F     'Content-Length': '0'"}
+{"TimeStamp": "2026-04-28T12:26:44.0823143+00:00", "Log": "F [2026-04-28 12:26:44,082: INFO/MainProcess] Request URL: 'https://centralindia-0.in.applicationinsights.azure.com//v2.1/track'"}
+{"TimeStamp": "2026-04-28T12:26:44.0823563+00:00", "Log": "F Request method: 'POST'"}
+{"TimeStamp": "2026-04-28T12:26:44.0823726+00:00", "Log": "F Request headers:"}
+{"TimeStamp": "2026-04-28T12:26:44.0823756+00:00", "Log": "F     'Content-Type': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:26:44.0823778+00:00", "Log": "F     'Content-Length': '6333'"}
+{"TimeStamp": "2026-04-28T12:26:44.0823801+00:00", "Log": "F     'Accept': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:26:44.0823867+00:00", "Log": "F     'x-ms-client-request-id': '8468db54-42fd-11f1-9863-3adb9c740c34'"}
+{"TimeStamp": "2026-04-28T12:26:44.0823891+00:00", "Log": "F     'User-Agent': 'azsdk-python-monitor-opentelemetry-exporter/1.0.0b1 Python/3.11.13 (Linux-5.15.186.1-1.cm2-x86_64-with-glibc2.31)'"}
+{"TimeStamp": "2026-04-28T12:26:44.0823915+00:00", "Log": "F A body is sent with the request"}
+{"TimeStamp": "2026-04-28T12:26:44.1661961+00:00", "Log": "F [2026-04-28 12:26:44,165: INFO/MainProcess] Response status: 200"}
+{"TimeStamp": "2026-04-28T12:26:44.1662342+00:00", "Log": "F Response headers:"}
+{"TimeStamp": "2026-04-28T12:26:44.1662514+00:00", "Log": "F     'Transfer-Encoding': 'chunked'"}
+{"TimeStamp": "2026-04-28T12:26:44.1662599+00:00", "Log": "F     'Content-Type': 'application/json; charset=utf-8'"}
+{"TimeStamp": "2026-04-28T12:26:44.1662624+00:00", "Log": "F     'Server': 'Microsoft-HTTPAPI/2.0'"}
+{"TimeStamp": "2026-04-28T12:26:44.1662644+00:00", "Log": "F     'Strict-Transport-Security': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:26:44.1662664+00:00", "Log": "F     'X-Content-Type-Options': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:26:44.1662683+00:00", "Log": "F     'Date': 'Tue, 28 Apr 2026 12:26:43 GMT'"}
+{"TimeStamp": "2026-04-28T12:26:44.1663381+00:00", "Log": "F [2026-04-28 12:26:44,166: INFO/MainProcess] Transmission succeeded: Item received: 9. Items accepted: 9"}
+{"TimeStamp": "2026-04-28T12:26:56.9458242+00:00", "Log": "F [2026-04-28 12:26:56,945: INFO/MainProcess] Request URL: 'https://centralindia.livediagnostics.monitor.azure.com/QuickPulseService.svc/ping?api-version=REDACTED&ikey=REDACTED'"}
+{"TimeStamp": "2026-04-28T12:26:56.9458628+00:00", "Log": "F Request method: 'POST'"}
+{"TimeStamp": "2026-04-28T12:26:56.9458787+00:00", "Log": "F Request headers:"}
+{"TimeStamp": "2026-04-28T12:26:56.9458805+00:00", "Log": "F     'Content-Type': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:26:56.9458871+00:00", "Log": "F     'Content-Length': '346'"}
+{"TimeStamp": "2026-04-28T12:26:56.9458886+00:00", "Log": "F     'x-ms-qps-transmission-time': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:26:56.9458898+00:00", "Log": "F     'x-ms-qps-machine-name': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:26:56.945891+00:00", "Log": "F     'x-ms-qps-instance-name': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:26:56.9458922+00:00", "Log": "F     'x-ms-qps-stream-id': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:26:56.9458934+00:00", "Log": "F     'x-ms-qps-role-name': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:26:56.9458946+00:00", "Log": "F     'x-ms-qps-invariant-version': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:26:56.9458958+00:00", "Log": "F     'x-ms-qps-configuration-etag': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:26:56.945897+00:00", "Log": "F     'Accept': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:26:56.9458982+00:00", "Log": "F A body is sent with the request"}
+{"TimeStamp": "2026-04-28T12:26:56.9493356+00:00", "Log": "F [2026-04-28 12:26:56,949: INFO/MainProcess] Response status: 200"}
+{"TimeStamp": "2026-04-28T12:26:56.9493683+00:00", "Log": "F Response headers:"}
+{"TimeStamp": "2026-04-28T12:26:56.9493813+00:00", "Log": "F     'Server': 'Microsoft-IIS/10.0'"}
+{"TimeStamp": "2026-04-28T12:26:56.9493832+00:00", "Log": "F     'x-ms-qps-subscribed': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:26:56.9493883+00:00", "Log": "F     'Request-Context': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:26:56.9493898+00:00", "Log": "F     'Access-Control-Expose-Headers': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:26:56.9494028+00:00", "Log": "F     'X-Powered-By': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:26:56.9494044+00:00", "Log": "F     'Strict-Transport-Security': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:26:56.9494057+00:00", "Log": "F     'X-Content-Type-Options': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:26:56.9494069+00:00", "Log": "F     'Date': 'Tue, 28 Apr 2026 12:26:56 GMT'"}
+{"TimeStamp": "2026-04-28T12:26:56.9494082+00:00", "Log": "F     'Content-Length': '0'"}

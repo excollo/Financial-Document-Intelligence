@@ -53,7 +53,7 @@ router.post(
 router.put("/:id", requireReportPermission("id", "editor"), reportController.update);
 
 // Delete report
-router.delete("/:id", requireReportPermission("id", "owner"), reportController.delete);
+router.delete("/:id", requireReportPermission("id", "editor"), reportController.delete);
 
 // Download DOCX for a report
 router.get("/:id/download-docx", reportController.downloadDocx);

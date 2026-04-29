@@ -1,0 +1,302 @@
+{"TimeStamp": "2026-04-28T12:56:19.3707", "Log": "Connecting to the container 'fdi-celery-worker-dev'..."}
+{"TimeStamp": "2026-04-28T12:56:19.41988", "Log": "Successfully Connected to container: 'fdi-celery-worker-dev' [Revision: 'fdi-celery-worker-dev--0000011', Replica: 'fdi-celery-worker-dev--0000011-6bc59cf5b6-tzk9r']"}
+{"TimeStamp": "2026-04-28T12:55:21.5891715+00:00", "Log": "F     'x-ms-client-request-id': '841f9300-4301-11f1-9901-16ee47812b25'"}
+{"TimeStamp": "2026-04-28T12:55:21.589174+00:00", "Log": "F     'User-Agent': 'azsdk-python-monitor-opentelemetry-exporter/1.0.0b1 Python/3.11.13 (Linux-5.15.186.1-1.cm2-x86_64-with-glibc2.31)'"}
+{"TimeStamp": "2026-04-28T12:55:21.5891763+00:00", "Log": "F A body is sent with the request"}
+{"TimeStamp": "2026-04-28T12:55:21.6778244+00:00", "Log": "F [2026-04-28 12:55:21,677: INFO/MainProcess] Response status: 200"}
+{"TimeStamp": "2026-04-28T12:55:21.6778656+00:00", "Log": "F Response headers:"}
+{"TimeStamp": "2026-04-28T12:55:21.6778912+00:00", "Log": "F     'Transfer-Encoding': 'chunked'"}
+{"TimeStamp": "2026-04-28T12:55:21.6778947+00:00", "Log": "F     'Content-Type': 'application/json; charset=utf-8'"}
+{"TimeStamp": "2026-04-28T12:55:21.677896+00:00", "Log": "F     'Server': 'Microsoft-HTTPAPI/2.0'"}
+{"TimeStamp": "2026-04-28T12:55:21.6778973+00:00", "Log": "F     'Strict-Transport-Security': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:55:21.6778985+00:00", "Log": "F     'X-Content-Type-Options': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:55:21.6778997+00:00", "Log": "F     'Date': 'Tue, 28 Apr 2026 12:55:21 GMT'"}
+{"TimeStamp": "2026-04-28T12:55:21.6779009+00:00", "Log": "F [2026-04-28 12:55:21,677: INFO/MainProcess] Transmission succeeded: Item received: 4. Items accepted: 4"}
+{"TimeStamp": "2026-04-28T12:55:22.9592983+00:00", "Log": "F [2026-04-28 12:55:22,959: INFO/MainProcess] {\"stage\": \"ingestion.section_upsert_complete\", \"batch_idx\": null, \"size_hint_mb\": 140.0, \"collected\": 28, \"event\": \"Manual GC executed\", \"logger\": \"app.core.memory\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:22.958896Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:22.9594543+00:00", "Log": "F [2026-04-28 12:55:22,959: INFO/MainProcess] {\"section\": \"OUTSTANDING LITIGATIONS AND MATERIAL DEVELOPMENTS\", \"chunks\": 7, \"upserted\": 7, \"event\": \"Section embedded and upserted\", \"logger\": \"app.services.ingestion_pipeline\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:22.959178Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:22.9607286+00:00", "Log": "F [2026-04-28 12:55:22,960: INFO/MainProcess] {\"batch_start\": 29, \"batch_size\": 1, \"sections_total\": 41, \"event\": \"Processing section batch\", \"logger\": \"app.services.ingestion_pipeline\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:22.960313Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:22.9614515+00:00", "Log": "F [2026-04-28 12:55:22,961: INFO/MainProcess] {\"total_chars\": 45895, \"chunk_count\": 14, \"chunk_size\": 4800, \"overlap\": 800, \"event\": \"Text split into chunks\", \"logger\": \"app.services.chunking\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:22.961219Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:22.96147+00:00", "Log": "F [2026-04-28 12:55:22,961: INFO/MainProcess] {\"chunk_count\": 14, \"event\": \"Created chunks with metadata\", \"logger\": \"app.services.chunking\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:22.961328Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:22.9625178+00:00", "Log": "F [2026-04-28 12:55:22,962: INFO/MainProcess] {\"batch_size\": 14, \"model\": \"text-embedding-3-large\", \"event\": \"Generating batch embeddings\", \"logger\": \"app.services.embedding\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:22.962293Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:23.045635+00:00", "Log": "F [2026-04-28 12:55:23,045: INFO/MainProcess] {\"event\": \"MongoDB: Event loop changed, resetting connection\", \"logger\": \"app.db.mongo\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:23.045372Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:23.0475738+00:00", "Log": "F [2026-04-28 12:55:23,047: INFO/MainProcess] You appear to be connected to a CosmosDB cluster. For more information regarding feature compatibility and support please visit https://www.mongodb.com/supportability/cosmosdb"}
+{"TimeStamp": "2026-04-28T12:55:23.062993+00:00", "Log": "F [2026-04-28 12:55:23,062: INFO/MainProcess] You appear to be connected to a CosmosDB cluster. For more information regarding feature compatibility and support please visit https://www.mongodb.com/supportability/cosmosdb"}
+{"TimeStamp": "2026-04-28T12:55:23.0921082+00:00", "Log": "F [2026-04-28 12:55:23,091: INFO/MainProcess] {\"database\": \"finanacialDocIntelligence\", \"environment\": \"dev\", \"event\": \"MongoDB connected\", \"logger\": \"app.db.mongo\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:23.091800Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:23.6309401+00:00", "Log": "F [2026-04-28 12:55:23,630: INFO/MainProcess] {\"count\": 14, \"event\": \"Batch embeddings generated\", \"logger\": \"app.services.embedding\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:23.630658Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:23.6312565+00:00", "Log": "F [2026-04-28 12:55:23,631: INFO/MainProcess] {\"chunk_count\": 14, \"embedding_seconds\": 0.67, \"tokens_approx\": 8744, \"event\": \"Chunks embedded\", \"logger\": \"app.services.embedding\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:23.631037Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:26.0429511+00:00", "Log": "F [2026-04-28 12:55:26,042: INFO/MainProcess] {\"stage\": \"ingestion.section_upsert_complete\", \"batch_idx\": null, \"size_hint_mb\": 140.0, \"collected\": 0, \"event\": \"Manual GC executed\", \"logger\": \"app.core.memory\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:26.042602Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:26.0430865+00:00", "Log": "F [2026-04-28 12:55:26,042: INFO/MainProcess] {\"section\": \"GOVERNMENT AND OTHER APPROVALS\", \"chunks\": 14, \"upserted\": 14, \"event\": \"Section embedded and upserted\", \"logger\": \"app.services.ingestion_pipeline\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:26.042824Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:26.0445333+00:00", "Log": "F [2026-04-28 12:55:26,044: INFO/MainProcess] {\"batch_start\": 30, \"batch_size\": 1, \"sections_total\": 41, \"event\": \"Processing section batch\", \"logger\": \"app.services.ingestion_pipeline\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:26.044250Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:26.0446723+00:00", "Log": "F [2026-04-28 12:55:26,044: INFO/MainProcess] {\"total_chars\": 6705, \"chunk_count\": 2, \"chunk_size\": 4800, \"overlap\": 800, \"event\": \"Text split into chunks\", \"logger\": \"app.services.chunking\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:26.044540Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:26.0447336+00:00", "Log": "F [2026-04-28 12:55:26,044: INFO/MainProcess] {\"chunk_count\": 2, \"event\": \"Created chunks with metadata\", \"logger\": \"app.services.chunking\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:26.044648Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:26.0456011+00:00", "Log": "F [2026-04-28 12:55:26,045: INFO/MainProcess] {\"batch_size\": 2, \"model\": \"text-embedding-3-large\", \"event\": \"Generating batch embeddings\", \"logger\": \"app.services.embedding\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:26.045343Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:26.3103317+00:00", "Log": "F [2026-04-28 12:55:26,310: INFO/MainProcess] {\"count\": 2, \"event\": \"Batch embeddings generated\", \"logger\": \"app.services.embedding\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:26.310051Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:26.3108976+00:00", "Log": "F [2026-04-28 12:55:26,310: INFO/MainProcess] {\"chunk_count\": 2, \"embedding_seconds\": 0.27, \"tokens_approx\": 1244, \"event\": \"Chunks embedded\", \"logger\": \"app.services.embedding\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:26.310460Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:26.6795675+00:00", "Log": "F [2026-04-28 12:55:26,679: INFO/MainProcess] Request URL: 'https://centralindia-0.in.applicationinsights.azure.com//v2.1/track'"}
+{"TimeStamp": "2026-04-28T12:55:26.6796089+00:00", "Log": "F Request method: 'POST'"}
+{"TimeStamp": "2026-04-28T12:55:26.6796278+00:00", "Log": "F Request headers:"}
+{"TimeStamp": "2026-04-28T12:55:26.6796305+00:00", "Log": "F     'Content-Type': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:55:26.6796329+00:00", "Log": "F     'Content-Length': '2986'"}
+{"TimeStamp": "2026-04-28T12:55:26.6796351+00:00", "Log": "F     'Accept': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:55:26.6797192+00:00", "Log": "F     'x-ms-client-request-id': '872855aa-4301-11f1-9901-16ee47812b25'"}
+{"TimeStamp": "2026-04-28T12:55:26.6797346+00:00", "Log": "F     'User-Agent': 'azsdk-python-monitor-opentelemetry-exporter/1.0.0b1 Python/3.11.13 (Linux-5.15.186.1-1.cm2-x86_64-with-glibc2.31)'"}
+{"TimeStamp": "2026-04-28T12:55:26.6797377+00:00", "Log": "F A body is sent with the request"}
+{"TimeStamp": "2026-04-28T12:55:26.7884573+00:00", "Log": "F [2026-04-28 12:55:26,788: INFO/MainProcess] Response status: 200"}
+{"TimeStamp": "2026-04-28T12:55:26.7885011+00:00", "Log": "F Response headers:"}
+{"TimeStamp": "2026-04-28T12:55:26.7885194+00:00", "Log": "F     'Transfer-Encoding': 'chunked'"}
+{"TimeStamp": "2026-04-28T12:55:26.7885232+00:00", "Log": "F     'Content-Type': 'application/json; charset=utf-8'"}
+{"TimeStamp": "2026-04-28T12:55:26.7885261+00:00", "Log": "F     'Server': 'Microsoft-HTTPAPI/2.0'"}
+{"TimeStamp": "2026-04-28T12:55:26.7885287+00:00", "Log": "F     'Strict-Transport-Security': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:55:26.7885312+00:00", "Log": "F     'X-Content-Type-Options': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:55:26.7885338+00:00", "Log": "F     'Date': 'Tue, 28 Apr 2026 12:55:26 GMT'"}
+{"TimeStamp": "2026-04-28T12:55:26.7887647+00:00", "Log": "F [2026-04-28 12:55:26,788: INFO/MainProcess] Transmission succeeded: Item received: 3. Items accepted: 3"}
+{"TimeStamp": "2026-04-28T12:55:28.0239176+00:00", "Log": "F [2026-04-28 12:55:28,023: INFO/MainProcess] {\"stage\": \"ingestion.section_upsert_complete\", \"batch_idx\": null, \"size_hint_mb\": 140.0, \"collected\": 86, \"event\": \"Manual GC executed\", \"logger\": \"app.core.memory\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:28.023633Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:28.0240629+00:00", "Log": "F [2026-04-28 12:55:28,023: INFO/MainProcess] {\"section\": \"OUR GROUP COMPANY\", \"chunks\": 2, \"upserted\": 2, \"event\": \"Section embedded and upserted\", \"logger\": \"app.services.ingestion_pipeline\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:28.023822Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:28.0252279+00:00", "Log": "F [2026-04-28 12:55:28,024: INFO/MainProcess] {\"batch_start\": 31, \"batch_size\": 1, \"sections_total\": 41, \"event\": \"Processing section batch\", \"logger\": \"app.services.ingestion_pipeline\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:28.024802Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:28.0259761+00:00", "Log": "F [2026-04-28 12:55:28,025: INFO/MainProcess] {\"total_chars\": 65706, \"chunk_count\": 22, \"chunk_size\": 4800, \"overlap\": 800, \"event\": \"Text split into chunks\", \"logger\": \"app.services.chunking\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:28.025807Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:28.026098+00:00", "Log": "F [2026-04-28 12:55:28,025: INFO/MainProcess] {\"chunk_count\": 22, \"event\": \"Created chunks with metadata\", \"logger\": \"app.services.chunking\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:28.025930Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:28.0271694+00:00", "Log": "F [2026-04-28 12:55:28,027: INFO/MainProcess] {\"batch_size\": 22, \"model\": \"text-embedding-3-large\", \"event\": \"Generating batch embeddings\", \"logger\": \"app.services.embedding\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:28.027028Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:29.0764526+00:00", "Log": "F [2026-04-28 12:55:29,076: INFO/MainProcess] {\"count\": 22, \"event\": \"Batch embeddings generated\", \"logger\": \"app.services.embedding\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:29.076117Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:29.0768015+00:00", "Log": "F [2026-04-28 12:55:29,076: INFO/MainProcess] {\"chunk_count\": 22, \"embedding_seconds\": 1.05, \"tokens_approx\": 12003, \"event\": \"Chunks embedded\", \"logger\": \"app.services.embedding\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:29.076541Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:31.8017969+00:00", "Log": "F [2026-04-28 12:55:31,801: INFO/MainProcess] Request URL: 'https://centralindia-0.in.applicationinsights.azure.com//v2.1/track'"}
+{"TimeStamp": "2026-04-28T12:55:31.8018429+00:00", "Log": "F Request method: 'POST'"}
+{"TimeStamp": "2026-04-28T12:55:31.8018597+00:00", "Log": "F Request headers:"}
+{"TimeStamp": "2026-04-28T12:55:31.8018617+00:00", "Log": "F     'Content-Type': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:55:31.801863+00:00", "Log": "F     'Content-Length': '2986'"}
+{"TimeStamp": "2026-04-28T12:55:31.8018643+00:00", "Log": "F     'Accept': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:55:31.8018656+00:00", "Log": "F     'x-ms-client-request-id': '8a35ed98-4301-11f1-9901-16ee47812b25'"}
+{"TimeStamp": "2026-04-28T12:55:31.801871+00:00", "Log": "F     'User-Agent': 'azsdk-python-monitor-opentelemetry-exporter/1.0.0b1 Python/3.11.13 (Linux-5.15.186.1-1.cm2-x86_64-with-glibc2.31)'"}
+{"TimeStamp": "2026-04-28T12:55:31.8018724+00:00", "Log": "F A body is sent with the request"}
+{"TimeStamp": "2026-04-28T12:55:31.8074943+00:00", "Log": "F [2026-04-28 12:55:31,807: INFO/MainProcess] {\"stage\": \"ingestion.section_upsert_complete\", \"batch_idx\": null, \"size_hint_mb\": 140.0, \"collected\": 0, \"event\": \"Manual GC executed\", \"logger\": \"app.core.memory\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:31.807148Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:31.8075826+00:00", "Log": "F [2026-04-28 12:55:31,807: INFO/MainProcess] {\"section\": \"OTHER REGULATORY AND STATUTORY DISCLOSURES\", \"chunks\": 22, \"upserted\": 22, \"event\": \"Section embedded and upserted\", \"logger\": \"app.services.ingestion_pipeline\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:31.807332Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:31.8090873+00:00", "Log": "F [2026-04-28 12:55:31,808: INFO/MainProcess] {\"batch_start\": 32, \"batch_size\": 1, \"sections_total\": 41, \"event\": \"Processing section batch\", \"logger\": \"app.services.ingestion_pipeline\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:31.808658Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:31.8093197+00:00", "Log": "F [2026-04-28 12:55:31,809: INFO/MainProcess] {\"total_chars\": 5300, \"chunk_count\": 2, \"chunk_size\": 4800, \"overlap\": 800, \"event\": \"Text split into chunks\", \"logger\": \"app.services.chunking\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:31.809156Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:31.8093659+00:00", "Log": "F [2026-04-28 12:55:31,809: INFO/MainProcess] {\"chunk_count\": 2, \"event\": \"Created chunks with metadata\", \"logger\": \"app.services.chunking\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:31.809274Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:31.8102146+00:00", "Log": "F [2026-04-28 12:55:31,810: INFO/MainProcess] {\"batch_size\": 2, \"model\": \"text-embedding-3-large\", \"event\": \"Generating batch embeddings\", \"logger\": \"app.services.embedding\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:31.809993Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:32.0059419+00:00", "Log": "F [2026-04-28 12:55:32,005: INFO/MainProcess] Response status: 200"}
+{"TimeStamp": "2026-04-28T12:55:32.0059839+00:00", "Log": "F Response headers:"}
+{"TimeStamp": "2026-04-28T12:55:32.0060008+00:00", "Log": "F     'Transfer-Encoding': 'chunked'"}
+{"TimeStamp": "2026-04-28T12:55:32.0060095+00:00", "Log": "F     'Content-Type': 'application/json; charset=utf-8'"}
+{"TimeStamp": "2026-04-28T12:55:32.0060119+00:00", "Log": "F     'Server': 'Microsoft-HTTPAPI/2.0'"}
+{"TimeStamp": "2026-04-28T12:55:32.006014+00:00", "Log": "F     'Strict-Transport-Security': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:55:32.0060162+00:00", "Log": "F     'X-Content-Type-Options': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:55:32.0060183+00:00", "Log": "F     'Date': 'Tue, 28 Apr 2026 12:55:31 GMT'"}
+{"TimeStamp": "2026-04-28T12:55:32.0061768+00:00", "Log": "F [2026-04-28 12:55:32,006: INFO/MainProcess] Transmission succeeded: Item received: 3. Items accepted: 3"}
+{"TimeStamp": "2026-04-28T12:55:32.0565861+00:00", "Log": "F [2026-04-28 12:55:32,056: INFO/MainProcess] {\"count\": 2, \"event\": \"Batch embeddings generated\", \"logger\": \"app.services.embedding\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:32.056289Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:32.0568965+00:00", "Log": "F [2026-04-28 12:55:32,056: INFO/MainProcess] {\"chunk_count\": 2, \"embedding_seconds\": 0.25, \"tokens_approx\": 999, \"event\": \"Chunks embedded\", \"logger\": \"app.services.embedding\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:32.056654Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:32.5855652+00:00", "Log": "F [2026-04-28 12:55:32,585: INFO/MainProcess] Request URL: 'https://centralindia.livediagnostics.monitor.azure.com/QuickPulseService.svc/ping?api-version=REDACTED&ikey=REDACTED'"}
+{"TimeStamp": "2026-04-28T12:55:32.5856064+00:00", "Log": "F Request method: 'POST'"}
+{"TimeStamp": "2026-04-28T12:55:32.5856237+00:00", "Log": "F Request headers:"}
+{"TimeStamp": "2026-04-28T12:55:32.5856347+00:00", "Log": "F     'Content-Type': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:55:32.585636+00:00", "Log": "F     'Content-Length': '348'"}
+{"TimeStamp": "2026-04-28T12:55:32.5856375+00:00", "Log": "F     'x-ms-qps-transmission-time': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:55:32.5856388+00:00", "Log": "F     'x-ms-qps-machine-name': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:55:32.58564+00:00", "Log": "F     'x-ms-qps-instance-name': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:55:32.5856413+00:00", "Log": "F     'x-ms-qps-stream-id': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:55:32.5856426+00:00", "Log": "F     'x-ms-qps-role-name': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:55:32.5856437+00:00", "Log": "F     'x-ms-qps-invariant-version': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:55:32.5856449+00:00", "Log": "F     'x-ms-qps-configuration-etag': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:55:32.5856507+00:00", "Log": "F     'Accept': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:55:32.5856519+00:00", "Log": "F A body is sent with the request"}
+{"TimeStamp": "2026-04-28T12:55:32.5882566+00:00", "Log": "F [2026-04-28 12:55:32,588: INFO/MainProcess] Response status: 200"}
+{"TimeStamp": "2026-04-28T12:55:32.5882741+00:00", "Log": "F Response headers:"}
+{"TimeStamp": "2026-04-28T12:55:32.5882813+00:00", "Log": "F     'Server': 'Microsoft-IIS/10.0'"}
+{"TimeStamp": "2026-04-28T12:55:32.5882866+00:00", "Log": "F     'x-ms-qps-subscribed': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:55:32.5882887+00:00", "Log": "F     'Request-Context': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:55:32.5882908+00:00", "Log": "F     'Access-Control-Expose-Headers': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:55:32.5882929+00:00", "Log": "F     'X-Powered-By': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:55:32.5882949+00:00", "Log": "F     'Strict-Transport-Security': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:55:32.5882968+00:00", "Log": "F     'X-Content-Type-Options': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:55:32.5882989+00:00", "Log": "F     'Date': 'Tue, 28 Apr 2026 12:55:32 GMT'"}
+{"TimeStamp": "2026-04-28T12:55:32.5883009+00:00", "Log": "F     'Content-Length': '0'"}
+{"TimeStamp": "2026-04-28T12:55:33.8662053+00:00", "Log": "F [2026-04-28 12:55:33,865: INFO/MainProcess] {\"stage\": \"ingestion.section_upsert_complete\", \"batch_idx\": null, \"size_hint_mb\": 140.0, \"collected\": 86, \"event\": \"Manual GC executed\", \"logger\": \"app.core.memory\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:33.865805Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:33.8664294+00:00", "Log": "F [2026-04-28 12:55:33,866: INFO/MainProcess] {\"section\": \"VIII. ISSUE RELATED INFORMATION\", \"chunks\": 2, \"upserted\": 2, \"event\": \"Section embedded and upserted\", \"logger\": \"app.services.ingestion_pipeline\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:33.866213Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:33.8680138+00:00", "Log": "F [2026-04-28 12:55:33,867: INFO/MainProcess] {\"batch_start\": 33, \"batch_size\": 1, \"sections_total\": 41, \"event\": \"Processing section batch\", \"logger\": \"app.services.ingestion_pipeline\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:33.867478Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:33.8686121+00:00", "Log": "F [2026-04-28 12:55:33,868: INFO/MainProcess] {\"total_chars\": 54877, \"chunk_count\": 15, \"chunk_size\": 4800, \"overlap\": 800, \"event\": \"Text split into chunks\", \"logger\": \"app.services.chunking\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:33.868437Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:33.8686683+00:00", "Log": "F [2026-04-28 12:55:33,868: INFO/MainProcess] {\"chunk_count\": 15, \"event\": \"Created chunks with metadata\", \"logger\": \"app.services.chunking\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:33.868545Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:33.8698573+00:00", "Log": "F [2026-04-28 12:55:33,869: INFO/MainProcess] {\"batch_size\": 15, \"model\": \"text-embedding-3-large\", \"event\": \"Generating batch embeddings\", \"logger\": \"app.services.embedding\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:33.869627Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:34.3335577+00:00", "Log": "F [2026-04-28 12:55:34,333: INFO/MainProcess] {\"count\": 15, \"event\": \"Batch embeddings generated\", \"logger\": \"app.services.embedding\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:34.333006Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:34.3336741+00:00", "Log": "F [2026-04-28 12:55:34,333: INFO/MainProcess] {\"chunk_count\": 15, \"embedding_seconds\": 0.46, \"tokens_approx\": 9905, \"event\": \"Chunks embedded\", \"logger\": \"app.services.embedding\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:34.333460Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:36.7854731+00:00", "Log": "F [2026-04-28 12:55:36,785: INFO/MainProcess] {\"stage\": \"ingestion.section_upsert_complete\", \"batch_idx\": null, \"size_hint_mb\": 140.0, \"collected\": 86, \"event\": \"Manual GC executed\", \"logger\": \"app.core.memory\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:36.785130Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:36.7859524+00:00", "Log": "F [2026-04-28 12:55:36,785: INFO/MainProcess] {\"section\": \"TERMS OF THE ISSUE\", \"chunks\": 15, \"upserted\": 15, \"event\": \"Section embedded and upserted\", \"logger\": \"app.services.ingestion_pipeline\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:36.785332Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:36.7873021+00:00", "Log": "F [2026-04-28 12:55:36,786: INFO/MainProcess] {\"batch_start\": 34, \"batch_size\": 1, \"sections_total\": 41, \"event\": \"Processing section batch\", \"logger\": \"app.services.ingestion_pipeline\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:36.786757Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:36.7879814+00:00", "Log": "F [2026-04-28 12:55:36,787: INFO/MainProcess] {\"total_chars\": 44808, \"chunk_count\": 17, \"chunk_size\": 4800, \"overlap\": 800, \"event\": \"Text split into chunks\", \"logger\": \"app.services.chunking\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:36.787749Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:36.7880617+00:00", "Log": "F [2026-04-28 12:55:36,787: INFO/MainProcess] {\"chunk_count\": 17, \"event\": \"Created chunks with metadata\", \"logger\": \"app.services.chunking\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:36.787874Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:36.7890968+00:00", "Log": "F [2026-04-28 12:55:36,788: INFO/MainProcess] {\"batch_size\": 17, \"model\": \"text-embedding-3-large\", \"event\": \"Generating batch embeddings\", \"logger\": \"app.services.embedding\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:36.788883Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:37.0079229+00:00", "Log": "F [2026-04-28 12:55:37,007: INFO/MainProcess] Request URL: 'https://centralindia-0.in.applicationinsights.azure.com//v2.1/track'"}
+{"TimeStamp": "2026-04-28T12:55:37.0079583+00:00", "Log": "F Request method: 'POST'"}
+{"TimeStamp": "2026-04-28T12:55:37.0079731+00:00", "Log": "F Request headers:"}
+{"TimeStamp": "2026-04-28T12:55:37.007975+00:00", "Log": "F     'Content-Type': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:55:37.0079764+00:00", "Log": "F     'Content-Length': '2986'"}
+{"TimeStamp": "2026-04-28T12:55:37.0079777+00:00", "Log": "F     'Accept': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:55:37.0079789+00:00", "Log": "F     'x-ms-client-request-id': '8d505130-4301-11f1-9901-16ee47812b25'"}
+{"TimeStamp": "2026-04-28T12:55:37.0079802+00:00", "Log": "F     'User-Agent': 'azsdk-python-monitor-opentelemetry-exporter/1.0.0b1 Python/3.11.13 (Linux-5.15.186.1-1.cm2-x86_64-with-glibc2.31)'"}
+{"TimeStamp": "2026-04-28T12:55:37.0079815+00:00", "Log": "F A body is sent with the request"}
+{"TimeStamp": "2026-04-28T12:55:37.093114+00:00", "Log": "F [2026-04-28 12:55:37,092: INFO/MainProcess] Response status: 200"}
+{"TimeStamp": "2026-04-28T12:55:37.093157+00:00", "Log": "F Response headers:"}
+{"TimeStamp": "2026-04-28T12:55:37.0931705+00:00", "Log": "F     'Transfer-Encoding': 'chunked'"}
+{"TimeStamp": "2026-04-28T12:55:37.0931722+00:00", "Log": "F     'Content-Type': 'application/json; charset=utf-8'"}
+{"TimeStamp": "2026-04-28T12:55:37.0931735+00:00", "Log": "F     'Server': 'Microsoft-HTTPAPI/2.0'"}
+{"TimeStamp": "2026-04-28T12:55:37.0931748+00:00", "Log": "F     'Strict-Transport-Security': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:55:37.0931761+00:00", "Log": "F     'X-Content-Type-Options': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:55:37.0931773+00:00", "Log": "F     'Date': 'Tue, 28 Apr 2026 12:55:36 GMT'"}
+{"TimeStamp": "2026-04-28T12:55:37.0933987+00:00", "Log": "F [2026-04-28 12:55:37,093: INFO/MainProcess] Transmission succeeded: Item received: 3. Items accepted: 3"}
+{"TimeStamp": "2026-04-28T12:55:37.232166+00:00", "Log": "F [2026-04-28 12:55:37,231: INFO/MainProcess] {\"count\": 17, \"event\": \"Batch embeddings generated\", \"logger\": \"app.services.embedding\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:37.231900Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:37.2324728+00:00", "Log": "F [2026-04-28 12:55:37,232: INFO/MainProcess] {\"chunk_count\": 17, \"embedding_seconds\": 0.44, \"tokens_approx\": 8423, \"event\": \"Chunks embedded\", \"logger\": \"app.services.embedding\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:37.232270Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:39.9086531+00:00", "Log": "F [2026-04-28 12:55:39,908: INFO/MainProcess] {\"stage\": \"ingestion.section_upsert_complete\", \"batch_idx\": null, \"size_hint_mb\": 140.0, \"collected\": 86, \"event\": \"Manual GC executed\", \"logger\": \"app.core.memory\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:39.908327Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:39.9088068+00:00", "Log": "F [2026-04-28 12:55:39,908: INFO/MainProcess] {\"section\": \"ISSUE STRUCTURE\", \"chunks\": 17, \"upserted\": 17, \"event\": \"Section embedded and upserted\", \"logger\": \"app.services.ingestion_pipeline\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:39.908532Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:39.9104351+00:00", "Log": "F [2026-04-28 12:55:39,910: INFO/MainProcess] {\"batch_start\": 35, \"batch_size\": 1, \"sections_total\": 41, \"event\": \"Processing section batch\", \"logger\": \"app.services.ingestion_pipeline\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:39.909953Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:39.9120209+00:00", "Log": "F [2026-04-28 12:55:39,911: INFO/MainProcess] {\"total_chars\": 256355, \"chunk_count\": 80, \"chunk_size\": 4800, \"overlap\": 800, \"event\": \"Text split into chunks\", \"logger\": \"app.services.chunking\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:39.911797Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:39.912113+00:00", "Log": "F [2026-04-28 12:55:39,912: INFO/MainProcess] {\"chunk_count\": 80, \"event\": \"Created chunks with metadata\", \"logger\": \"app.services.chunking\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:39.911974Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:39.9138717+00:00", "Log": "F [2026-04-28 12:55:39,913: INFO/MainProcess] {\"batch_size\": 50, \"model\": \"text-embedding-3-large\", \"event\": \"Generating batch embeddings\", \"logger\": \"app.services.embedding\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:39.913652Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:40.5009369+00:00", "Log": "F [2026-04-28 12:55:40,500: INFO/MainProcess] {\"count\": 50, \"event\": \"Batch embeddings generated\", \"logger\": \"app.services.embedding\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:40.500637Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:40.501505+00:00", "Log": "F [2026-04-28 12:55:40,501: INFO/MainProcess] {\"chunk_count\": 50, \"embedding_seconds\": 0.59, \"tokens_approx\": 28896, \"event\": \"Chunks embedded\", \"logger\": \"app.services.embedding\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:40.501035Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:42.0949822+00:00", "Log": "F [2026-04-28 12:55:42,094: INFO/MainProcess] Request URL: 'https://centralindia-0.in.applicationinsights.azure.com//v2.1/track'"}
+{"TimeStamp": "2026-04-28T12:55:42.0950179+00:00", "Log": "F Request method: 'POST'"}
+{"TimeStamp": "2026-04-28T12:55:42.0950368+00:00", "Log": "F Request headers:"}
+{"TimeStamp": "2026-04-28T12:55:42.0950389+00:00", "Log": "F     'Content-Type': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:55:42.0950402+00:00", "Log": "F     'Content-Length': '1925'"}
+{"TimeStamp": "2026-04-28T12:55:42.0950415+00:00", "Log": "F     'Accept': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:55:42.0950427+00:00", "Log": "F     'x-ms-client-request-id': '90588b40-4301-11f1-9901-16ee47812b25'"}
+{"TimeStamp": "2026-04-28T12:55:42.095044+00:00", "Log": "F     'User-Agent': 'azsdk-python-monitor-opentelemetry-exporter/1.0.0b1 Python/3.11.13 (Linux-5.15.186.1-1.cm2-x86_64-with-glibc2.31)'"}
+{"TimeStamp": "2026-04-28T12:55:42.0950454+00:00", "Log": "F A body is sent with the request"}
+{"TimeStamp": "2026-04-28T12:55:42.1865545+00:00", "Log": "F [2026-04-28 12:55:42,186: INFO/MainProcess] Response status: 200"}
+{"TimeStamp": "2026-04-28T12:55:42.1865901+00:00", "Log": "F Response headers:"}
+{"TimeStamp": "2026-04-28T12:55:42.1866043+00:00", "Log": "F     'Transfer-Encoding': 'chunked'"}
+{"TimeStamp": "2026-04-28T12:55:42.1866063+00:00", "Log": "F     'Content-Type': 'application/json; charset=utf-8'"}
+{"TimeStamp": "2026-04-28T12:55:42.1866076+00:00", "Log": "F     'Server': 'Microsoft-HTTPAPI/2.0'"}
+{"TimeStamp": "2026-04-28T12:55:42.1866131+00:00", "Log": "F     'Strict-Transport-Security': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:55:42.1866144+00:00", "Log": "F     'X-Content-Type-Options': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:55:42.1866156+00:00", "Log": "F     'Date': 'Tue, 28 Apr 2026 12:55:41 GMT'"}
+{"TimeStamp": "2026-04-28T12:55:42.1868161+00:00", "Log": "F [2026-04-28 12:55:42,186: INFO/MainProcess] Transmission succeeded: Item received: 2. Items accepted: 2"}
+{"TimeStamp": "2026-04-28T12:55:43.7926921+00:00", "Log": "F [2026-04-28 12:55:43,792: INFO/MainProcess] {\"batch_size\": 30, \"model\": \"text-embedding-3-large\", \"event\": \"Generating batch embeddings\", \"logger\": \"app.services.embedding\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:43.792422Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:44.4709798+00:00", "Log": "F [2026-04-28 12:55:44,470: INFO/MainProcess] {\"count\": 30, \"event\": \"Batch embeddings generated\", \"logger\": \"app.services.embedding\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:44.470674Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:44.4712773+00:00", "Log": "F [2026-04-28 12:55:44,471: INFO/MainProcess] {\"chunk_count\": 30, \"embedding_seconds\": 0.68, \"tokens_approx\": 19801, \"event\": \"Chunks embedded\", \"logger\": \"app.services.embedding\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:44.471041Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:45.8187148+00:00", "Log": "F [2026-04-28 12:55:45,818: INFO/MainProcess] {\"stage\": \"ingestion.section_upsert_complete\", \"batch_idx\": null, \"size_hint_mb\": 140.0, \"collected\": 114, \"event\": \"Manual GC executed\", \"logger\": \"app.core.memory\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:45.818412Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:45.8188331+00:00", "Log": "F [2026-04-28 12:55:45,818: INFO/MainProcess] {\"section\": \"ISSUE PROCEDURE\", \"chunks\": 80, \"upserted\": 80, \"event\": \"Section embedded and upserted\", \"logger\": \"app.services.ingestion_pipeline\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:45.818608Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:45.8218058+00:00", "Log": "F [2026-04-28 12:55:45,821: INFO/MainProcess] {\"batch_start\": 36, \"batch_size\": 1, \"sections_total\": 41, \"event\": \"Processing section batch\", \"logger\": \"app.services.ingestion_pipeline\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:45.821450Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:45.8222056+00:00", "Log": "F [2026-04-28 12:55:45,822: INFO/MainProcess] {\"total_chars\": 29128, \"chunk_count\": 9, \"chunk_size\": 4800, \"overlap\": 800, \"event\": \"Text split into chunks\", \"logger\": \"app.services.chunking\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:45.822029Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:45.8222773+00:00", "Log": "F [2026-04-28 12:55:45,822: INFO/MainProcess] {\"chunk_count\": 9, \"event\": \"Created chunks with metadata\", \"logger\": \"app.services.chunking\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:45.822147Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:45.8232795+00:00", "Log": "F [2026-04-28 12:55:45,823: INFO/MainProcess] {\"batch_size\": 9, \"model\": \"text-embedding-3-large\", \"event\": \"Generating batch embeddings\", \"logger\": \"app.services.embedding\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:45.822983Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:46.2710984+00:00", "Log": "F [2026-04-28 12:55:46,270: INFO/MainProcess] {\"count\": 9, \"event\": \"Batch embeddings generated\", \"logger\": \"app.services.embedding\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:46.270813Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:46.2713388+00:00", "Log": "F [2026-04-28 12:55:46,271: INFO/MainProcess] {\"chunk_count\": 9, \"embedding_seconds\": 0.45, \"tokens_approx\": 5237, \"event\": \"Chunks embedded\", \"logger\": \"app.services.embedding\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:46.271158Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:47.1884429+00:00", "Log": "F [2026-04-28 12:55:47,188: INFO/MainProcess] Request URL: 'https://centralindia-0.in.applicationinsights.azure.com//v2.1/track'"}
+{"TimeStamp": "2026-04-28T12:55:47.1884788+00:00", "Log": "F Request method: 'POST'"}
+{"TimeStamp": "2026-04-28T12:55:47.1884966+00:00", "Log": "F Request headers:"}
+{"TimeStamp": "2026-04-28T12:55:47.1884997+00:00", "Log": "F     'Content-Type': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:55:47.1885019+00:00", "Log": "F     'Content-Length': '2986'"}
+{"TimeStamp": "2026-04-28T12:55:47.1885041+00:00", "Log": "F     'Accept': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:55:47.1885064+00:00", "Log": "F     'x-ms-client-request-id': '9361bf78-4301-11f1-9901-16ee47812b25'"}
+{"TimeStamp": "2026-04-28T12:55:47.1885087+00:00", "Log": "F     'User-Agent': 'azsdk-python-monitor-opentelemetry-exporter/1.0.0b1 Python/3.11.13 (Linux-5.15.186.1-1.cm2-x86_64-with-glibc2.31)'"}
+{"TimeStamp": "2026-04-28T12:55:47.188511+00:00", "Log": "F A body is sent with the request"}
+{"TimeStamp": "2026-04-28T12:55:47.2875033+00:00", "Log": "F [2026-04-28 12:55:47,287: INFO/MainProcess] Response status: 200"}
+{"TimeStamp": "2026-04-28T12:55:47.2875393+00:00", "Log": "F Response headers:"}
+{"TimeStamp": "2026-04-28T12:55:47.2875571+00:00", "Log": "F     'Transfer-Encoding': 'chunked'"}
+{"TimeStamp": "2026-04-28T12:55:47.2875606+00:00", "Log": "F     'Content-Type': 'application/json; charset=utf-8'"}
+{"TimeStamp": "2026-04-28T12:55:47.287563+00:00", "Log": "F     'Server': 'Microsoft-HTTPAPI/2.0'"}
+{"TimeStamp": "2026-04-28T12:55:47.2875653+00:00", "Log": "F     'Strict-Transport-Security': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:55:47.2875721+00:00", "Log": "F     'X-Content-Type-Options': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:55:47.2875746+00:00", "Log": "F     'Date': 'Tue, 28 Apr 2026 12:55:46 GMT'"}
+{"TimeStamp": "2026-04-28T12:55:47.287945+00:00", "Log": "F [2026-04-28 12:55:47,287: INFO/MainProcess] Transmission succeeded: Item received: 3. Items accepted: 3"}
+{"TimeStamp": "2026-04-28T12:55:48.541352+00:00", "Log": "F [2026-04-28 12:55:48,541: INFO/MainProcess] {\"stage\": \"ingestion.section_upsert_complete\", \"batch_idx\": null, \"size_hint_mb\": 140.0, \"collected\": 0, \"event\": \"Manual GC executed\", \"logger\": \"app.core.memory\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:48.541053Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:48.5416429+00:00", "Log": "F [2026-04-28 12:55:48,541: INFO/MainProcess] {\"section\": \"RESTRICTIONS ON FOREIGN OWNERSHIP OF INDIAN SECURITIES\", \"chunks\": 9, \"upserted\": 9, \"event\": \"Section embedded and upserted\", \"logger\": \"app.services.ingestion_pipeline\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:48.541238Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:48.5428703+00:00", "Log": "F [2026-04-28 12:55:48,542: INFO/MainProcess] {\"batch_start\": 37, \"batch_size\": 1, \"sections_total\": 41, \"event\": \"Processing section batch\", \"logger\": \"app.services.ingestion_pipeline\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:48.542610Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:48.5441514+00:00", "Log": "F [2026-04-28 12:55:48,543: INFO/MainProcess] {\"total_chars\": 188076, \"chunk_count\": 52, \"chunk_size\": 4800, \"overlap\": 800, \"event\": \"Text split into chunks\", \"logger\": \"app.services.chunking\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:48.543895Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:48.54417+00:00", "Log": "F [2026-04-28 12:55:48,544: INFO/MainProcess] {\"chunk_count\": 52, \"event\": \"Created chunks with metadata\", \"logger\": \"app.services.chunking\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:48.544038Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:48.5461623+00:00", "Log": "F [2026-04-28 12:55:48,546: INFO/MainProcess] {\"batch_size\": 50, \"model\": \"text-embedding-3-large\", \"event\": \"Generating batch embeddings\", \"logger\": \"app.services.embedding\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:48.545954Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:49.1644693+00:00", "Log": "F [2026-04-28 12:55:49,163: INFO/MainProcess] {\"count\": 50, \"event\": \"Batch embeddings generated\", \"logger\": \"app.services.embedding\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:49.163838Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:49.1647351+00:00", "Log": "F [2026-04-28 12:55:49,164: INFO/MainProcess] {\"chunk_count\": 50, \"embedding_seconds\": 0.62, \"tokens_approx\": 35648, \"event\": \"Chunks embedded\", \"logger\": \"app.services.embedding\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:49.164326Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:52.289365+00:00", "Log": "F [2026-04-28 12:55:52,289: INFO/MainProcess] Request URL: 'https://centralindia-0.in.applicationinsights.azure.com//v2.1/track'"}
+{"TimeStamp": "2026-04-28T12:55:52.2894028+00:00", "Log": "F Request method: 'POST'"}
+{"TimeStamp": "2026-04-28T12:55:52.2894169+00:00", "Log": "F Request headers:"}
+{"TimeStamp": "2026-04-28T12:55:52.2894187+00:00", "Log": "F     'Content-Type': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:55:52.2894201+00:00", "Log": "F     'Content-Length': '1925'"}
+{"TimeStamp": "2026-04-28T12:55:52.2894214+00:00", "Log": "F     'Accept': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:55:52.2894226+00:00", "Log": "F     'x-ms-client-request-id': '966c1538-4301-11f1-9901-16ee47812b25'"}
+{"TimeStamp": "2026-04-28T12:55:52.2894283+00:00", "Log": "F     'User-Agent': 'azsdk-python-monitor-opentelemetry-exporter/1.0.0b1 Python/3.11.13 (Linux-5.15.186.1-1.cm2-x86_64-with-glibc2.31)'"}
+{"TimeStamp": "2026-04-28T12:55:52.2894298+00:00", "Log": "F A body is sent with the request"}
+{"TimeStamp": "2026-04-28T12:55:52.3824468+00:00", "Log": "F [2026-04-28 12:55:52,381: INFO/MainProcess] Response status: 200"}
+{"TimeStamp": "2026-04-28T12:55:52.382514+00:00", "Log": "F Response headers:"}
+{"TimeStamp": "2026-04-28T12:55:52.3825299+00:00", "Log": "F     'Transfer-Encoding': 'chunked'"}
+{"TimeStamp": "2026-04-28T12:55:52.382533+00:00", "Log": "F     'Content-Type': 'application/json; charset=utf-8'"}
+{"TimeStamp": "2026-04-28T12:55:52.3825352+00:00", "Log": "F     'Server': 'Microsoft-HTTPAPI/2.0'"}
+{"TimeStamp": "2026-04-28T12:55:52.3825371+00:00", "Log": "F     'Strict-Transport-Security': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:55:52.3825391+00:00", "Log": "F     'X-Content-Type-Options': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:55:52.382541+00:00", "Log": "F     'Date': 'Tue, 28 Apr 2026 12:55:51 GMT'"}
+{"TimeStamp": "2026-04-28T12:55:52.3854328+00:00", "Log": "F [2026-04-28 12:55:52,382: INFO/MainProcess] Transmission succeeded: Item received: 2. Items accepted: 2"}
+{"TimeStamp": "2026-04-28T12:55:52.6970441+00:00", "Log": "F [2026-04-28 12:55:52,696: INFO/MainProcess] {\"batch_size\": 2, \"model\": \"text-embedding-3-large\", \"event\": \"Generating batch embeddings\", \"logger\": \"app.services.embedding\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:52.696635Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:52.9419504+00:00", "Log": "F [2026-04-28 12:55:52,941: INFO/MainProcess] {\"count\": 2, \"event\": \"Batch embeddings generated\", \"logger\": \"app.services.embedding\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:52.941615Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:52.9422459+00:00", "Log": "F [2026-04-28 12:55:52,942: INFO/MainProcess] {\"chunk_count\": 2, \"embedding_seconds\": 0.25, \"tokens_approx\": 1474, \"event\": \"Chunks embedded\", \"logger\": \"app.services.embedding\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:52.942011Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:53.6865516+00:00", "Log": "F [2026-04-28 12:55:53,686: INFO/MainProcess] {\"stage\": \"ingestion.section_upsert_complete\", \"batch_idx\": null, \"size_hint_mb\": 140.0, \"collected\": 114, \"event\": \"Manual GC executed\", \"logger\": \"app.core.memory\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:53.686204Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:53.6867811+00:00", "Log": "F [2026-04-28 12:55:53,686: INFO/MainProcess] {\"section\": \"IX. MAIN PROVISIONS OF ARTICLES OF ASSOCIATION OF OUR COMPANY\", \"chunks\": 52, \"upserted\": 52, \"event\": \"Section embedded and upserted\", \"logger\": \"app.services.ingestion_pipeline\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:53.686405Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:53.6888863+00:00", "Log": "F [2026-04-28 12:55:53,688: INFO/MainProcess] {\"batch_start\": 38, \"batch_size\": 1, \"sections_total\": 41, \"event\": \"Processing section batch\", \"logger\": \"app.services.ingestion_pipeline\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:53.688547Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:53.6893574+00:00", "Log": "F [2026-04-28 12:55:53,689: INFO/MainProcess] {\"total_chars\": 4404, \"chunk_count\": 1, \"chunk_size\": 4800, \"overlap\": 800, \"event\": \"Text split into chunks\", \"logger\": \"app.services.chunking\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:53.689144Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:53.6893745+00:00", "Log": "F [2026-04-28 12:55:53,689: INFO/MainProcess] {\"chunk_count\": 1, \"event\": \"Created chunks with metadata\", \"logger\": \"app.services.chunking\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:53.689244Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:53.6901147+00:00", "Log": "F [2026-04-28 12:55:53,689: INFO/MainProcess] {\"batch_size\": 1, \"model\": \"text-embedding-3-large\", \"event\": \"Generating batch embeddings\", \"logger\": \"app.services.embedding\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:53.689907Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:53.9564822+00:00", "Log": "F [2026-04-28 12:55:53,956: INFO/MainProcess] {\"count\": 1, \"event\": \"Batch embeddings generated\", \"logger\": \"app.services.embedding\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:53.956202Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:53.956875+00:00", "Log": "F [2026-04-28 12:55:53,956: INFO/MainProcess] {\"chunk_count\": 1, \"embedding_seconds\": 0.27, \"tokens_approx\": 786, \"event\": \"Chunks embedded\", \"logger\": \"app.services.embedding\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:53.956634Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:55.4838869+00:00", "Log": "F [2026-04-28 12:55:55,483: INFO/MainProcess] {\"stage\": \"ingestion.section_upsert_complete\", \"batch_idx\": null, \"size_hint_mb\": 140.0, \"collected\": 86, \"event\": \"Manual GC executed\", \"logger\": \"app.core.memory\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:55.483549Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:55.484045+00:00", "Log": "F [2026-04-28 12:55:55,483: INFO/MainProcess] {\"section\": \"X. OTHER INFORMATION\", \"chunks\": 1, \"upserted\": 1, \"event\": \"Section embedded and upserted\", \"logger\": \"app.services.ingestion_pipeline\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:55.483742Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:55.4851328+00:00", "Log": "F [2026-04-28 12:55:55,484: INFO/MainProcess] {\"batch_start\": 39, \"batch_size\": 1, \"sections_total\": 41, \"event\": \"Processing section batch\", \"logger\": \"app.services.ingestion_pipeline\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:55.484814Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:55.4853831+00:00", "Log": "F [2026-04-28 12:55:55,485: INFO/MainProcess] {\"total_chars\": 12538, \"chunk_count\": 3, \"chunk_size\": 4800, \"overlap\": 800, \"event\": \"Text split into chunks\", \"logger\": \"app.services.chunking\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:55.485099Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:55.4854001+00:00", "Log": "F [2026-04-28 12:55:55,485: INFO/MainProcess] {\"chunk_count\": 3, \"event\": \"Created chunks with metadata\", \"logger\": \"app.services.chunking\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:55.485221Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:55.4862078+00:00", "Log": "F [2026-04-28 12:55:55,485: INFO/MainProcess] {\"batch_size\": 3, \"model\": \"text-embedding-3-large\", \"event\": \"Generating batch embeddings\", \"logger\": \"app.services.embedding\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:55.485922Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:55.9540413+00:00", "Log": "F [2026-04-28 12:55:55,953: INFO/MainProcess] {\"count\": 3, \"event\": \"Batch embeddings generated\", \"logger\": \"app.services.embedding\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:55.953670Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:55.954327+00:00", "Log": "F [2026-04-28 12:55:55,954: INFO/MainProcess] {\"chunk_count\": 3, \"embedding_seconds\": 0.47, \"tokens_approx\": 2499, \"event\": \"Chunks embedded\", \"logger\": \"app.services.embedding\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:55.954118Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:57.3847029+00:00", "Log": "F [2026-04-28 12:55:57,384: INFO/MainProcess] Request URL: 'https://centralindia-0.in.applicationinsights.azure.com//v2.1/track'"}
+{"TimeStamp": "2026-04-28T12:55:57.3847452+00:00", "Log": "F Request method: 'POST'"}
+{"TimeStamp": "2026-04-28T12:55:57.3847629+00:00", "Log": "F Request headers:"}
+{"TimeStamp": "2026-04-28T12:55:57.3847658+00:00", "Log": "F     'Content-Type': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:55:57.3847682+00:00", "Log": "F     'Content-Length': '4047'"}
+{"TimeStamp": "2026-04-28T12:55:57.3847704+00:00", "Log": "F     'Accept': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:55:57.3847723+00:00", "Log": "F     'x-ms-client-request-id': '99758ba6-4301-11f1-9901-16ee47812b25'"}
+{"TimeStamp": "2026-04-28T12:55:57.3847749+00:00", "Log": "F     'User-Agent': 'azsdk-python-monitor-opentelemetry-exporter/1.0.0b1 Python/3.11.13 (Linux-5.15.186.1-1.cm2-x86_64-with-glibc2.31)'"}
+{"TimeStamp": "2026-04-28T12:55:57.3847772+00:00", "Log": "F A body is sent with the request"}
+{"TimeStamp": "2026-04-28T12:55:57.4917486+00:00", "Log": "F [2026-04-28 12:55:57,491: INFO/MainProcess] Response status: 200"}
+{"TimeStamp": "2026-04-28T12:55:57.4917923+00:00", "Log": "F Response headers:"}
+{"TimeStamp": "2026-04-28T12:55:57.4918138+00:00", "Log": "F     'Transfer-Encoding': 'chunked'"}
+{"TimeStamp": "2026-04-28T12:55:57.4918158+00:00", "Log": "F     'Content-Type': 'application/json; charset=utf-8'"}
+{"TimeStamp": "2026-04-28T12:55:57.491817+00:00", "Log": "F     'Server': 'Microsoft-HTTPAPI/2.0'"}
+{"TimeStamp": "2026-04-28T12:55:57.4918183+00:00", "Log": "F     'Strict-Transport-Security': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:55:57.4918196+00:00", "Log": "F     'X-Content-Type-Options': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:55:57.4918207+00:00", "Log": "F     'Date': 'Tue, 28 Apr 2026 12:55:56 GMT'"}
+{"TimeStamp": "2026-04-28T12:55:57.4920415+00:00", "Log": "F [2026-04-28 12:55:57,491: INFO/MainProcess] Transmission succeeded: Item received: 4. Items accepted: 4"}
+{"TimeStamp": "2026-04-28T12:55:57.6485634+00:00", "Log": "F [2026-04-28 12:55:57,648: INFO/MainProcess] {\"stage\": \"ingestion.section_upsert_complete\", \"batch_idx\": null, \"size_hint_mb\": 140.0, \"collected\": 86, \"event\": \"Manual GC executed\", \"logger\": \"app.core.memory\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:57.648238Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:57.6486243+00:00", "Log": "F [2026-04-28 12:55:57,648: INFO/MainProcess] {\"section\": \"MATERIAL CONTRACTS AND DOCUMENTS FOR INSPECTION\", \"chunks\": 3, \"upserted\": 3, \"event\": \"Section embedded and upserted\", \"logger\": \"app.services.ingestion_pipeline\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:57.648434Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:57.6497527+00:00", "Log": "F [2026-04-28 12:55:57,649: INFO/MainProcess] {\"batch_start\": 40, \"batch_size\": 1, \"sections_total\": 41, \"event\": \"Processing section batch\", \"logger\": \"app.services.ingestion_pipeline\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:57.649449Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:57.6504993+00:00", "Log": "F [2026-04-28 12:55:57,650: INFO/MainProcess] {\"total_chars\": 44756, \"chunk_count\": 11, \"chunk_size\": 4800, \"overlap\": 800, \"event\": \"Text split into chunks\", \"logger\": \"app.services.chunking\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:57.650227Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:57.6505164+00:00", "Log": "F [2026-04-28 12:55:57,650: INFO/MainProcess] {\"chunk_count\": 11, \"event\": \"Created chunks with metadata\", \"logger\": \"app.services.chunking\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:57.650340Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:57.6515598+00:00", "Log": "F [2026-04-28 12:55:57,651: INFO/MainProcess] {\"batch_size\": 11, \"model\": \"text-embedding-3-large\", \"event\": \"Generating batch embeddings\", \"logger\": \"app.services.embedding\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:57.651333Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:57.9804118+00:00", "Log": "F [2026-04-28 12:55:57,980: INFO/MainProcess] {\"count\": 11, \"event\": \"Batch embeddings generated\", \"logger\": \"app.services.embedding\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:57.980096Z\"}"}
+{"TimeStamp": "2026-04-28T12:55:57.9806341+00:00", "Log": "F [2026-04-28 12:55:57,980: INFO/MainProcess] {\"chunk_count\": 11, \"embedding_seconds\": 0.33, \"tokens_approx\": 8642, \"event\": \"Chunks embedded\", \"logger\": \"app.services.embedding\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:55:57.980450Z\"}"}
+{"TimeStamp": "2026-04-28T12:56:00.2033823+00:00", "Log": "F [2026-04-28 12:56:00,203: INFO/MainProcess] {\"stage\": \"ingestion.section_upsert_complete\", \"batch_idx\": null, \"size_hint_mb\": 140.0, \"collected\": 86, \"event\": \"Manual GC executed\", \"logger\": \"app.core.memory\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:56:00.203031Z\"}"}
+{"TimeStamp": "2026-04-28T12:56:00.2035193+00:00", "Log": "F [2026-04-28 12:56:00,203: INFO/MainProcess] {\"section\": \"XI DECLARATION\", \"chunks\": 11, \"upserted\": 11, \"event\": \"Section embedded and upserted\", \"logger\": \"app.services.ingestion_pipeline\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:56:00.203328Z\"}"}
+{"TimeStamp": "2026-04-28T12:56:00.2108933+00:00", "Log": "F [2026-04-28 12:56:00,210: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"status\": \"completed\", \"attempt\": 1, \"event\": \"Notifying backend of status\", \"logger\": \"app.services.backend_notifier\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:56:00.210656Z\"}"}
+{"TimeStamp": "2026-04-28T12:56:00.4002808+00:00", "Log": "F [2026-04-28 12:56:00,400: INFO/MainProcess] {\"status_code\": 200, \"event\": \"Backend notified successfully\", \"logger\": \"app.services.backend_notifier\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:56:00.399958Z\"}"}
+{"TimeStamp": "2026-04-28T12:56:00.4012961+00:00", "Log": "F [2026-04-28 12:56:00,400: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"sections\": 41, \"total_vectors\": 702, \"duration\": 399.81600046157837, \"event\": \"Ingestion pipeline completed\", \"logger\": \"app.services.ingestion_pipeline\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:56:00.400859Z\"}"}
+{"TimeStamp": "2026-04-28T12:56:00.4052403+00:00", "Log": "F [2026-04-28 12:56:00,405: INFO/MainProcess] {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"event\": \"Celery: Document ingestion task successful\", \"logger\": \"app.workers.document_pipeline\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:56:00.405037Z\"}"}
+{"TimeStamp": "2026-04-28T12:56:00.4053181+00:00", "Log": "F [2026-04-28 12:56:00,405: INFO/MainProcess] {\"metric\": \"job_runtime_ms\", \"value\": 399820, \"tags\": {\"job_id\": \"1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"task\": \"process_document\"}, \"ts\": 1777380960.4051564, \"event\": \"metric\", \"logger\": \"app.services.metrics\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:56:00.405166Z\"}"}
+{"TimeStamp": "2026-04-28T12:56:00.4056417+00:00", "Log": "F [2026-04-28 12:56:00,405: INFO/MainProcess] {\"event\": \"MongoDB: Event loop changed, resetting connection\", \"logger\": \"app.db.mongo\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:56:00.405472Z\"}"}
+{"TimeStamp": "2026-04-28T12:56:00.4076155+00:00", "Log": "F [2026-04-28 12:56:00,407: INFO/MainProcess] You appear to be connected to a CosmosDB cluster. For more information regarding feature compatibility and support please visit https://www.mongodb.com/supportability/cosmosdb"}
+{"TimeStamp": "2026-04-28T12:56:00.4194029+00:00", "Log": "F [2026-04-28 12:56:00,419: INFO/MainProcess] You appear to be connected to a CosmosDB cluster. For more information regarding feature compatibility and support please visit https://www.mongodb.com/supportability/cosmosdb"}
+{"TimeStamp": "2026-04-28T12:56:00.4416706+00:00", "Log": "F [2026-04-28 12:56:00,441: INFO/MainProcess] {\"database\": \"finanacialDocIntelligence\", \"environment\": \"dev\", \"event\": \"MongoDB connected\", \"logger\": \"app.db.mongo\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:56:00.441420Z\"}"}
+{"TimeStamp": "2026-04-28T12:56:00.4615138+00:00", "Log": "F [2026-04-28 12:56:00,461: INFO/MainProcess] Task process_document[1777380554872-Hannah Joseph RHP-14.01.2026.pdf] succeeded in 400.1662500349994s: {'success': True, 'filename': 'Hannah Joseph RHP-14.01.2026.pdf', 'sections_processed': 41, 'total_vectors': 702, 'duration': 399.81600046157837}"}
+{"TimeStamp": "2026-04-28T12:56:00.4616577+00:00", "Log": "F [2026-04-28 12:56:00,461: INFO/MainProcess] {\"event\": \"\\u2705 Task completed: process_document | ID: 1777380554872-Hannah Joseph RHP-14.01.2026.pdf\", \"logger\": \"app.workers.celery_app\", \"level\": \"info\", \"timestamp\": \"2026-04-28T12:56:00.461429Z\"}"}
+{"TimeStamp": "2026-04-28T12:56:02.494164+00:00", "Log": "F [2026-04-28 12:56:02,493: INFO/MainProcess] Request URL: 'https://centralindia-0.in.applicationinsights.azure.com//v2.1/track'"}
+{"TimeStamp": "2026-04-28T12:56:02.4942157+00:00", "Log": "F Request method: 'POST'"}
+{"TimeStamp": "2026-04-28T12:56:02.4942302+00:00", "Log": "F Request headers:"}
+{"TimeStamp": "2026-04-28T12:56:02.4942322+00:00", "Log": "F     'Content-Type': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:56:02.4942336+00:00", "Log": "F     'Content-Length': '4188'"}
+{"TimeStamp": "2026-04-28T12:56:02.4942349+00:00", "Log": "F     'Accept': 'application/json'"}
+{"TimeStamp": "2026-04-28T12:56:02.4942361+00:00", "Log": "F     'x-ms-client-request-id': '9c812e0e-4301-11f1-9901-16ee47812b25'"}
+{"TimeStamp": "2026-04-28T12:56:02.4942374+00:00", "Log": "F     'User-Agent': 'azsdk-python-monitor-opentelemetry-exporter/1.0.0b1 Python/3.11.13 (Linux-5.15.186.1-1.cm2-x86_64-with-glibc2.31)'"}
+{"TimeStamp": "2026-04-28T12:56:02.4942387+00:00", "Log": "F A body is sent with the request"}
+{"TimeStamp": "2026-04-28T12:56:02.5878295+00:00", "Log": "F [2026-04-28 12:56:02,587: INFO/MainProcess] Response status: 200"}
+{"TimeStamp": "2026-04-28T12:56:02.5878725+00:00", "Log": "F Response headers:"}
+{"TimeStamp": "2026-04-28T12:56:02.5878916+00:00", "Log": "F     'Transfer-Encoding': 'chunked'"}
+{"TimeStamp": "2026-04-28T12:56:02.5878943+00:00", "Log": "F     'Content-Type': 'application/json; charset=utf-8'"}
+{"TimeStamp": "2026-04-28T12:56:02.5879017+00:00", "Log": "F     'Server': 'Microsoft-HTTPAPI/2.0'"}
+{"TimeStamp": "2026-04-28T12:56:02.5879041+00:00", "Log": "F     'Strict-Transport-Security': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:56:02.5879064+00:00", "Log": "F     'X-Content-Type-Options': 'REDACTED'"}
+{"TimeStamp": "2026-04-28T12:56:02.5879085+00:00", "Log": "F     'Date': 'Tue, 28 Apr 2026 12:56:01 GMT'"}
+{"TimeStamp": "2026-04-28T12:56:02.5879107+00:00", "Log": "F [2026-04-28 12:56:02,587: INFO/MainProcess] Transmission succeeded: Item received: 4. Items accepted: 4"}

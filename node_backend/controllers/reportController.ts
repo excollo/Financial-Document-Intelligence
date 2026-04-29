@@ -847,16 +847,8 @@ export const reportController = {
         workspaceId: currentWorkspace,
       };
 
-      // Admins can delete all reports in their domain, regular users see only their own
-      if (req.user.role !== "admin") {
-        if (req.user.microsoftId) {
-          query.microsoftId = req.user.microsoftId;
-        } else if (req.user._id) {
-          query.userId = req.user._id.toString();
-        } else {
-          return res.status(400).json({ error: "No user identifier found" });
-        }
-      }
+      // Deletion is workspace-scoped and gated by requireReportPermission("editor"),
+      // so regular workspace members with edit access can delete reports too.
 
       const report = await Report.findOne(query);
       if (!report) {
